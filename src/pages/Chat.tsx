@@ -272,10 +272,9 @@ export default function Chat() {
   return (
     <div className="flex flex-1 flex-col relative overflow-hidden bg-transparent min-h-0">
       <header
-        className="sticky top-0 z-30 flex min-h-[88px] shrink-0 items-center justify-between border-b px-6 py-4 pr-16 shadow-sm backdrop-blur-2xl transition-colors duration-300"
+        className="sticky top-0 z-30 flex min-h-[88px] shrink-0 items-center justify-between border-b border-[color:color-mix(in_srgb,var(--app-divider)_50%,transparent)] px-6 py-4 pr-16 shadow-sm backdrop-blur-3xl transition-colors duration-300"
         style={{
-          background: "color-mix(in srgb, var(--app-shell-bg) 86%, transparent)",
-          borderColor: "var(--app-divider)",
+          background: "color-mix(in srgb, var(--app-shell-bg) 75%, transparent)",
         }}
       >
         <div className="flex items-center gap-4">
@@ -301,36 +300,43 @@ export default function Chat() {
 
       <div
         ref={scrollContainerRef}
-        className="flex flex-1 flex-col overflow-y-auto px-6 pt-[104px] pb-[72px] scroll-smooth scrollbar-hide z-10"
+        className="flex flex-1 flex-col overflow-y-auto px-6 pt-[104px] pb-[50px] scroll-smooth scrollbar-hide z-10"
       >
         <div className="mt-auto flex flex-col gap-6">
         {showQuickPrompts && (
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="app-panel rounded-[2rem] p-5 shadow-lg backdrop-blur-xl"
+            className="app-panel relative overflow-hidden rounded-[2.5rem] p-6 shadow-xl backdrop-blur-2xl"
+            style={{
+              background: "color-mix(in srgb, var(--app-card-bg) 75%, transparent)",
+              borderColor: "color-mix(in srgb, var(--app-card-border) 60%, transparent)",
+            }}
           >
-            <div className="app-accent mb-3 flex items-center gap-2">
-              <Sparkles className="w-4 h-4" />
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                Start gently
+            <div className="absolute inset-0 bg-gradient-to-b from-[color:color-mix(in_srgb,var(--app-accent)_3%,transparent)] to-transparent pointer-events-none" />
+            <div className="relative z-10">
+              <div className="app-accent mb-3 flex items-center gap-2">
+                <Sparkles className="w-4 h-4" />
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em]">
+                  Start gently
+                </p>
+              </div>
+              <p className="app-muted mb-5 text-[14px] leading-relaxed max-w-[90%]">
+                {isGuest
+                  ? "Your guidance stays on this device while you explore in guest mode."
+                  : "Pick a prompt to start, or write your own reflection below."}
               </p>
-            </div>
-            <p className="app-muted mb-4 text-sm leading-relaxed">
-              {isGuest
-                ? "Your guidance stays on this device while you explore in guest mode."
-                : "Pick a prompt to start, or write your own reflection below."}
-            </p>
-            <div className="flex flex-col gap-2">
-              {QUICK_PROMPTS.map((prompt) => (
-                <button
-                  key={prompt}
-                  onClick={() => handleSend(prompt)}
-                  className="app-secondary-button rounded-2xl px-4 py-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-                >
-                  {prompt}
-                </button>
-              ))}
+              <div className="flex flex-col gap-2.5">
+                {QUICK_PROMPTS.map((prompt) => (
+                  <button
+                    key={prompt}
+                    onClick={() => handleSend(prompt)}
+                    className="app-secondary-button rounded-[1.25rem] px-5 py-3.5 text-left text-[14px] font-medium leading-[1.4] transition-all hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--app-accent)_50%,transparent)] shadow-sm"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
             </div>
           </motion.div>
         )}
@@ -426,19 +432,19 @@ export default function Chat() {
                           className="mt-1"
                         >
                           <div
-                            className="rounded-card border p-4 shadow-lg"
+                            className="rounded-[1.25rem] border p-4 shadow-sm backdrop-blur-md transition-all"
                             style={{
-                              background: "var(--app-card-soft)",
-                              borderColor: "color-mix(in srgb, var(--app-accent) 18%, transparent)",
+                              background: "color-mix(in srgb, var(--app-card-soft) 85%, transparent)",
+                              borderColor: "color-mix(in srgb, var(--app-accent) 20%, transparent)",
                             }}
                           >
-                            <p className="app-muted mb-3 text-[12px] italic font-serif">
+                            <p className="app-muted mb-3 text-[12px] italic font-serif opacity-80">
                               A reading for contemplation.
                             </p>
                             <div
-                              className="w-full rounded-xl px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.2em]"
+                              className="w-full rounded-xl px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.2em] shadow-[inset_0_1px_0_color-mix(in_srgb,white_15%,transparent)]"
                               style={{
-                                background: "linear-gradient(90deg, var(--app-accent-soft), transparent)",
+                                background: "linear-gradient(135deg, color-mix(in srgb, var(--app-accent-soft) 80%, transparent), transparent)",
                                 color: "var(--app-accent)",
                               }}
                             >
@@ -455,12 +461,12 @@ export default function Chat() {
 
                 {message.role === "user" && (
                   <div
-                    className="max-w-[85%] rounded-card rounded-tr-[0.5rem] border px-6 py-4 text-[15px] font-light leading-relaxed backdrop-blur-md"
+                    className="max-w-[85%] rounded-[1.5rem] rounded-tr-[0.5rem] border px-6 py-4 text-[15px] font-light leading-relaxed backdrop-blur-xl transition-all"
                     style={{
-                      background: "var(--app-card-strong)",
+                      background: "color-mix(in srgb, var(--app-card-strong) 92%, transparent)",
                       color: "var(--app-heading)",
-                      borderColor: "var(--app-card-border)",
-                      boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
+                      borderColor: "color-mix(in srgb, var(--app-card-border) 60%, transparent)",
+                      boxShadow: "inset 0 1px 0 0 color-mix(in srgb, white 8%, transparent), 0 8px 24px rgba(0,0,0,0.06)",
                     }}
                   >
                     {message.content}
@@ -503,16 +509,16 @@ export default function Chat() {
       </div>
 
       <div
-        className="pointer-events-none absolute bottom-0 left-0 right-0 z-40 px-6 pb-0 pt-6 transition-colors duration-300"
+        className="pointer-events-none absolute bottom-0 left-0 right-0 z-40 px-6 pb-0 pt-2 transition-colors duration-300"
         style={{ background: "linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--bg-base) 82%, transparent) 36%, var(--bg-base) 100%)" }}
       >
         <div className="max-w-xl mx-auto w-full relative pointer-events-auto">
           <div
-            className="flex w-full items-end gap-2 rounded-pill border p-1.5 pl-4 backdrop-blur-2xl transition-all"
+            className="flex w-full items-end gap-2 rounded-pill border p-1.5 pl-4 backdrop-blur-3xl transition-all duration-300 focus-within:ring-2 focus-within:ring-[color:color-mix(in_srgb,var(--app-accent)_20%,transparent)] focus-within:border-[color:color-mix(in_srgb,var(--app-accent)_40%,transparent)]"
             style={{
-              background: "var(--app-nav-bg)",
-              borderColor: "var(--app-card-border)",
-              boxShadow: "0 10px 34px rgba(0,0,0,0.14)",
+              background: "color-mix(in srgb, var(--app-nav-bg) 85%, transparent)",
+              borderColor: "color-mix(in srgb, var(--app-card-border) 80%, transparent)",
+              boxShadow: "0 12px 36px rgba(0,0,0,0.12)",
             }}
           >
             <textarea
@@ -538,15 +544,15 @@ export default function Chat() {
                 <button
                   onClick={() => handleSend(input)}
                   disabled={isTyping || chatUnavailable}
-                  className={cn("app-primary-button flex h-[36px] w-[36px] items-center justify-center rounded-full text-white transition-all active:scale-95", isTyping && "cursor-not-allowed opacity-50 grayscale")}
+                  className={cn("app-primary-button flex h-[38px] w-[38px] items-center justify-center rounded-full text-white transition-all hover:scale-105 active:scale-95 shadow-[0_4px_12px_color-mix(in_srgb,var(--app-accent)_30%,transparent)]", isTyping && "cursor-not-allowed opacity-50 grayscale")}
                 >
-                  <Send strokeWidth={2} className="w-[16px] h-[16px] ml-0.5" />
+                  <Send strokeWidth={2.5} className="w-[18px] h-[18px] ml-0.5" />
                 </button>
               ) : (
                 <button
                   onClick={toggleRecording}
                   disabled={isTyping || chatUnavailable}
-                  className={cn("relative flex h-[36px] w-[36px] items-center justify-center rounded-full border transition-all duration-300 active:scale-95", isTyping && "cursor-not-allowed opacity-50")}
+                  className={cn("relative flex h-[38px] w-[38px] items-center justify-center rounded-full border transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] shadow-sm", isTyping && "cursor-not-allowed opacity-50")}
                   style={
                     isRecording
                       ? {
