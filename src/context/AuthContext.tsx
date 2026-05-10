@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
+import { apiFetch } from "../lib/apiClient";
+import { syncPurchasesUser } from "../lib/native/purchases";
 
 type AuthContextType = {
   user: User | null;
@@ -91,6 +93,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
+
+  useEffect(() => {
+    void syncPurchasesUser(user?.id).catch(() => undefined);
+  }, [user?.id]);
 
   useEffect(() => {
     const storedGuest = localStorage.getItem("is_guest") === "true";
@@ -198,7 +204,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error("Missing active session. Please sign in again before deleting the account.");
       }
 
-      const response = await fetch("/api/account", {
+      const response = await apiFetch("/api/account", {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${accessToken}`,

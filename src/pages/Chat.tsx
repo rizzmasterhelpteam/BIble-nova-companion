@@ -5,6 +5,7 @@ import { ChristianCross } from "../components/ChristianCross";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../context/AuthContext";
+import { apiFetch } from "../lib/apiClient";
 
 type Message = {
   id: string;
@@ -101,7 +102,7 @@ export default function Chat() {
   useEffect(() => {
     let isMounted = true;
 
-    fetch("/api/status")
+    apiFetch("/api/status")
       .then((response) => response.json())
       .then((data: ApiStatus) => {
         if (isMounted) {
@@ -200,7 +201,7 @@ export default function Chat() {
     setIsRecording(false);
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -300,8 +301,9 @@ export default function Chat() {
 
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto px-6 pt-[104px] pb-[188px] space-y-6 scroll-smooth scrollbar-hide z-10"
+        className="flex flex-1 flex-col overflow-y-auto px-6 pt-[104px] pb-[72px] scroll-smooth scrollbar-hide z-10"
       >
+        <div className="mt-auto flex flex-col gap-6">
         {showQuickPrompts && (
           <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -497,10 +499,11 @@ export default function Chat() {
             </div>
           </motion.div>
         )}
+        </div>
       </div>
 
       <div
-        className="pointer-events-none absolute bottom-0 left-0 right-0 z-40 px-6 pb-0 pt-10 transition-colors duration-300"
+        className="pointer-events-none absolute bottom-0 left-0 right-0 z-40 px-6 pb-0 pt-6 transition-colors duration-300"
         style={{ background: "linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--bg-base) 82%, transparent) 36%, var(--bg-base) 100%)" }}
       >
         <div className="max-w-xl mx-auto w-full relative pointer-events-auto">

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
@@ -21,11 +21,25 @@ import {
   ChevronRight,
   Vibrate,
   VibrateOff,
+  BellRing,
+  BellOff,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { useHaptics } from "../context/HapticsContext";
+import { isNativePlatform } from "../lib/native/platform";
+import { nativeStorage } from "../lib/native/storage";
+import {
+  cancelDailyReflectionReminder,
+  registerForPushNotifications,
+  scheduleDailyReflectionReminder,
+  unregisterFromPushNotifications,
+} from "../lib/native/notifications";
+
+const DAILY_REMINDER_STORAGE_KEY = "bible-nova-companion-daily-reminders";
+const PUSH_STORAGE_KEY = "bible-nova-companion-push-enabled";
+const PUSH_TOKEN_STORAGE_KEY = "bible-nova-companion-push-token";
 
 const makeAvatarDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -93,10 +107,69 @@ export default function Layout() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [dailyRemindersEnabled, setDailyRemindersEnabled] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
   const prefersReducedMotion = useReducedMotion();
   const displayName = profileName || (isGuest ? "Guest" : user?.email?.split("@")[0] ?? "Unknown");
   const accountInitial = displayName.trim().charAt(0).toUpperCase() || "?";
   const isAccountBusy = isDeletingAccount || isSavingProfile || isProcessingAvatar;
+  const nativeControlsAvailable = isNativePlatform();
+
+  useEffect(() => {
+    if (!nativeControlsAvailable) return;
+
+    void nativeStorage
+      .get(DAILY_REMINDER_STORAGE_KEY)
+      .then((value) => setDailyRemindersEnabled(value === "true"))
+      .catch(() => undefined);
+
+    void nativeStorage
+      .get(PUSH_STORAGE_KEY)
+      .then((value) => setPushEnabled(value === "true"))
+      .catch(() => undefined);
+  }, [nativeControlsAvailable]);
+
+  const handleDailyReminderToggle = async () => {
+    setNotificationError(null);
+    const next = !dailyRemindersEnabled;
+
+    try {
+      if (next) {
+        const scheduled = await scheduleDailyReflectionReminder(8, 0);
+        if (!scheduled) throw new Error("Notification permission was not granted.");
+      } else {
+        await cancelDailyReflectionReminder();
+      }
+
+      setDailyRemindersEnabled(next);
+      await nativeStorage.set(DAILY_REMINDER_STORAGE_KEY, String(next));
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : "Could not update reminders.");
+    }
+  };
+
+  const handlePushToggle = async () => {
+    setNotificationError(null);
+    const next = !pushEnabled;
+
+    try {
+      if (next) {
+        const registered = await registerForPushNotifications((token) => {
+          void nativeStorage.set(PUSH_TOKEN_STORAGE_KEY, token);
+        });
+        if (!registered) throw new Error("Push notification permission was not granted.");
+      } else {
+        await unregisterFromPushNotifications();
+        await nativeStorage.remove(PUSH_TOKEN_STORAGE_KEY);
+      }
+
+      setPushEnabled(next);
+      await nativeStorage.set(PUSH_STORAGE_KEY, String(next));
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : "Could not update push notifications.");
+    }
+  };
 
   const handleSignOut = async () => {
     setSettingsOpen(false);
@@ -350,6 +423,78 @@ export default function Layout() {
                         />
                       </span>
                     </button>
+
+                    {nativeControlsAvailable && (
+                      <div className="mt-3 space-y-3">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={dailyRemindersEnabled}
+                          onClick={handleDailyReminderToggle}
+                          className="flex w-full items-center justify-between rounded-[1.4rem] border px-4 py-3.5 text-left transition-colors hover:bg-[color:var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+                          style={{
+                            background: "var(--app-card-soft)",
+                            borderColor: "var(--app-card-border)",
+                          }}
+                        >
+                          <span className="flex items-center gap-3">
+                            <span className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)", color: "var(--app-accent)" }}>
+                              {dailyRemindersEnabled ? <BellRing className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+                            </span>
+                            <span>
+                              <span className="app-heading block text-[14px] font-medium">Daily reminder</span>
+                              <span className="app-muted block text-[11px]">A quiet reflection prompt at 8:00 AM.</span>
+                            </span>
+                          </span>
+                          <span
+                            className="relative h-6 w-11 rounded-full border transition-colors"
+                            style={{
+                              background: dailyRemindersEnabled ? "var(--app-accent)" : "var(--app-secondary-bg)",
+                              borderColor: dailyRemindersEnabled ? "var(--app-accent)" : "var(--app-secondary-border)",
+                            }}
+                          >
+                            <span className="absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white transition-transform" style={{ left: dailyRemindersEnabled ? "1.45rem" : "0.2rem" }} />
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={pushEnabled}
+                          onClick={handlePushToggle}
+                          className="flex w-full items-center justify-between rounded-[1.4rem] border px-4 py-3.5 text-left transition-colors hover:bg-[color:var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+                          style={{
+                            background: "var(--app-card-soft)",
+                            borderColor: "var(--app-card-border)",
+                          }}
+                        >
+                          <span className="flex items-center gap-3">
+                            <span className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)", color: "var(--app-accent)" }}>
+                              {pushEnabled ? <BellRing className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+                            </span>
+                            <span>
+                              <span className="app-heading block text-[14px] font-medium">Push notifications</span>
+                              <span className="app-muted block text-[11px]">Registers this device for server-sent updates.</span>
+                            </span>
+                          </span>
+                          <span
+                            className="relative h-6 w-11 rounded-full border transition-colors"
+                            style={{
+                              background: pushEnabled ? "var(--app-accent)" : "var(--app-secondary-bg)",
+                              borderColor: pushEnabled ? "var(--app-accent)" : "var(--app-secondary-border)",
+                            }}
+                          >
+                            <span className="absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white transition-transform" style={{ left: pushEnabled ? "1.45rem" : "0.2rem" }} />
+                          </span>
+                        </button>
+
+                        {notificationError && (
+                          <p role="alert" className="rounded-xl px-3 py-2 text-[12px] leading-relaxed text-[color:var(--app-danger)]" style={{ background: "var(--app-danger-soft)" }}>
+                            {notificationError}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </section>
 
                   <section>

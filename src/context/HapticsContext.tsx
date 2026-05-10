@@ -1,4 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { Haptics, ImpactStyle } from "@capacitor/haptics";
+import { isNativePlatform } from "../lib/native/platform";
+import { nativeStorage } from "../lib/native/storage";
 
 type HapticsContextType = {
   hapticsEnabled: boolean;
@@ -31,8 +34,14 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
   const [hapticsEnabled, setHapticsEnabledState] = useState(getStoredHapticsPreference);
 
   const triggerHaptic = (pattern: number | number[] = 10) => {
-    if (!hapticsEnabled || !canVibrate()) return;
-    navigator.vibrate(pattern);
+    if (!hapticsEnabled) return;
+
+    if (isNativePlatform()) {
+      void Haptics.impact({ style: ImpactStyle.Light }).catch(() => undefined);
+      return;
+    }
+
+    if (canVibrate()) navigator.vibrate(pattern);
   };
 
   const setHapticsEnabled = (enabled: boolean) => {
@@ -42,11 +51,27 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
       // Keep the in-memory setting even if storage is unavailable.
     }
 
+    void nativeStorage.set(STORAGE_KEY, String(enabled)).catch(() => undefined);
     setHapticsEnabledState(enabled);
-    if (enabled && canVibrate()) {
-      navigator.vibrate(12);
+    if (enabled) {
+      if (isNativePlatform()) {
+        void Haptics.impact({ style: ImpactStyle.Light }).catch(() => undefined);
+      } else if (canVibrate()) {
+        navigator.vibrate(12);
+      }
     }
   };
+
+  useEffect(() => {
+    nativeStorage
+      .get(STORAGE_KEY)
+      .then((stored) => {
+        if (stored !== null) {
+          setHapticsEnabledState(stored === "true");
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {

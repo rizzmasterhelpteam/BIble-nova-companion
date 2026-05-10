@@ -6,6 +6,12 @@ type ChatMessage = {
 const DEFAULT_GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const API_BUILD_ID = "2026-05-10-no-relative-imports";
 
+const setCorsHeaders = (res: any) => {
+  res.setHeader?.("Access-Control-Allow-Origin", "*");
+  res.setHeader?.("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization");
+};
+
 const getBody = (req: any) => {
   if (typeof req.body === "string") {
     return req.body ? JSON.parse(req.body) : {};
@@ -127,7 +133,13 @@ If the user mentions self-harm, suicide, abuse, immediate danger, or being unabl
 }
 
 export default async function handler(req: any, res: any) {
+  setCorsHeaders(res);
   res.setHeader?.("X-Bible-Nova-Api-Build", API_BUILD_ID);
+
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
 
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed." });

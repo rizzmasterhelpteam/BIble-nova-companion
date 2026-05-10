@@ -1,10 +1,17 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Check, Star, AlertCircle, ShieldCheck } from "lucide-react";
 import { ChristianCross } from "../components/ChristianCross";
 import { motion } from "motion/react";
 import { useDocumentTitle } from "../lib/utils";
+import { isNativePlatform } from "../lib/native/platform";
+import {
+  getCurrentOffering,
+  purchasePackage as purchaseRevenueCatPackage,
+  restorePurchases,
+} from "../lib/native/purchases";
+import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
 
 type Plan = "monthly" | "yearly";
 
@@ -13,6 +20,8 @@ export default function Paywall() {
   const [selectedPlan, setSelectedPlan] = useState<Plan>("yearly");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [iapPackages, setIapPackages] = useState<Partial<Record<Plan, PurchasesPackage>>>({});
+  const [iapReady, setIapReady] = useState(false);
   const { subscribe } = useAuth();
   const navigate = useNavigate();
   const subscribeTimeoutRef = useRef<number | null>(null);
@@ -31,10 +40,60 @@ export default function Paywall() {
     return () => clearTimers();
   }, []);
 
-  const handleSubscribe = () => {
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+
+    getCurrentOffering()
+      .then((offering) => {
+        if (!offering) return;
+        setIapPackages({
+          monthly: offering.monthly || undefined,
+          yearly: offering.annual || undefined,
+        });
+        setIapReady(Boolean(offering.monthly || offering.annual));
+      })
+      .catch((err) => {
+        console.warn("Could not load native offerings:", err);
+      });
+  }, []);
+
+  const selectedNativePackage = iapPackages[selectedPlan];
+
+  const monthlyPrice = useMemo(
+    () => iapPackages.monthly?.product.priceString || "$9.99",
+    [iapPackages.monthly],
+  );
+
+  const yearlyPrice = useMemo(
+    () => iapPackages.yearly?.product.priceString || "$89.99",
+    [iapPackages.yearly],
+  );
+
+  const handleSubscribe = async () => {
     clearTimers();
     setError(null);
     setIsLoading(true);
+
+    if (isNativePlatform()) {
+      try {
+        if (!selectedNativePackage) {
+          throw new Error(
+            iapReady
+              ? "This plan is not available in the native store yet."
+              : "In-app purchases are not configured yet. Add RevenueCat keys and store products.",
+          );
+        }
+
+        await purchaseRevenueCatPackage(selectedNativePackage);
+        subscribe();
+        navigate("/");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Purchase could not be completed.");
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
 
     subscribeTimeoutRef.current = window.setTimeout(() => {
       clearTimers();
@@ -47,6 +106,20 @@ export default function Paywall() {
       setError("Something held this up. Please try again.");
       setIsLoading(false);
     }, 6000);
+  };
+
+  const handleRestorePurchases = async () => {
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      await restorePurchases();
+      subscribe();
+      navigate("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not restore purchases.");
+      setIsLoading(false);
+    }
   };
 
   const handlePlanKey = (event: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -147,7 +220,7 @@ export default function Paywall() {
               <div className="app-muted mb-2 text-xs font-medium uppercase tracking-wider">
                 Monthly
               </div>
-              <div className="app-heading text-2xl font-serif">$9.99</div>
+              <div className="app-heading text-2xl font-serif">{monthlyPrice}</div>
               <div className="app-muted mt-1 text-center text-[10px]">
                 /month
                 <br />
@@ -179,7 +252,7 @@ export default function Paywall() {
               <div className="app-accent mb-2 text-xs font-medium uppercase tracking-wider">
                 Yearly
               </div>
-              <div className="app-heading text-2xl font-serif">$89.99</div>
+              <div className="app-heading text-2xl font-serif">{yearlyPrice}</div>
               <div className="app-muted mt-1 text-xs">/year ($7.50/mo)</div>
             </button>
           </div>
@@ -213,6 +286,16 @@ export default function Paywall() {
               `Continue with ${selectedPlan === "yearly" ? "Yearly" : "Monthly"}`
             )}
           </button>
+
+          {isNativePlatform() && (
+            <button
+              onClick={handleRestorePurchases}
+              disabled={isLoading}
+              className="app-ghost-button mb-4 w-full rounded-pill py-3 text-sm font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            >
+              Restore purchases
+            </button>
+          )}
 
           <p className="app-muted px-4 text-center text-[11px] leading-relaxed">
             By subscribing, you agree to the Terms of Service and Privacy Policy. Subscriptions automatically renew unless canceled.

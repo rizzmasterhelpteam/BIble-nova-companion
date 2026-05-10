@@ -29,5 +29,17 @@ Set these in Vercel for the environments you deploy to:
 - `GROQ_MODEL` optional, defaults to `meta-llama/llama-4-scout-17b-16e-instruct`
 - `SUPABASE_SERVICE_ROLE_KEY` only needed for signed-in account deletion
 - `GEMINI_API_KEY` only needed for `/api/generate`
+- `VITE_API_BASE_URL` required in native mobile builds, set to your Vercel site URL
+- `VITE_REVENUECAT_IOS_API_KEY` and `VITE_REVENUECAT_ANDROID_API_KEY` required for native IAP
 
 `VITE_` variables are embedded into the browser bundle. Keep `GROQ_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `GEMINI_API_KEY` server-only.
+
+## Mobile Builds
+
+This app is configured with Capacitor for Android and iOS.
+
+- Sync native projects: `npm run cap:sync`
+- Open Android Studio: `npm run android:open`
+- Open Xcode: `npm run ios:open` (requires macOS)
+
+For mobile builds, set `VITE_API_BASE_URL` to the deployed Vercel URL so native requests call `/api/*` on Vercel instead of the local WebView origin.

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Bible Nova Companion</string>
+    <string name="title_activity_main">Bible Nova Companion</string>
+    <string name="package_name">com.biblenova.companion</string>
+    <string name="custom_url_scheme">com.biblenova.companion</string>
+</resources>
