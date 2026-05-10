@@ -8,7 +8,7 @@ import {
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
-} from "./api";
+} from "./server-api";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();

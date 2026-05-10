@@ -9,7 +9,7 @@ import {
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
-} from './api';
+} from './server-api';
 
 const applyLocalEnv = (env: Record<string, string>) => {
   for (const [key, value] of Object.entries(env)) {
