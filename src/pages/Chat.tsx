@@ -300,7 +300,8 @@ export default function Chat() {
 
       <div
         ref={scrollContainerRef}
-        className="flex flex-1 flex-col overflow-y-auto px-6 pt-[104px] pb-[50px] scroll-smooth scrollbar-hide z-10"
+        className="flex flex-1 flex-col overflow-y-auto px-6 pt-[104px] scroll-smooth scrollbar-hide z-10"
+        style={{ paddingBottom: "calc(7.5rem + env(safe-area-inset-bottom, 0px))" }}
       >
         <div className="mt-auto flex flex-col gap-6">
         {showQuickPrompts && (
