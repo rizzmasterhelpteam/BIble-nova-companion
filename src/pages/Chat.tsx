@@ -218,7 +218,16 @@ export default function Chat() {
       try {
         data = JSON.parse(responseText);
       } catch {
-        throw new Error(`Server returned an unreadable response (${response.status}).`);
+        const preview = responseText
+          .replace(/<[^>]*>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 160);
+        throw new Error(
+          preview
+            ? `Server returned an unreadable response (${response.status}): ${preview}`
+            : `Server returned an unreadable response (${response.status}).`,
+        );
       }
 
       if (!response.ok) {

@@ -1,12 +1,25 @@
 import { generatePrayer, getClientErrorMessage } from "../server-api";
 
-export async function POST(request: Request) {
+const getBody = (req: any) => {
+  if (typeof req.body === "string") {
+    return req.body ? JSON.parse(req.body) : {};
+  }
+
+  return req.body || {};
+};
+
+export default async function handler(req: any, res: any) {
+  if (req.method !== "POST") {
+    res.status(405).json({ error: "Method not allowed." });
+    return;
+  }
+
   try {
-    const { prompt } = await request.json();
+    const { prompt } = getBody(req);
     const text = await generatePrayer(prompt);
-    return Response.json({ text });
+    res.status(200).json({ text });
   } catch (error) {
     console.error("Vercel API generation error:", error);
-    return Response.json({ error: getClientErrorMessage(error) }, { status: 500 });
+    res.status(500).json({ error: getClientErrorMessage(error) });
   }
 }

@@ -1,16 +1,22 @@
-export async function GET() {
+export default async function handler(req: any, res: any) {
+  if (req.method !== "GET") {
+    res.status(405).json({ error: "Method not allowed." });
+    return;
+  }
+
   try {
     const apiKey = process.env.GROK_API_KEY;
     if (!apiKey?.trim()) {
-      return Response.json({ error: "GROK_API_KEY is missing." }, { status: 500 });
+      res.status(500).json({ error: "GROK_API_KEY is missing." });
+      return;
     }
 
     const response = await fetch("https://api.x.ai/v1/models", {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
     const data = await response.json();
-    return Response.json(data, { status: response.status });
+    res.status(response.status).json(data);
   } catch (error) {
-    return Response.json({ error: String(error) }, { status: 500 });
+    res.status(500).json({ error: String(error) });
   }
 }
