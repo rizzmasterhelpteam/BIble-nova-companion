@@ -16,6 +16,7 @@
     "ios:open": "npm run cap:sync && cap open ios"
   },
   "dependencies": {
+    "@capacitor-community/speech-recognition": "^7.0.1",
     "@capacitor/android": "^8.3.3",
     "@capacitor/app": "^8.1.0",
     "@capacitor/cli": "^8.3.3",

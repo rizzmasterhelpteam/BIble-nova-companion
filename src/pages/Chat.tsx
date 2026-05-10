@@ -6,6 +6,10 @@ import { cn, useDocumentTitle } from "../lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { apiFetch } from "../lib/apiClient";
+import {
+  createSpeechRecognitionSession,
+  type SpeechRecognitionSession,
+} from "../lib/speechRecognition";
 
 type Message = {
   id: string;
@@ -52,6 +56,7 @@ export default function Chat() {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
   const [hasLoadedMessages, setHasLoadedMessages] = useState(false);
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -59,6 +64,38 @@ export default function Chat() {
   const initialized = useRef(false);
   const messagesRef = useRef(messages);
   const requestControllerRef = useRef<AbortController | null>(null);
+  const speechSessionRef = useRef<SpeechRecognitionSession | null>(null);
+
+  const resizeTextarea = () => {
+    if (!textareaRef.current) return;
+    textareaRef.current.style.height = "auto";
+    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
+  };
+
+  const updateInputValue = (value: string) => {
+    setInput(value);
+    window.requestAnimationFrame(() => {
+      resizeTextarea();
+    });
+  };
+
+  if (!speechSessionRef.current) {
+    speechSessionRef.current = createSpeechRecognitionSession({
+      onTranscript: (text) => {
+        updateInputValue(text);
+      },
+      onListeningChange: (listening) => {
+        setIsRecording(listening);
+        if (!listening) {
+          textareaRef.current?.focus();
+        }
+      },
+      onError: (message) => {
+        setSpeechError(message);
+        setIsRecording(false);
+      },
+    });
+  }
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -96,6 +133,7 @@ export default function Chat() {
   useEffect(() => {
     return () => {
       requestControllerRef.current?.abort();
+      void speechSessionRef.current?.destroy();
     };
   }, []);
 
@@ -129,7 +167,14 @@ export default function Chat() {
       navigate(location.pathname, { replace: true, state: {} });
     } else if (location.state?.startVoice) {
       initialized.current = true;
-      setIsRecording(true);
+      setSpeechError(null);
+      void speechSessionRef.current
+        ?.start(input)
+        .catch((error) => {
+          setSpeechError(
+            error instanceof Error ? error.message : "Speech recognition could not start.",
+          );
+        });
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.pathname, location.state, navigate]);
@@ -149,15 +194,37 @@ export default function Chat() {
     textareaRef.current?.focus();
   }, []);
 
-  const resizeTextarea = () => {
-    if (!textareaRef.current) return;
-    textareaRef.current.style.height = "auto";
-    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
-  };
-
   const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setSpeechError(null);
     setInput(event.target.value);
     resizeTextarea();
+  };
+
+  const startSpeechRecognition = async () => {
+    if (isTyping || chatUnavailable) return;
+
+    setSpeechError(null);
+
+    try {
+      await speechSessionRef.current?.start(input);
+    } catch (error) {
+      setSpeechError(
+        error instanceof Error ? error.message : "Speech recognition could not start.",
+      );
+      setIsRecording(false);
+    }
+  };
+
+  const stopSpeechRecognition = async () => {
+    setSpeechError(null);
+
+    try {
+      await speechSessionRef.current?.stop();
+    } catch (error) {
+      setSpeechError(
+        error instanceof Error ? error.message : "Speech recognition could not stop cleanly.",
+      );
+    }
   };
 
   const appendAiMessage = (content: string, tone: "default" | "error" = "default") => {
@@ -178,6 +245,12 @@ export default function Chat() {
 
     const trimmedText = text.trim();
     if (!trimmedText) return;
+
+    setSpeechError(null);
+
+    if (isRecording) {
+      await speechSessionRef.current?.stop();
+    }
 
     requestControllerRef.current?.abort();
     const controller = new AbortController();
@@ -254,16 +327,13 @@ export default function Chat() {
     }
   };
 
-  const toggleRecording = () => {
+  const toggleRecording = async () => {
     if (isRecording) {
-      setIsRecording(false);
-      window.setTimeout(() => {
-        handleSend("I would appreciate some spoken guidance right now.");
-      }, 300);
+      await stopSpeechRecognition();
       return;
     }
 
-    setIsRecording(true);
+    await startSpeechRecognition();
   };
 
   const showQuickPrompts = messages.length === 1 && !isTyping;
@@ -541,7 +611,22 @@ export default function Chat() {
             />
 
             <div className="flex-shrink-0 flex items-center justify-center h-[44px] pr-1">
-              {input.trim() ? (
+              {isRecording ? (
+                <button
+                  onClick={() => {
+                    void toggleRecording();
+                  }}
+                  disabled={isTyping || chatUnavailable}
+                  className={cn("relative flex h-[38px] w-[38px] items-center justify-center rounded-full border transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] shadow-sm", isTyping && "cursor-not-allowed opacity-50")}
+                  style={{
+                    background: "var(--app-danger-soft)",
+                    color: "var(--app-danger)",
+                    borderColor: "color-mix(in srgb, var(--app-danger) 40%, transparent)",
+                  }}
+                >
+                  <StopCircle className="w-4 h-4" />
+                </button>
+              ) : input.trim() ? (
                 <button
                   onClick={() => handleSend(input)}
                   disabled={isTyping || chatUnavailable}
@@ -551,38 +636,34 @@ export default function Chat() {
                 </button>
               ) : (
                 <button
-                  onClick={toggleRecording}
+                  onClick={() => {
+                    void toggleRecording();
+                  }}
                   disabled={isTyping || chatUnavailable}
                   className={cn("relative flex h-[38px] w-[38px] items-center justify-center rounded-full border transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] shadow-sm", isTyping && "cursor-not-allowed opacity-50")}
                   style={
-                    isRecording
-                      ? {
-                          background: "var(--app-danger-soft)",
-                          color: "var(--app-danger)",
-                          borderColor: "color-mix(in srgb, var(--app-danger) 40%, transparent)",
-                        }
-                      : {
-                          background: "var(--app-secondary-bg)",
-                          color: "var(--app-text-muted)",
-                          borderColor: "var(--app-secondary-border)",
-                        }
+                    {
+                      background: "var(--app-secondary-bg)",
+                      color: "var(--app-text-muted)",
+                      borderColor: "var(--app-secondary-border)",
+                    }
                   }
                 >
-                  {isRecording ? (
-                    <StopCircle className="w-4 h-4" />
-                  ) : (
-                    <Mic strokeWidth={2} className="w-4 h-4" />
-                  )}
+                  <Mic strokeWidth={2} className="w-4 h-4" />
                 </button>
               )}
             </div>
           </div>
 
-          {(isRecording || chatUnavailable) && (
+          {(isRecording || chatUnavailable || speechError) && (
             <p className="app-muted mt-3 pb-safe text-center text-[11px]">
-              {isRecording
-                ? "Tap again and I will turn that into a spoken-guidance request."
-                : "Chat will unlock after the required API key is configured."}
+              {speechError
+                ? speechError
+                : isRecording
+                ? "Listening. Tap stop when you're done."
+                : chatUnavailable
+                ? "Chat will unlock after the required API key is configured."
+                : ""}
             </p>
           )}
         </div>
