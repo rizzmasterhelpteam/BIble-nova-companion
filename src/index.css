@@ -1,0 +1,637 @@
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;700&family=Syne:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Cormorant Garamond", ui-serif, Georgia, serif;
+
+  --radius-card: 1.6rem;
+  --radius-pill: 999px;
+  --radius-shell: 2.35rem;
+}
+
+@layer base {
+  :root {
+    --bg-base: #f6efe3;
+    --text-base: #251c14;
+
+    --app-page-bg:
+      radial-gradient(circle at 0% 0%, rgba(215, 173, 96, 0.25), transparent 32%),
+      radial-gradient(circle at 100% 100%, rgba(50, 103, 85, 0.12), transparent 35%),
+      linear-gradient(180deg, #f7f0e5 0%, #ecdfcc 100%);
+    --app-shell-bg: linear-gradient(180deg, rgba(255, 252, 247, 0.9) 0%, rgba(246, 237, 222, 0.84) 100%);
+    --app-shell-border: rgba(121, 92, 49, 0.14);
+    --app-shell-ring: rgba(255, 255, 255, 0.5);
+    --app-shell-shadow: 0 28px 80px rgba(92, 63, 20, 0.18);
+    --app-shell-highlight: linear-gradient(135deg, rgba(255, 255, 255, 0.45), transparent 60%);
+
+    --app-card-bg: rgba(255, 250, 242, 0.72);
+    --app-card-strong: rgba(255, 253, 248, 0.92);
+    --app-card-soft: rgba(112, 83, 43, 0.05);
+    --app-card-border: rgba(121, 92, 49, 0.12);
+    --app-card-hover: rgba(255, 255, 255, 0.92);
+
+    --app-text: #3b2e21;
+    --app-heading: #1f160d;
+    --app-text-muted: #78634d;
+    --app-text-soft: #ad9477;
+
+    --app-accent: #b88732;
+    --app-accent-strong: #8e631c;
+    --app-accent-soft: rgba(184, 135, 50, 0.18);
+    --app-accent-contrast: #fffaf1;
+    --app-accent-gradient: linear-gradient(135deg, #d6a85a 0%, #8e631c 100%);
+    --app-accent-shadow: 0 18px 44px rgba(184, 135, 50, 0.28);
+
+    --app-secondary-bg: rgba(255, 252, 246, 0.62);
+    --app-secondary-hover: rgba(255, 255, 255, 0.94);
+    --app-secondary-border: rgba(121, 92, 49, 0.12);
+
+    --app-input-bg: rgba(255, 252, 247, 0.72);
+    --app-input-border: rgba(121, 92, 49, 0.16);
+    --app-input-focus: rgba(184, 135, 50, 0.28);
+
+    --app-nav-bg: rgba(255, 250, 242, 0.8);
+    --app-nav-active: rgba(184, 135, 50, 0.15);
+
+    --app-overlay: rgba(26, 18, 11, 0.24);
+    --app-divider: rgba(121, 92, 49, 0.12);
+
+    --app-success: #2f7a61;
+    --app-success-soft: rgba(47, 122, 97, 0.12);
+    --app-danger: #ba5863;
+    --app-danger-soft: rgba(186, 88, 99, 0.12);
+
+    --app-orb-a: radial-gradient(circle, rgba(214, 168, 90, 0.42) 0%, rgba(214, 168, 90, 0) 68%);
+    --app-orb-b: radial-gradient(circle, rgba(62, 105, 94, 0.26) 0%, rgba(62, 105, 94, 0) 72%);
+    --app-grid:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.16) 0, rgba(255, 255, 255, 0.16) 1px, transparent 1px, transparent 100%),
+      linear-gradient(rgba(121, 92, 49, 0.05) 0, rgba(121, 92, 49, 0.05) 1px, transparent 1px, transparent 100%);
+  }
+
+  :root[data-design="cathedral"] {
+    --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+    --font-serif: "Cormorant Garamond", ui-serif, Georgia, serif;
+    --radius-card: 1.6rem;
+    --radius-pill: 999px;
+    --radius-shell: 2.35rem;
+  }
+
+  :root.light[data-design="cathedral"] {
+    --bg-base: #f6efe3;
+    --text-base: #251c14;
+  }
+
+  :root.dark[data-design="cathedral"] {
+    --bg-base: #120e0a;
+    --text-base: #f7f0e5;
+    --app-page-bg:
+      radial-gradient(circle at 0% 0%, rgba(196, 147, 61, 0.18), transparent 34%),
+      radial-gradient(circle at 100% 100%, rgba(47, 104, 88, 0.14), transparent 36%),
+      linear-gradient(180deg, #100d09 0%, #1a140f 100%);
+    --app-shell-bg: linear-gradient(180deg, rgba(24, 18, 13, 0.94) 0%, rgba(18, 14, 10, 0.88) 100%);
+    --app-shell-border: rgba(207, 170, 109, 0.16);
+    --app-shell-ring: rgba(255, 245, 230, 0.08);
+    --app-shell-shadow: 0 30px 80px rgba(0, 0, 0, 0.42);
+    --app-shell-highlight: linear-gradient(135deg, rgba(255, 228, 184, 0.08), transparent 62%);
+    --app-card-bg: rgba(255, 245, 230, 0.05);
+    --app-card-strong: rgba(255, 245, 230, 0.08);
+    --app-card-soft: rgba(255, 245, 230, 0.03);
+    --app-card-border: rgba(207, 170, 109, 0.12);
+    --app-card-hover: rgba(255, 245, 230, 0.12);
+    --app-text: #efe3d1;
+    --app-heading: #fff8ee;
+    --app-text-muted: #bca992;
+    --app-text-soft: #8b7764;
+    --app-secondary-bg: rgba(255, 245, 230, 0.06);
+    --app-secondary-hover: rgba(255, 245, 230, 0.12);
+    --app-secondary-border: rgba(207, 170, 109, 0.12);
+    --app-input-bg: rgba(255, 245, 230, 0.05);
+    --app-input-border: rgba(207, 170, 109, 0.14);
+    --app-nav-bg: rgba(18, 14, 10, 0.74);
+    --app-nav-active: rgba(184, 135, 50, 0.18);
+    --app-overlay: rgba(0, 0, 0, 0.4);
+    --app-divider: rgba(255, 245, 230, 0.08);
+    --app-grid:
+      linear-gradient(90deg, rgba(255, 248, 238, 0.05) 0, rgba(255, 248, 238, 0.05) 1px, transparent 1px, transparent 100%),
+      linear-gradient(rgba(255, 248, 238, 0.03) 0, rgba(255, 248, 238, 0.03) 1px, transparent 1px, transparent 100%);
+  }
+
+  :root[data-design="nocturne"] {
+    --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-serif: "Fraunces", ui-serif, Georgia, serif;
+    --radius-card: 1.35rem;
+    --radius-pill: 1.4rem;
+    --radius-shell: 2rem;
+  }
+
+  :root.light[data-design="nocturne"] {
+    --bg-base: #edf3fb;
+    --text-base: #101827;
+    --app-page-bg:
+      radial-gradient(circle at 0% 0%, rgba(111, 214, 255, 0.22), transparent 32%),
+      radial-gradient(circle at 100% 100%, rgba(40, 76, 128, 0.12), transparent 34%),
+      linear-gradient(180deg, #edf3fb 0%, #dde7f5 100%);
+    --app-shell-bg: linear-gradient(180deg, rgba(250, 252, 255, 0.9) 0%, rgba(229, 237, 249, 0.84) 100%);
+    --app-shell-border: rgba(63, 94, 141, 0.12);
+    --app-shell-ring: rgba(255, 255, 255, 0.5);
+    --app-shell-shadow: 0 28px 90px rgba(25, 50, 88, 0.16);
+    --app-shell-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.36), transparent 62%);
+    --app-card-bg: rgba(245, 249, 255, 0.72);
+    --app-card-strong: rgba(251, 253, 255, 0.92);
+    --app-card-soft: rgba(16, 24, 39, 0.04);
+    --app-card-border: rgba(63, 94, 141, 0.11);
+    --app-card-hover: rgba(255, 255, 255, 0.95);
+    --app-text: #22324b;
+    --app-heading: #0d1829;
+    --app-text-muted: #667792;
+    --app-text-soft: #97a4b7;
+    --app-accent: #1b9ed8;
+    --app-accent-strong: #116e9c;
+    --app-accent-soft: rgba(27, 158, 216, 0.18);
+    --app-accent-contrast: #f5fbff;
+    --app-accent-gradient: linear-gradient(135deg, #6fd6ff 0%, #0c7ab0 100%);
+    --app-accent-shadow: 0 18px 44px rgba(27, 158, 216, 0.24);
+    --app-secondary-bg: rgba(245, 249, 255, 0.68);
+    --app-secondary-hover: rgba(255, 255, 255, 0.96);
+    --app-secondary-border: rgba(63, 94, 141, 0.12);
+    --app-input-bg: rgba(249, 252, 255, 0.74);
+    --app-input-border: rgba(63, 94, 141, 0.16);
+    --app-input-focus: rgba(27, 158, 216, 0.24);
+    --app-nav-bg: rgba(247, 250, 255, 0.82);
+    --app-nav-active: rgba(27, 158, 216, 0.14);
+    --app-overlay: rgba(8, 13, 23, 0.28);
+    --app-divider: rgba(63, 94, 141, 0.11);
+    --app-success: #2a9b84;
+    --app-success-soft: rgba(42, 155, 132, 0.12);
+    --app-danger: #cc5d73;
+    --app-danger-soft: rgba(204, 93, 115, 0.12);
+    --app-orb-a: radial-gradient(circle, rgba(111, 214, 255, 0.4) 0%, rgba(111, 214, 255, 0) 68%);
+    --app-orb-b: radial-gradient(circle, rgba(72, 106, 161, 0.25) 0%, rgba(72, 106, 161, 0) 72%);
+    --app-grid:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.16) 0, rgba(255, 255, 255, 0.16) 1px, transparent 1px, transparent 100%),
+      linear-gradient(rgba(12, 22, 40, 0.04) 0, rgba(12, 22, 40, 0.04) 1px, transparent 1px, transparent 100%);
+  }
+
+  :root.dark[data-design="nocturne"] {
+    --bg-base: #050b14;
+    --text-base: #ebf2ff;
+    --app-page-bg:
+      radial-gradient(circle at 0% 0%, rgba(111, 214, 255, 0.12), transparent 30%),
+      radial-gradient(circle at 100% 100%, rgba(58, 83, 124, 0.16), transparent 34%),
+      linear-gradient(180deg, #040810 0%, #09111d 100%);
+    --app-shell-bg: linear-gradient(180deg, rgba(8, 14, 24, 0.94) 0%, rgba(6, 10, 18, 0.88) 100%);
+    --app-shell-border: rgba(111, 214, 255, 0.14);
+    --app-shell-ring: rgba(233, 244, 255, 0.06);
+    --app-shell-shadow: 0 30px 90px rgba(0, 0, 0, 0.48);
+    --app-shell-highlight: linear-gradient(145deg, rgba(111, 214, 255, 0.07), transparent 66%);
+    --app-card-bg: rgba(238, 245, 255, 0.04);
+    --app-card-strong: rgba(238, 245, 255, 0.07);
+    --app-card-soft: rgba(238, 245, 255, 0.025);
+    --app-card-border: rgba(111, 214, 255, 0.1);
+    --app-card-hover: rgba(238, 245, 255, 0.1);
+    --app-text: #d7e5fb;
+    --app-heading: #f6fbff;
+    --app-text-muted: #96a7c6;
+    --app-text-soft: #667894;
+    --app-secondary-bg: rgba(238, 245, 255, 0.05);
+    --app-secondary-hover: rgba(238, 245, 255, 0.1);
+    --app-secondary-border: rgba(111, 214, 255, 0.11);
+    --app-input-bg: rgba(238, 245, 255, 0.04);
+    --app-input-border: rgba(111, 214, 255, 0.12);
+    --app-nav-bg: rgba(7, 12, 21, 0.74);
+    --app-nav-active: rgba(111, 214, 255, 0.14);
+    --app-overlay: rgba(0, 0, 0, 0.48);
+    --app-divider: rgba(238, 245, 255, 0.08);
+    --app-grid:
+      linear-gradient(90deg, rgba(235, 242, 255, 0.05) 0, rgba(235, 242, 255, 0.05) 1px, transparent 1px, transparent 100%),
+      linear-gradient(rgba(235, 242, 255, 0.03) 0, rgba(235, 242, 255, 0.03) 1px, transparent 1px, transparent 100%);
+  }
+
+  :root[data-design="atelier"] {
+    --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-serif: "Fraunces", ui-serif, Georgia, serif;
+    --radius-card: 1.8rem;
+    --radius-pill: 999px;
+    --radius-shell: 2.6rem;
+  }
+
+  :root.light[data-design="atelier"] {
+    --bg-base: #fbf1ea;
+    --text-base: #301d1d;
+    --app-page-bg:
+      radial-gradient(circle at 0% 0%, rgba(216, 166, 127, 0.25), transparent 32%),
+      radial-gradient(circle at 100% 100%, rgba(143, 59, 69, 0.12), transparent 35%),
+      linear-gradient(180deg, #fcf3ed 0%, #f5e4d8 100%);
+    --app-shell-bg: linear-gradient(180deg, rgba(255, 250, 246, 0.9) 0%, rgba(248, 234, 224, 0.84) 100%);
+    --app-shell-border: rgba(136, 76, 78, 0.12);
+    --app-shell-ring: rgba(255, 255, 255, 0.52);
+    --app-shell-shadow: 0 28px 90px rgba(103, 51, 53, 0.15);
+    --app-shell-highlight: linear-gradient(140deg, rgba(255, 255, 255, 0.4), transparent 62%);
+    --app-card-bg: rgba(255, 248, 244, 0.74);
+    --app-card-strong: rgba(255, 252, 249, 0.94);
+    --app-card-soft: rgba(143, 59, 69, 0.05);
+    --app-card-border: rgba(136, 76, 78, 0.1);
+    --app-card-hover: rgba(255, 255, 255, 0.95);
+    --app-text: #4c3032;
+    --app-heading: #261215;
+    --app-text-muted: #856568;
+    --app-text-soft: #b6938d;
+    --app-accent: #8f3b45;
+    --app-accent-strong: #6b2830;
+    --app-accent-soft: rgba(143, 59, 69, 0.18);
+    --app-accent-contrast: #fff7f4;
+    --app-accent-gradient: linear-gradient(135deg, #b96b67 0%, #7c2f39 100%);
+    --app-accent-shadow: 0 18px 44px rgba(143, 59, 69, 0.24);
+    --app-secondary-bg: rgba(255, 248, 244, 0.72);
+    --app-secondary-hover: rgba(255, 255, 255, 0.96);
+    --app-secondary-border: rgba(136, 76, 78, 0.11);
+    --app-input-bg: rgba(255, 251, 248, 0.76);
+    --app-input-border: rgba(136, 76, 78, 0.14);
+    --app-input-focus: rgba(143, 59, 69, 0.22);
+    --app-nav-bg: rgba(255, 248, 244, 0.82);
+    --app-nav-active: rgba(143, 59, 69, 0.13);
+    --app-overlay: rgba(37, 18, 20, 0.24);
+    --app-divider: rgba(136, 76, 78, 0.1);
+    --app-success: #3b8d6a;
+    --app-success-soft: rgba(59, 141, 106, 0.12);
+    --app-danger: #b84f61;
+    --app-danger-soft: rgba(184, 79, 97, 0.12);
+    --app-orb-a: radial-gradient(circle, rgba(216, 166, 127, 0.42) 0%, rgba(216, 166, 127, 0) 68%);
+    --app-orb-b: radial-gradient(circle, rgba(143, 59, 69, 0.22) 0%, rgba(143, 59, 69, 0) 72%);
+    --app-grid:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.14) 0, rgba(255, 255, 255, 0.14) 1px, transparent 1px, transparent 100%),
+      linear-gradient(rgba(124, 47, 57, 0.04) 0, rgba(124, 47, 57, 0.04) 1px, transparent 1px, transparent 100%);
+  }
+
+  :root.dark[data-design="atelier"] {
+    --bg-base: #150d0f;
+    --text-base: #faefea;
+    --app-page-bg:
+      radial-gradient(circle at 0% 0%, rgba(185, 107, 103, 0.14), transparent 30%),
+      radial-gradient(circle at 100% 100%, rgba(120, 47, 57, 0.18), transparent 36%),
+      linear-gradient(180deg, #130b0d 0%, #1c1014 100%);
+    --app-shell-bg: linear-gradient(180deg, rgba(28, 16, 20, 0.94) 0%, rgba(20, 11, 14, 0.88) 100%);
+    --app-shell-border: rgba(214, 140, 132, 0.13);
+    --app-shell-ring: rgba(255, 240, 235, 0.05);
+    --app-shell-shadow: 0 30px 90px rgba(0, 0, 0, 0.48);
+    --app-shell-highlight: linear-gradient(140deg, rgba(216, 166, 127, 0.06), transparent 66%);
+    --app-card-bg: rgba(255, 241, 236, 0.04);
+    --app-card-strong: rgba(255, 241, 236, 0.07);
+    --app-card-soft: rgba(255, 241, 236, 0.02);
+    --app-card-border: rgba(214, 140, 132, 0.1);
+    --app-card-hover: rgba(255, 241, 236, 0.09);
+    --app-text: #f0deda;
+    --app-heading: #fff7f3;
+    --app-text-muted: #b99e9b;
+    --app-text-soft: #7f6866;
+    --app-secondary-bg: rgba(255, 241, 236, 0.05);
+    --app-secondary-hover: rgba(255, 241, 236, 0.09);
+    --app-secondary-border: rgba(214, 140, 132, 0.1);
+    --app-input-bg: rgba(255, 241, 236, 0.04);
+    --app-input-border: rgba(214, 140, 132, 0.12);
+    --app-nav-bg: rgba(24, 13, 17, 0.74);
+    --app-nav-active: rgba(185, 107, 103, 0.14);
+    --app-overlay: rgba(0, 0, 0, 0.44);
+    --app-divider: rgba(255, 241, 236, 0.08);
+    --app-grid:
+      linear-gradient(90deg, rgba(250, 239, 234, 0.045) 0, rgba(250, 239, 234, 0.045) 1px, transparent 1px, transparent 100%),
+      linear-gradient(rgba(250, 239, 234, 0.025) 0, rgba(250, 239, 234, 0.025) 1px, transparent 1px, transparent 100%);
+  }
+
+  html {
+    background: var(--app-page-bg);
+  }
+
+  body {
+    min-height: 100svh;
+    background: var(--app-page-bg);
+    color: var(--app-text);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    transition:
+      background-color 300ms ease,
+      color 300ms ease;
+  }
+
+  ::selection {
+    background: var(--app-accent-soft);
+    color: var(--app-heading);
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: var(--app-card-bg);
+    backdrop-filter: blur(22px);
+    border: 1px solid var(--app-card-border);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+
+  .gold-glow,
+  .shadow-glow-amber {
+    box-shadow: var(--app-accent-shadow);
+  }
+
+  .accent-gradient {
+    background: var(--app-accent-gradient);
+  }
+
+  .bible-card {
+    background: linear-gradient(135deg, var(--app-card-strong) 0%, var(--app-card-bg) 100%);
+    border: 1px solid var(--app-card-border);
+  }
+
+  .app-screen {
+    background: var(--app-page-bg);
+    color: var(--app-text);
+  }
+
+  .app-shell {
+    background: var(--app-shell-bg);
+    border: 1px solid var(--app-shell-border);
+    box-shadow: var(--app-shell-shadow);
+    position: relative;
+    isolation: isolate;
+  }
+
+  .app-shell::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: var(--app-shell-highlight);
+    z-index: -1;
+  }
+
+  .app-atmosphere {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .app-orb {
+    position: absolute;
+    border-radius: 999px;
+    filter: blur(110px);
+  }
+
+  .app-orb-a {
+    background: var(--app-orb-a);
+  }
+
+  .app-orb-b {
+    background: var(--app-orb-b);
+  }
+
+  .app-grid {
+    position: absolute;
+    inset: 0;
+    background-image: var(--app-grid);
+    background-size: 42px 42px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.4), transparent 85%);
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  .app-panel {
+    background: var(--app-card-bg);
+    border: 1px solid var(--app-card-border);
+    box-shadow: 0 14px 34px rgba(12, 12, 18, 0.06);
+  }
+
+  .app-panel-strong {
+    background: var(--app-card-strong);
+    border: 1px solid var(--app-card-border);
+    box-shadow: 0 18px 42px rgba(12, 12, 18, 0.08);
+  }
+
+  .app-panel-soft {
+    background: var(--app-card-soft);
+    border: 1px solid var(--app-card-border);
+  }
+
+  .app-card-hover {
+    transition:
+      background-color 220ms ease,
+      border-color 220ms ease,
+      transform 220ms ease,
+      box-shadow 220ms ease;
+  }
+
+  .app-card-hover:hover {
+    background: var(--app-card-hover);
+    transform: translateY(-1px);
+  }
+
+  .app-primary-button {
+    background: var(--app-accent-gradient);
+    color: var(--app-accent-contrast);
+    box-shadow: var(--app-accent-shadow);
+  }
+
+  .app-primary-button:hover {
+    filter: brightness(1.04);
+  }
+
+  .app-secondary-button {
+    background: var(--app-secondary-bg);
+    border: 1px solid var(--app-secondary-border);
+    color: var(--app-text);
+    backdrop-filter: blur(18px);
+  }
+
+  .app-secondary-button:hover {
+    background: var(--app-secondary-hover);
+  }
+
+  .app-ghost-button {
+    color: var(--app-text-muted);
+    transition: color 180ms ease, background-color 180ms ease;
+  }
+
+  .app-ghost-button:hover {
+    color: var(--app-heading);
+    background: var(--app-secondary-bg);
+  }
+
+  .app-input {
+    background: var(--app-input-bg);
+    border: 1px solid var(--app-input-border);
+    color: var(--app-text);
+    backdrop-filter: blur(18px);
+  }
+
+  .app-input::placeholder {
+    color: var(--app-text-soft);
+  }
+
+  .app-input:focus,
+  .app-input:focus-visible {
+    outline: none;
+    border-color: var(--app-input-focus);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--app-accent-soft) 80%, transparent);
+  }
+
+  .app-kicker {
+    color: var(--app-accent);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    line-height: 1.35;
+    text-transform: uppercase;
+  }
+
+  .app-muted {
+    color: var(--app-text-muted);
+  }
+
+  .app-soft {
+    color: var(--app-text-soft);
+  }
+
+  .app-heading {
+    color: var(--app-heading);
+  }
+
+  .app-accent {
+    color: var(--app-accent);
+  }
+
+  .app-nav-shell {
+    background: var(--app-nav-bg);
+    border: 1px solid var(--app-card-border);
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.12);
+    backdrop-filter: blur(24px);
+  }
+
+  .app-divider {
+    border-color: var(--app-divider);
+  }
+
+  .app-logo-badge {
+    background: var(--app-accent-gradient);
+    box-shadow: var(--app-accent-shadow);
+    color: var(--app-accent-contrast);
+  }
+
+  .app-accent-badge {
+    background: var(--app-accent-soft);
+    color: var(--app-accent);
+    border: 1px solid color-mix(in srgb, var(--app-accent) 24%, transparent);
+  }
+
+  .app-success-panel {
+    background: var(--app-success-soft);
+    border: 1px solid color-mix(in srgb, var(--app-success) 22%, transparent);
+    color: var(--app-text);
+  }
+
+  .app-danger-panel {
+    background: var(--app-danger-soft);
+    border: 1px solid color-mix(in srgb, var(--app-danger) 22%, transparent);
+    color: var(--app-danger);
+  }
+
+  .app-overlay {
+    background: var(--app-overlay);
+  }
+
+  .design-option-card {
+    border-radius: calc(var(--radius-card) - 0.1rem);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--app-card-strong) 92%, transparent), color-mix(in srgb, var(--app-card-bg) 86%, transparent)),
+      linear-gradient(135deg, color-mix(in srgb, var(--app-accent-soft) 58%, transparent), transparent 58%);
+    border: 1px solid var(--app-card-border);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.06);
+  }
+
+  .design-option-card-active {
+    border-color: color-mix(in srgb, var(--app-accent) 35%, transparent);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--app-accent) 18%, transparent),
+      0 18px 36px rgba(0, 0, 0, 0.09);
+  }
+
+  .design-option-preview {
+    display: block;
+    height: 0.45rem;
+    width: 3.4rem;
+    border-radius: 999px;
+    background: var(--app-accent-gradient);
+    opacity: 0.9;
+  }
+
+  .design-option-preview-muted {
+    width: 2.2rem;
+    background: color-mix(in srgb, var(--app-heading) 26%, transparent);
+  }
+
+  .design-option-preview-soft {
+    width: 1.4rem;
+    background: color-mix(in srgb, var(--app-accent) 22%, transparent);
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.75rem);
+  }
+
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top, 0px), 0.5rem);
+  }
+
+  .h-safe-bottom {
+    height: env(safe-area-inset-bottom, 0px);
+  }
+
+  @keyframes ash-rise {
+    0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0; }
+    10% { opacity: 1; }
+    100% { transform: translate3d(var(--ash-x, 0px), var(--ash-y, -480px), 0) scale(0.4); opacity: 0; }
+  }
+
+  @keyframes flame-flicker {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.85; }
+    50% { transform: translate3d(var(--flame-x, 0px), var(--flame-y, -120px), 0) scale(1.15); opacity: 1; }
+  }
+
+  .ash-particle {
+    position: absolute;
+    border-radius: 9999px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--app-accent) 70%, white) 0%, rgba(115, 115, 115, 0.85) 70%, transparent 100%);
+    will-change: transform, opacity;
+    animation: ash-rise var(--ash-duration, 5s) ease-out var(--ash-delay, 0s) infinite;
+  }
+
+  .flame-particle {
+    position: absolute;
+    bottom: 0;
+    border-radius: 9999px;
+    background: radial-gradient(circle at 50% 70%, color-mix(in srgb, var(--app-accent) 55%, white) 0%, color-mix(in srgb, var(--app-accent) 75%, transparent) 42%, transparent 75%);
+    filter: blur(6px);
+    mix-blend-mode: screen;
+    will-change: transform, opacity;
+    animation: flame-flicker var(--flame-duration, 2s) ease-in-out var(--flame-delay, 0s) infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ash-particle,
+    .flame-particle {
+      animation: none;
+      opacity: 0;
+    }
+  }
+}

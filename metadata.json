@@ -1,0 +1,8 @@
+{
+  "name": "Bible Nova Companion",
+  "description": "AI-powered spiritual companion app offering guidance, comfort, and generative content.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
