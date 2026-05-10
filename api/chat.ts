@@ -4,6 +4,7 @@ type ChatMessage = {
 };
 
 const DEFAULT_GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const API_BUILD_ID = "2026-05-10-no-relative-imports";
 
 const getBody = (req: any) => {
   if (typeof req.body === "string") {
@@ -126,6 +127,8 @@ If the user mentions self-harm, suicide, abuse, immediate danger, or being unabl
 }
 
 export default async function handler(req: any, res: any) {
+  res.setHeader?.("X-Bible-Nova-Api-Build", API_BUILD_ID);
+
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed." });
     return;
