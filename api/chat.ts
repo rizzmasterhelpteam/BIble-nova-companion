@@ -1,4 +1,4 @@
-import { createChatCompletion, getClientErrorMessage } from "../server-api";
+import { createChatCompletion, getClientErrorMessage } from "../chat-api";
 
 const getBody = (req: any) => {
   if (typeof req.body === "string") {
