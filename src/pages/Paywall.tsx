@@ -4,24 +4,30 @@ import { useAuth } from "../context/AuthContext";
 import { Check, Star, AlertCircle, ShieldCheck } from "lucide-react";
 import { ChristianCross } from "../components/ChristianCross";
 import { motion } from "motion/react";
-import { useDocumentTitle } from "../lib/utils";
+import { cn, useDocumentTitle } from "../lib/utils";
 import { isNativePlatform } from "../lib/native/platform";
+import { useMobileViewport } from "../context/MobileViewportContext";
 import {
   getCurrentOffering,
-  purchasePackage as purchaseRevenueCatPackage,
+  openSubscriptionManagement,
+  purchasePackage as purchaseNativePackage,
   restorePurchases,
+  type SubscriptionPackage,
 } from "../lib/native/purchases";
-import type { PurchasesPackage } from "@revenuecat/purchases-capacitor";
 
 type Plan = "monthly" | "yearly";
 
 export default function Paywall() {
   useDocumentTitle("Subscribe | Bible Nova Companion");
+  const { isCompactPhone, isShortPhone } = useMobileViewport();
+  const nativeStoreAvailable = isNativePlatform();
   const [selectedPlan, setSelectedPlan] = useState<Plan>("yearly");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [iapPackages, setIapPackages] = useState<Partial<Record<Plan, PurchasesPackage>>>({});
+  const [iapPackages, setIapPackages] = useState<Partial<Record<Plan, SubscriptionPackage>>>({});
   const [iapReady, setIapReady] = useState(false);
+  const [isLoadingOffering, setIsLoadingOffering] = useState(nativeStoreAvailable);
+  const [iapLoadError, setIapLoadError] = useState<string | null>(null);
   const { subscribe } = useAuth();
   const navigate = useNavigate();
   const subscribeTimeoutRef = useRef<number | null>(null);
@@ -41,50 +47,115 @@ export default function Paywall() {
   }, []);
 
   useEffect(() => {
-    if (!isNativePlatform()) return;
+    if (!nativeStoreAvailable) return;
 
+    let isMounted = true;
+    setIsLoadingOffering(true);
+    setIapLoadError(null);
     getCurrentOffering()
       .then((offering) => {
-        if (!offering) return;
-        setIapPackages({
+        if (!isMounted) return;
+        if (!offering) {
+          setIapReady(false);
+          setIapPackages({});
+          setIapLoadError(
+            "Native subscription products are not configured. Set the IAP product IDs and Android base plan IDs before shipping.",
+          );
+          return;
+        }
+        const nextPackages = {
           monthly: offering.monthly || undefined,
           yearly: offering.annual || undefined,
-        });
-        setIapReady(Boolean(offering.monthly || offering.annual));
+        };
+        const hasPackages = Boolean(nextPackages.monthly || nextPackages.yearly);
+        setIapPackages(nextPackages);
+        setIapReady(hasPackages);
+        if (!hasPackages) {
+          setIapLoadError(
+            "No native subscription products were returned. Check the IAP product IDs, Android base plan IDs, and store product status.",
+          );
+        }
       })
       .catch((err) => {
         console.warn("Could not load native offerings:", err);
+        if (isMounted) {
+          setIapReady(false);
+          setIapLoadError(err instanceof Error ? err.message : "Could not load native subscription products.");
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingOffering(false);
       });
-  }, []);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [nativeStoreAvailable]);
+
+  useEffect(() => {
+    if (!nativeStoreAvailable || isLoadingOffering || iapPackages[selectedPlan]) return;
+
+    if (iapPackages.yearly) {
+      setSelectedPlan("yearly");
+    } else if (iapPackages.monthly) {
+      setSelectedPlan("monthly");
+    }
+  }, [iapPackages, isLoadingOffering, nativeStoreAvailable, selectedPlan]);
 
   const selectedNativePackage = iapPackages[selectedPlan];
 
   const monthlyPrice = useMemo(
-    () => iapPackages.monthly?.product.priceString || "$9.99",
-    [iapPackages.monthly],
+    () =>
+      nativeStoreAvailable
+        ? iapPackages.monthly?.product.priceString || (isLoadingOffering ? "Loading..." : "Unavailable")
+        : "$9.99",
+    [iapPackages.monthly, isLoadingOffering, nativeStoreAvailable],
   );
 
   const yearlyPrice = useMemo(
-    () => iapPackages.yearly?.product.priceString || "$89.99",
-    [iapPackages.yearly],
+    () =>
+      nativeStoreAvailable
+        ? iapPackages.yearly?.product.priceString || (isLoadingOffering ? "Loading..." : "Unavailable")
+        : "$89.99",
+    [iapPackages.yearly, isLoadingOffering, nativeStoreAvailable],
   );
+
+  const monthlyTitle = nativeStoreAvailable
+    ? iapPackages.monthly?.product.title || "Monthly"
+    : "Monthly";
+  const yearlyTitle = nativeStoreAvailable
+    ? iapPackages.yearly?.product.title || "Yearly"
+    : "Yearly";
+  const nativeSelectedPlanUnavailable =
+    nativeStoreAvailable && !isLoadingOffering && !selectedNativePackage;
+  const canSubscribe =
+    !isLoading &&
+    !isLoadingOffering &&
+    (!nativeStoreAvailable || Boolean(selectedNativePackage));
+  const selectedPlanLabel =
+    nativeStoreAvailable && selectedNativePackage
+      ? selectedNativePackage.product.title
+      : selectedPlan === "yearly"
+      ? "Yearly"
+      : "Monthly";
 
   const handleSubscribe = async () => {
     clearTimers();
     setError(null);
+    if (!canSubscribe) return;
     setIsLoading(true);
 
-    if (isNativePlatform()) {
+    if (nativeStoreAvailable) {
       try {
         if (!selectedNativePackage) {
           throw new Error(
             iapReady
               ? "This plan is not available in the native store yet."
-              : "In-app purchases are not configured yet. Add RevenueCat keys and store products.",
+              : "In-app purchases are not configured yet. Add IAP product IDs/base plans and store products.",
           );
         }
 
-        await purchaseRevenueCatPackage(selectedNativePackage);
+        await purchaseNativePackage(selectedNativePackage);
         subscribe();
         navigate("/");
       } catch (err) {
@@ -122,13 +193,28 @@ export default function Paywall() {
     }
   };
 
+  const handleManageSubscriptions = async () => {
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      await openSubscriptionManagement();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not open subscription management.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handlePlanKey = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "ArrowRight" || event.key === "ArrowDown") {
       event.preventDefault();
+      if (nativeStoreAvailable && !iapPackages.yearly) return;
       setSelectedPlan("yearly");
       yearlyRef.current?.focus();
     } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
       event.preventDefault();
+      if (nativeStoreAvailable && !iapPackages.monthly) return;
       setSelectedPlan("monthly");
       monthlyRef.current?.focus();
     }
@@ -149,10 +235,10 @@ export default function Paywall() {
 
   return (
     <div
-      className="app-screen relative flex min-h-[100svh] flex-col overflow-hidden"
+      className="app-screen-scroll relative flex flex-col overflow-x-hidden"
       style={{
-        paddingTop: "max(env(safe-area-inset-top, 0px), 1rem)",
-        paddingBottom: "max(env(safe-area-inset-bottom, 0px), 1rem)",
+        paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "0.75rem" : "1rem"})`,
+        paddingBottom: `max(env(safe-area-inset-bottom, 0px), ${isShortPhone ? "0.75rem" : "1rem"})`,
       }}
     >
       <div className="app-atmosphere">
@@ -161,23 +247,31 @@ export default function Paywall() {
         <div className="app-orb app-orb-b bottom-[-18%] right-[-10%] h-[28rem] w-[28rem]" />
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10 sm:py-12">
+      <div
+        className={cn(
+          "relative z-10 flex flex-1 flex-col items-center p-4 sm:py-12",
+          isShortPhone ? "justify-start" : "justify-center",
+        )}
+      >
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="app-panel w-full max-w-sm rounded-[2rem] p-6 sm:p-7"
+          className={cn(
+            "app-panel w-full max-w-sm rounded-[2rem]",
+            isCompactPhone ? "p-5" : "p-6 sm:p-7",
+          )}
         >
-          <div className="flex justify-center mb-8">
+          <div className={cn("flex justify-center", isShortPhone ? "mb-6" : "mb-8")}>
             <div className="app-logo-badge flex h-16 w-16 items-center justify-center rounded-full ring-1 ring-white/10">
               <ChristianCross className="w-8 h-8 text-white" strokeWidth={2.5} />
             </div>
           </div>
 
-          <div className="text-center mb-6 sm:mb-8">
+          <div className={cn("text-center", isShortPhone ? "mb-5" : "mb-6 sm:mb-8")}>
             <span className="app-accent-badge inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-widest mb-4">
               Your path is ready
             </span>
-            <h1 className="app-heading mb-3 pb-1 text-3xl font-serif leading-[1.24]">
+            <h1 className={cn("app-heading mb-3 pb-1 font-serif leading-[1.24]", isCompactPhone ? "text-[2rem]" : "text-3xl")}>
               Unlock your spiritual journey
             </h1>
             <p className="app-muted px-2 font-light">
@@ -185,7 +279,7 @@ export default function Paywall() {
             </p>
           </div>
 
-          <div className="space-y-4 mb-6 sm:mb-8">
+          <div className={cn("space-y-3", isShortPhone ? "mb-5" : "mb-6 sm:mb-8")}>
             {features.map((feature) => (
               <div key={feature} className="flex items-center gap-3">
                 <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)" }}>
@@ -196,15 +290,16 @@ export default function Paywall() {
             ))}
           </div>
 
-          <div role="radiogroup" aria-label="Subscription plan" className="grid grid-cols-2 gap-4 mb-4">
+          <div role="radiogroup" aria-label="Subscription plan" className={cn("mb-4 grid grid-cols-2", isCompactPhone ? "gap-3" : "gap-4")}>
             <button
               ref={monthlyRef}
               role="radio"
               aria-checked={selectedPlan === "monthly"}
+              disabled={nativeStoreAvailable && !iapPackages.monthly}
               tabIndex={selectedPlan === "monthly" ? 0 : -1}
               onClick={() => setSelectedPlan("monthly")}
               onKeyDown={handlePlanKey}
-              className="relative flex flex-col items-center justify-center rounded-card border p-4 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              className="touch-target relative flex flex-col items-center justify-center rounded-card border p-4 text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
               style={{
                 background: selectedPlan === "monthly" ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                 borderColor:
@@ -218,9 +313,9 @@ export default function Paywall() {
                 3 days free
               </div>
               <div className="app-muted mb-2 text-xs font-medium uppercase tracking-wider">
-                Monthly
+                {monthlyTitle}
               </div>
-              <div className="app-heading text-2xl font-serif">{monthlyPrice}</div>
+              <div className={cn("app-heading font-serif", isCompactPhone ? "text-[1.65rem]" : "text-2xl")}>{monthlyPrice}</div>
               <div className="app-muted mt-1 text-center text-[10px]">
                 /month
                 <br />
@@ -232,10 +327,11 @@ export default function Paywall() {
               ref={yearlyRef}
               role="radio"
               aria-checked={selectedPlan === "yearly"}
+              disabled={nativeStoreAvailable && !iapPackages.yearly}
               tabIndex={selectedPlan === "yearly" ? 0 : -1}
               onClick={() => setSelectedPlan("yearly")}
               onKeyDown={handlePlanKey}
-              className="relative flex flex-col items-center justify-center rounded-card border p-4 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              className="touch-target relative flex flex-col items-center justify-center rounded-card border p-4 text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
               style={{
                 background: selectedPlan === "yearly" ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                 borderColor:
@@ -250,9 +346,9 @@ export default function Paywall() {
                 Popular
               </div>
               <div className="app-accent mb-2 text-xs font-medium uppercase tracking-wider">
-                Yearly
+                {yearlyTitle}
               </div>
-              <div className="app-heading text-2xl font-serif">{yearlyPrice}</div>
+              <div className={cn("app-heading font-serif", isCompactPhone ? "text-[1.65rem]" : "text-2xl")}>{yearlyPrice}</div>
               <div className="app-muted mt-1 text-xs">/year ($7.50/mo)</div>
             </button>
           </div>
@@ -274,27 +370,47 @@ export default function Paywall() {
             </div>
           )}
 
+          {nativeStoreAvailable && iapLoadError && (
+            <div role="alert" className="mb-4 flex items-start gap-2 rounded-card border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200">
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <span>{iapLoadError}</span>
+            </div>
+          )}
+
           <button
             onClick={handleSubscribe}
-            disabled={isLoading}
+            disabled={!canSubscribe}
             aria-busy={isLoading}
-            className="app-primary-button mb-4 flex w-full items-center justify-center gap-2 rounded-pill py-4 font-medium text-white transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            className="touch-target app-primary-button mb-4 flex w-full items-center justify-center gap-2 rounded-pill py-4 font-medium text-white transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             {isLoading ? (
               <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : isLoadingOffering ? (
+              "Loading store..."
+            ) : nativeSelectedPlanUnavailable ? (
+              "Plan unavailable"
             ) : (
-              `Continue with ${selectedPlan === "yearly" ? "Yearly" : "Monthly"}`
+              `Continue with ${selectedPlanLabel}`
             )}
           </button>
 
-          {isNativePlatform() && (
-            <button
-              onClick={handleRestorePurchases}
-              disabled={isLoading}
-              className="app-ghost-button mb-4 w-full rounded-pill py-3 text-sm font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-            >
-              Restore purchases
-            </button>
+          {nativeStoreAvailable && (
+            <div className="mb-4 grid grid-cols-1 gap-2">
+              <button
+                onClick={handleRestorePurchases}
+                disabled={isLoading}
+                className="touch-target app-ghost-button w-full rounded-pill py-3 text-sm font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              >
+                Restore purchases
+              </button>
+              <button
+                onClick={handleManageSubscriptions}
+                disabled={isLoading}
+                className="touch-target app-ghost-button w-full rounded-pill py-3 text-sm font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              >
+                Manage subscriptions
+              </button>
+            </div>
           )}
 
           <p className="app-muted px-4 text-center text-[11px] leading-relaxed">

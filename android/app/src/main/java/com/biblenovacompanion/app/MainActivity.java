@@ -1,4 +1,4 @@
-package com.biblenova.companion;
+package com.biblenovacompanion.app;
 
 import com.getcapacitor.BridgeActivity;
 

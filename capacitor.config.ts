@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 import { KeyboardResize } from "@capacitor/keyboard";
 
 const config: CapacitorConfig = {
-  appId: "com.biblenova.companion",
+  appId: "com.biblenovacompanion.app",
   appName: "Bible Nova Companion",
   webDir: "dist",
   server: {
@@ -23,6 +23,7 @@ const config: CapacitorConfig = {
     },
     Keyboard: {
       resize: KeyboardResize.Body,
+      resizeOnFullScreen: true,
     },
   },
 };
