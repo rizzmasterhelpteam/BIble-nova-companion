@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "./context/ThemeContext";
 import { HapticsProvider } from "./context/HapticsContext";
+import { MobileViewportProvider } from "./context/MobileViewportContext";
 
 const Layout = lazy(() => import("./components/Layout"));
 const Chat = lazy(() => import("./pages/Chat"));
@@ -57,29 +58,31 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
 export default function App() {
   return (
     <ThemeProvider>
-      <HapticsProvider>
-        <AuthProvider>
-          <BrowserRouter>
-            <Suspense fallback={<FullScreenLoader />}>
-              <Routes>
-                <Route path="/login" element={<Login />} />
+      <MobileViewportProvider>
+        <HapticsProvider>
+          <AuthProvider>
+            <BrowserRouter>
+              <Suspense fallback={<FullScreenLoader />}>
+                <Routes>
+                  <Route path="/login" element={<Login />} />
 
-                {/* Guarded App Routes */}
-                <Route path="/onboarding" element={<AuthGuard><Onboarding /></AuthGuard>} />
-                <Route path="/paywall" element={<AuthGuard><Paywall /></AuthGuard>} />
+                  {/* Guarded App Routes */}
+                  <Route path="/onboarding" element={<AuthGuard><Onboarding /></AuthGuard>} />
+                  <Route path="/paywall" element={<AuthGuard><Paywall /></AuthGuard>} />
 
-                <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
-                  <Route index element={<Chat />} />
-                  <Route path="breathe" element={<Breathe />} />
-                  <Route path="intentions" element={<Intentions />} />
-                  <Route path="confess" element={<Confession />} />
-                </Route>
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </Suspense>
-          </BrowserRouter>
-        </AuthProvider>
-      </HapticsProvider>
+                  <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
+                    <Route index element={<Chat />} />
+                    <Route path="breathe" element={<Breathe />} />
+                    <Route path="intentions" element={<Intentions />} />
+                    <Route path="confess" element={<Confession />} />
+                  </Route>
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Suspense>
+            </BrowserRouter>
+          </AuthProvider>
+        </HapticsProvider>
+      </MobileViewportProvider>
     </ThemeProvider>
   );
 }

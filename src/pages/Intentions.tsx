@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Heart, Plus, Trash2 } from "lucide-react";
 import PageHeader from "../components/PageHeader";
-import { useDocumentTitle } from "../lib/utils";
+import { cn, useDocumentTitle } from "../lib/utils";
 import { useAuth } from "../context/AuthContext";
+import { useMobileViewport } from "../context/MobileViewportContext";
 
 type Intention = {
   id: number;
@@ -30,6 +31,7 @@ const formatRelativeTime = (createdAt: number) => {
 export default function Intentions() {
   useDocumentTitle("Intentions | Bible Nova Companion");
   const { identityKey } = useAuth();
+  const { isCompactPhone, isShortPhone } = useMobileViewport();
   const [newIntention, setNewIntention] = useState("");
   const storageKey = useMemo(
     () => (identityKey ? `bible-nova-companion-intentions-${identityKey}` : null),
@@ -65,15 +67,20 @@ export default function Intentions() {
   };
 
   return (
-    <div className="flex flex-1 flex-col px-6 pb-6">
+    <div
+      className={cn(
+        "flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 sm:px-6",
+        isCompactPhone && "px-3 pb-5 pt-2",
+      )}
+    >
       <PageHeader
         eyebrow="Your Focus"
         title="Intentions"
         description="Capture what weighs on your heart so you can come back to it with clarity."
-        className="mb-8 sm:mb-10"
+        className={cn(isShortPhone ? "mb-6" : "mb-8 sm:mb-10")}
       />
 
-      <div className="flex gap-2 mb-4 relative z-10">
+      <div className={cn("relative z-10 mb-4 flex gap-2", isCompactPhone && "mb-3")}>
         <input
           type="text"
           value={newIntention}
@@ -81,38 +88,47 @@ export default function Intentions() {
           onKeyDown={(event) => event.key === "Enter" && addIntention()}
           placeholder="Add a new intention..."
           enterKeyHint="done"
-          className="app-input flex-1 rounded-card px-5 py-4 text-[15px] shadow-inner transition-all"
+          className={cn(
+            "app-input flex-1 rounded-card px-4 shadow-inner transition-all",
+            isCompactPhone ? "py-3.5 text-[14px]" : "py-4 text-[15px]",
+          )}
         />
         <button
           onClick={() => addIntention()}
           disabled={!newIntention.trim()}
           aria-label="Add intention"
-          className="app-primary-button flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-pill text-white transition-all active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+          className={cn(
+            "touch-target app-primary-button flex flex-shrink-0 items-center justify-center rounded-pill text-white transition-all active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]",
+            isCompactPhone ? "h-12 w-12" : "h-14 w-14",
+          )}
         >
           <Plus strokeWidth={2} className="w-6 h-6 drop-shadow-sm" />
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-8">
+      <div className={cn("mb-6 flex flex-wrap gap-2", !isShortPhone && "sm:mb-8")}>
         {SUGGESTIONS.map((suggestion) => (
           <button
             key={suggestion}
             onClick={() => addIntention(suggestion)}
-            className="app-secondary-button rounded-pill px-3 py-2 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            className="touch-target app-secondary-button rounded-pill px-3 py-2 text-[11px] leading-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             {suggestion}
           </button>
         ))}
       </div>
 
-      <div className="space-y-4 relative z-0">
+      <div className="relative z-0 space-y-3">
         {intentions.map((intention) => (
           <div
             key={intention.id}
-            className="app-panel app-card-hover flex items-start justify-between gap-4 rounded-card border p-6 group transition-all"
+            className={cn(
+              "app-panel app-card-hover group flex items-start justify-between gap-4 rounded-card border transition-all",
+              isCompactPhone ? "p-4" : "p-5 sm:p-6",
+            )}
           >
             <div className="flex-1">
-              <p className="app-heading text-[16px] leading-[1.6] font-serif font-light">
+              <p className={cn("app-heading font-serif font-light leading-[1.6]", isCompactPhone ? "text-[15px]" : "text-[16px]")}>
                 "{intention.text}"
               </p>
               <span className="app-kicker mt-4 block text-[10px] font-medium">
@@ -121,7 +137,7 @@ export default function Intentions() {
             </div>
             <button
               onClick={() => removeIntention(intention.id)}
-              className="app-soft -m-1 rounded-full p-3 transition-colors hover:bg-[color:var(--app-danger-soft)] hover:text-[color:var(--app-danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-danger)]"
+              className="touch-target app-soft -m-1 rounded-full p-3 transition-colors hover:bg-[color:var(--app-danger-soft)] hover:text-[color:var(--app-danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-danger)]"
               aria-label="Remove intention"
               title="Remove intention"
             >

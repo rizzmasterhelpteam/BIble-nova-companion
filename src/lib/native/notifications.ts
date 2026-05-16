@@ -1,8 +1,16 @@
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { PushNotifications } from "@capacitor/push-notifications";
+import type { PluginListenerHandle } from "@capacitor/core";
 import { isNativePlatform } from "./platform";
 
 const DAILY_REFLECTION_NOTIFICATION_ID = 1001;
+let pushListenerHandles: PluginListenerHandle[] = [];
+
+const removePushNotificationListeners = async () => {
+  const handles = pushListenerHandles;
+  pushListenerHandles = [];
+  await Promise.all(handles.map((handle) => handle.remove().catch(() => undefined)));
+};
 
 export async function requestLocalNotificationPermission() {
   if (!isNativePlatform()) return false;
@@ -50,13 +58,15 @@ export async function registerForPushNotifications(onToken?: (token: string) => 
 
   if (permission.receive !== "granted") return false;
 
-  await PushNotifications.addListener("registration", (token) => {
-    onToken?.(token.value);
-  });
-
-  await PushNotifications.addListener("registrationError", (error) => {
-    console.warn("Push registration failed:", error);
-  });
+  await removePushNotificationListeners();
+  pushListenerHandles = await Promise.all([
+    PushNotifications.addListener("registration", (token) => {
+      onToken?.(token.value);
+    }),
+    PushNotifications.addListener("registrationError", (error) => {
+      console.warn("Push registration failed:", error);
+    }),
+  ]);
 
   await PushNotifications.register();
   return true;
@@ -65,4 +75,5 @@ export async function registerForPushNotifications(onToken?: (token: string) => 
 export async function unregisterFromPushNotifications() {
   if (!isNativePlatform()) return;
   await PushNotifications.unregister();
+  await removePushNotificationListeners();
 }

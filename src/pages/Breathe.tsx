@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Wind, Settings2, Plus, Minus, Pause, Play, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import PageHeader from "../components/PageHeader";
-import { useDocumentTitle } from "../lib/utils";
+import { useDocumentTitle, cn } from "../lib/utils";
+import { useMobileViewport } from "../context/MobileViewportContext";
 
 type Phase = "Inhale" | "Hold" | "Exhale";
 type Timings = { inhale: number; hold: number; exhale: number };
@@ -21,6 +22,7 @@ const PHASE_ORDER: Phase[] = ["Inhale", "Hold", "Exhale"];
 
 export default function Breathe() {
   useDocumentTitle("Breathe | Bible Nova Companion");
+  const { isCompactPhone, isShortPhone } = useMobileViewport();
   const [phase, setPhase] = useState<Phase>("Inhale");
   const [circleScale, setCircleScale] = useState(1);
   const [showSettings, setShowSettings] = useState(false);
@@ -73,46 +75,66 @@ export default function Breathe() {
     [timings],
   );
   const centerScale = 1 + (circleScale - 1) * 0.22;
+  const visualSize = isShortPhone ? "15.5rem" : isCompactPhone ? "16.5rem" : "19rem";
+  const innerGlowSize = isShortPhone ? "8rem" : "10rem";
+  const innerRingSize = isShortPhone ? "6.25rem" : "8rem";
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-6 pt-4 sm:px-8 sm:pb-8">
+    <div
+      className={cn(
+        "relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 sm:px-8 sm:pb-8 sm:pt-4",
+        isCompactPhone && "px-3 pb-5 pt-2",
+      )}
+    >
       <PageHeader
         align="center"
         eyebrow="Guided Stillness"
         title="Find your peace."
         description={`A ${cycleLength}-second breathing cycle with a ${paceSummary}.`}
-        className="mb-3 shrink-0 sm:mb-8"
+        className={cn("shrink-0", isShortPhone ? "mb-2.5" : "mb-3 sm:mb-8")}
       />
 
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
-        <div className="relative mb-4 flex h-64 w-full max-w-[19rem] flex-shrink-0 items-center justify-center sm:mb-8 sm:h-72 sm:max-w-[22rem]">
+        <div
+          className={cn(
+            "relative flex w-full flex-shrink-0 items-center justify-center",
+            isShortPhone ? "mb-3 h-56" : "mb-4 h-64 sm:mb-8 sm:h-72",
+          )}
+          style={{ maxWidth: visualSize }}
+        >
           <div
-            className="absolute h-40 w-40 rounded-full sm:h-44 sm:w-44"
+            className="absolute rounded-full"
             style={{
               background:
                 "radial-gradient(circle, color-mix(in srgb, var(--app-accent) 18%, transparent) 0%, color-mix(in srgb, var(--app-accent) 9%, transparent) 48%, transparent 72%)",
+              height: innerGlowSize,
               transform: `scale(${circleScale})`,
               transition: `transform ${phaseDuration}ms ease-in-out`,
+              width: innerGlowSize,
             }}
           />
           <div
-            className="absolute h-32 w-32 rounded-full border sm:h-36 sm:w-36"
+            className="absolute rounded-full border"
             style={{
               borderColor: "color-mix(in srgb, var(--app-accent) 18%, transparent)",
               boxShadow: "0 0 34px color-mix(in srgb, var(--app-accent) 18%, transparent)",
+              height: innerRingSize,
               transform: `scale(${circleScale})`,
               transition: `transform ${phaseDuration}ms ease-in-out`,
+              width: innerRingSize,
             }}
           />
           <div
-            className="absolute h-28 w-28 rounded-full border backdrop-blur-xl sm:h-32 sm:w-32"
+            className="absolute rounded-full border backdrop-blur-xl"
             style={{
               background: "color-mix(in srgb, var(--app-card-bg) 54%, transparent)",
               borderColor: "color-mix(in srgb, var(--app-accent) 35%, transparent)",
               boxShadow:
                 "inset 0 0 24px color-mix(in srgb, var(--app-accent) 12%, transparent), 0 0 24px color-mix(in srgb, var(--app-accent) 16%, transparent)",
+              height: isShortPhone ? "5.4rem" : "7rem",
               transform: `scale(${centerScale})`,
               transition: `transform ${phaseDuration}ms ease-in-out`,
+              width: isShortPhone ? "5.4rem" : "7rem",
             }}
           />
           <div className="relative z-10 flex flex-col items-center gap-3 text-center">
@@ -130,11 +152,11 @@ export default function Breathe() {
           </div>
         </div>
 
-        <div className="mb-4 flex w-full max-w-[340px] items-center justify-center gap-2 sm:mb-6">
+        <div className={cn("mb-4 flex w-full items-center justify-center gap-2", isShortPhone ? "max-w-[320px]" : "max-w-[340px] sm:mb-6")}>
           <button
             type="button"
             onClick={() => setIsPaused((prev) => !prev)}
-            className="app-secondary-button inline-flex flex-shrink-0 items-center gap-2 rounded-pill px-3 py-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:px-4 sm:py-3 sm:text-sm"
+            className="touch-target app-secondary-button inline-flex flex-shrink-0 items-center gap-2 rounded-pill px-3 py-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:px-4 sm:py-3 sm:text-sm"
           >
             {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
             {isPaused ? "Resume" : "Pause"}
@@ -147,7 +169,7 @@ export default function Breathe() {
             onClick={() => setShowSettings((prev) => !prev)}
             aria-controls="breathing-customizer"
             aria-expanded={showSettings}
-            className="app-ghost-button inline-flex flex-shrink-0 items-center gap-1.5 rounded-pill px-3 py-2.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:gap-2 sm:text-[12px]"
+            className="touch-target app-ghost-button inline-flex flex-shrink-0 items-center gap-1.5 rounded-pill px-3 py-2.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:gap-2 sm:text-[12px]"
           >
             <Settings2 className="w-3.5 h-3.5" />
             {showSettings ? "Done" : "Customize"}
@@ -186,6 +208,7 @@ export default function Breathe() {
               exit={{ opacity: 0, y: 24, scale: 0.98 }}
               transition={{ duration: 0.22, ease: "easeOut" }}
               className="app-panel absolute inset-x-4 bottom-4 z-30 rounded-card p-4 shadow-2xl sm:inset-x-8"
+              style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
             >
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>

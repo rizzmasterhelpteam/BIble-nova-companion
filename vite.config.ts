@@ -9,6 +9,7 @@ import {
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
+  transcribeAudio,
 } from './server-api';
 
 const applyLocalEnv = (env: Record<string, string>) => {
@@ -85,6 +86,23 @@ const localApiPlugin = () => ({
           sendJson(res, 200, { text });
         } catch (error) {
           console.error('Vite local API generation error:', error);
+          sendJson(res, 500, { error: getClientErrorMessage(error) });
+        }
+        return;
+      }
+
+      if (pathname === '/api/transcribe') {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'Method not allowed.' });
+          return;
+        }
+
+        try {
+          const { audio, language } = await readJsonBody(req);
+          const text = await transcribeAudio(audio, language);
+          sendJson(res, 200, { text });
+        } catch (error) {
+          console.error('Vite local API speech transcription error:', error);
           sendJson(res, 500, { error: getClientErrorMessage(error) });
         }
         return;

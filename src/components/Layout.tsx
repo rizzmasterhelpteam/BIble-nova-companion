@@ -28,8 +28,10 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { useHaptics } from "../context/HapticsContext";
+import { useMobileViewport } from "../context/MobileViewportContext";
 import { isNativePlatform } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
+import { cn } from "../lib/utils";
 import {
   cancelDailyReflectionReminder,
   registerForPushNotifications,
@@ -87,6 +89,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const { hapticsEnabled, setHapticsEnabled } = useHaptics();
+  const { isCompactPhone, isKeyboardOpen } = useMobileViewport();
   const {
     user,
     isGuest,
@@ -268,7 +271,7 @@ export default function Layout() {
   }, [displayName, profileAvatarUrl, profileEditorOpen, settingsOpen]);
 
   return (
-    <div className="app-screen relative flex h-[100dvh] w-full justify-center overflow-hidden font-sans sm:px-4 sm:py-6">
+    <div className="app-screen relative flex w-full justify-center overflow-hidden font-sans sm:px-4 sm:py-6">
       <div className="app-atmosphere">
         <div className="app-grid" />
         <div className="app-orb app-orb-a left-[-10%] top-[-16%] h-[28rem] w-[28rem]" />
@@ -276,18 +279,22 @@ export default function Layout() {
       </div>
 
       <div
-        className="app-shell w-full sm:max-w-md h-full relative overflow-hidden flex flex-col sm:rounded-shell ring-1 sm:ring-[color:var(--app-shell-ring)]"
+        className={cn(
+          "app-shell relative flex h-full w-full min-h-0 flex-col overflow-hidden ring-1 sm:max-w-md sm:rounded-shell sm:ring-[color:var(--app-shell-ring)]",
+          isCompactPhone && "sm:max-w-sm",
+        )}
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 0px)" }}
       >
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Open settings"
-          className="app-secondary-button absolute right-4 top-4 z-50 rounded-full p-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+          className="touch-target app-secondary-button absolute right-4 z-50 rounded-full p-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+          style={{ top: "calc(0.75rem + env(safe-area-inset-top, 0px))" }}
         >
           <Settings2 className="h-4 w-4" />
         </button>
 
-        <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto scroll-smooth scrollbar-hide">
+        <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
@@ -302,7 +309,12 @@ export default function Layout() {
           </AnimatePresence>
         </main>
 
-        <nav className="z-50 flex flex-shrink-0 justify-center px-6 pb-safe pt-1">
+        <nav
+          className={cn(
+            "z-50 overflow-hidden px-4 transition-all duration-200 sm:px-6",
+            isKeyboardOpen ? "max-h-0 pb-0 pt-0 opacity-0" : "max-h-28 pb-safe pt-2 opacity-100",
+          )}
+        >
           <div className="app-nav-shell flex w-full max-w-xl items-center justify-between gap-1 rounded-shell p-1">
             <NavItem to="/" icon={<Home strokeWidth={1.6} className="h-5 w-5" />} label="Home" />
             <NavItem to="/breathe" icon={<Wind strokeWidth={1.6} className="h-5 w-5" />} label="Breathe" />
@@ -329,13 +341,19 @@ export default function Layout() {
                 exit={{ y: "100%" }}
                 transition={{ type: "spring", stiffness: 380, damping: 40 }}
                 className="app-panel-strong absolute bottom-0 left-0 right-0 z-[70] max-h-[92dvh] overflow-y-auto rounded-t-[2rem] border-t scrollbar-hide"
-                style={{ borderColor: "var(--app-card-border)" }}
+                style={{
+                  borderColor: "var(--app-card-border)",
+                  maxHeight:
+                    "calc(var(--app-visible-height) - max(env(safe-area-inset-top, 0px), 0.75rem))",
+                }}
               >
                 <div className="flex justify-center pb-1 pt-3">
                   <div className="h-1 w-10 rounded-full" style={{ backgroundColor: "var(--app-divider)" }} />
                 </div>
 
-                <div className="space-y-6 px-6 pb-6 pt-2">
+                <div
+                  className={cn("space-y-6 px-5 pt-2 sm:px-6", isCompactPhone ? "pb-5" : "pb-6")}
+                >
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="app-kicker">Settings</p>
@@ -343,7 +361,7 @@ export default function Layout() {
                     </div>
                     <button
                       onClick={() => setSettingsOpen(false)}
-                      className="app-secondary-button rounded-full p-2 transition-colors"
+                      className="touch-target app-secondary-button rounded-full p-2 transition-colors"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -364,7 +382,7 @@ export default function Layout() {
                           <button
                             key={t}
                             onClick={() => setTheme(t)}
-                            className="flex-1 rounded-2xl border px-3 py-3 text-[12px] font-medium transition-all"
+                            className="touch-target flex-1 rounded-2xl border px-3 py-3 text-[12px] font-medium transition-all"
                             style={{
                               background: active ? "var(--app-accent-soft)" : "var(--app-secondary-bg)",
                               borderColor: active ? "color-mix(in srgb, var(--app-accent) 35%, transparent)" : "var(--app-secondary-border)",
@@ -538,7 +556,7 @@ export default function Layout() {
                             setProfileError(null);
                           }}
                           disabled={isAccountBusy}
-                          className="app-secondary-button flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50"
+                          className="touch-target app-secondary-button flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50"
                           aria-label="Edit profile"
                         >
                           <Pencil className="h-3.5 w-3.5" />
@@ -562,7 +580,7 @@ export default function Layout() {
                               )}
                             </div>
                             <div className="flex min-w-0 flex-1 flex-col gap-2">
-                              <label className="app-secondary-button inline-flex cursor-pointer items-center justify-center gap-2 rounded-pill px-3 py-2 text-[12px] font-medium transition-colors">
+                              <label className="touch-target app-secondary-button inline-flex cursor-pointer items-center justify-center gap-2 rounded-pill px-3 py-2 text-[12px] font-medium transition-colors">
                                 <Camera className="h-3.5 w-3.5" />
                                 {isProcessingAvatar ? "Processing..." : "Change Photo"}
                                 <input
@@ -577,7 +595,7 @@ export default function Layout() {
                                 type="button"
                                 onClick={() => setProfileAvatarDraft(null)}
                                 disabled={isProcessingAvatar || isSavingProfile}
-                                className="app-ghost-button rounded-pill px-3 py-2 text-[12px] font-medium transition-colors disabled:opacity-50"
+                                className="touch-target app-ghost-button rounded-pill px-3 py-2 text-[12px] font-medium transition-colors disabled:opacity-50"
                               >
                                 Remove Photo
                               </button>
@@ -599,7 +617,7 @@ export default function Layout() {
                             <button
                               type="submit"
                               disabled={isSavingProfile}
-                              className="app-primary-button flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-white transition-all disabled:opacity-70"
+                              className="touch-target app-primary-button flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-white transition-all disabled:opacity-70"
                               aria-label="Save profile"
                             >
                               {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
@@ -686,14 +704,14 @@ export default function Layout() {
                                   setDeleteError(null);
                                 }}
                                 disabled={isDeletingAccount}
-                                className="app-secondary-button flex-1 rounded-pill px-3 py-2.5 text-[13px] font-medium transition-colors disabled:opacity-50"
+                                className="touch-target app-secondary-button flex-1 rounded-pill px-3 py-2.5 text-[13px] font-medium transition-colors disabled:opacity-50"
                               >
                                 Cancel
                               </button>
                               <button
                                 onClick={handleDeleteAccount}
                                 disabled={isDeletingAccount}
-                                className="flex flex-1 items-center justify-center gap-2 rounded-pill px-3 py-2.5 text-[13px] font-semibold text-white transition-all disabled:opacity-70"
+                                className="touch-target flex flex-1 items-center justify-center gap-2 rounded-pill px-3 py-2.5 text-[13px] font-semibold text-white transition-all disabled:opacity-70"
                                 style={{ background: "var(--app-danger)" }}
                               >
                                 {isDeletingAccount && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -734,7 +752,7 @@ function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label
   return (
     <NavLink
       to={to}
-      className="relative flex flex-1 flex-col items-center justify-center gap-1 rounded-pill py-1.5 transition-all duration-300"
+      className="touch-target relative flex flex-1 flex-col items-center justify-center gap-1 rounded-pill py-1.5 transition-all duration-300"
       style={{ color: "var(--app-text-muted)" }}
     >
       {({ isActive }) => (

@@ -4,7 +4,8 @@ import { useAuth } from "../context/AuthContext";
 import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Sunrise } from "lucide-react";
 import { ChristianCross } from "../components/ChristianCross";
 import { motion, AnimatePresence } from "motion/react";
-import { useDocumentTitle } from "../lib/utils";
+import { cn, useDocumentTitle } from "../lib/utils";
+import { useMobileViewport } from "../context/MobileViewportContext";
 
 const STORAGE_KEY = "bible_nova_companion_onboarding_answers";
 
@@ -69,6 +70,7 @@ const getSelectedLabel = (answers: Record<string, string>, questionId: string) =
 
 export default function Onboarding() {
   useDocumentTitle("Welcome | Bible Nova Companion");
+  const { isCompactPhone, isShortPhone } = useMobileViewport();
   const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>(() => {
     try {
@@ -139,7 +141,12 @@ export default function Onboarding() {
     const rhythm = getSelectedLabel(answers, "rhythm").toLowerCase();
 
     return (
-      <div className="app-screen relative flex min-h-[100svh] flex-col items-center justify-center overflow-y-auto p-6 scrollbar-hide">
+      <div
+        className={cn(
+          "app-screen-scroll relative flex flex-col items-center px-4 py-4 scrollbar-hide",
+          isShortPhone ? "justify-start" : "justify-center",
+        )}
+      >
         <div className="app-atmosphere">
           <div className="app-grid" />
           <div className="app-orb app-orb-a left-[-10%] top-[-20%] h-[26rem] w-[26rem]" />
@@ -150,7 +157,10 @@ export default function Onboarding() {
           initial={{ opacity: 0, y: 18, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.35, ease: "easeOut" }}
-          className="app-panel relative z-10 w-full max-w-md rounded-[2rem] p-6 shadow-2xl sm:p-8"
+          className={cn(
+            "app-panel relative z-10 w-full max-w-md rounded-[2rem] shadow-2xl",
+            isCompactPhone ? "p-5" : "p-6 sm:p-8",
+          )}
         >
           <button
             onClick={handleBack}
@@ -160,15 +170,15 @@ export default function Onboarding() {
             Back
           </button>
 
-          <div className="mb-7 flex justify-center">
-            <div className="app-logo-badge flex h-20 w-20 items-center justify-center rounded-full ring-1 ring-white/10">
+          <div className={cn("flex justify-center", isShortPhone ? "mb-5" : "mb-7")}>
+            <div className={cn("app-logo-badge flex items-center justify-center rounded-full ring-1 ring-white/10", isCompactPhone ? "h-16 w-16" : "h-20 w-20")}>
               <ChristianCross className="h-9 w-9 text-white" strokeWidth={2.5} />
             </div>
           </div>
 
           <div className="text-center">
             <p className="app-kicker mb-3">Your Reflection Analysis</p>
-            <h2 className="app-heading mb-4 pb-1 font-serif text-3xl leading-[1.24]">
+            <h2 className={cn("app-heading mb-4 pb-1 font-serif leading-[1.24]", isCompactPhone ? "text-[2rem]" : "text-3xl")}>
               Your path is taking shape.
             </h2>
             <p className="app-muted mx-auto mb-6 max-w-sm text-[15px] leading-relaxed">
@@ -176,7 +186,7 @@ export default function Onboarding() {
             </p>
           </div>
 
-          <div className="mb-7 space-y-3">
+          <div className={cn("space-y-3", isShortPhone ? "mb-5" : "mb-7")}>
             <div
               className="rounded-card border p-4"
               style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}
@@ -199,7 +209,7 @@ export default function Onboarding() {
 
           <button
             onClick={handleGetStarted}
-            className="app-primary-button flex w-full items-center justify-center rounded-pill py-4 font-semibold text-white transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            className="touch-target app-primary-button flex w-full items-center justify-center rounded-pill py-4 font-semibold text-white transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             Get Started
           </button>
@@ -212,10 +222,10 @@ export default function Onboarding() {
 
   return (
     <div
-      className="app-screen relative flex min-h-[100svh] flex-col overflow-hidden px-6"
+      className="app-screen-scroll relative flex flex-col overflow-x-hidden px-4"
       style={{
-        paddingTop: "max(env(safe-area-inset-top, 0px), 4rem)",
-        paddingBottom: "max(env(safe-area-inset-bottom, 0px), 4rem)",
+        paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "1.25rem" : "2rem"})`,
+        paddingBottom: `max(env(safe-area-inset-bottom, 0px), ${isShortPhone ? "1.5rem" : "2.25rem"})`,
       }}
     >
       <div className="app-atmosphere">
@@ -224,12 +234,12 @@ export default function Onboarding() {
         <div className="app-orb app-orb-b bottom-[-18%] right-[-10%] h-[28rem] w-[28rem]" />
       </div>
 
-      <div className="w-full max-w-md mx-auto flex-1 flex flex-col relative z-10">
-        <div className="flex items-center justify-between mb-8 sm:mb-12">
+      <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col">
+        <div className={cn("flex items-center justify-between", isShortPhone ? "mb-6" : "mb-8 sm:mb-12")}>
           <button
             onClick={handleBack}
             disabled={currentStep === 0}
-            className="app-ghost-button inline-flex items-center gap-2 rounded-pill px-3 py-2 text-sm disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            className="touch-target app-ghost-button inline-flex items-center gap-2 rounded-pill px-3 py-2 text-sm disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             <ArrowLeft className="w-4 h-4" />
             Back
@@ -239,7 +249,7 @@ export default function Onboarding() {
           </span>
         </div>
 
-        <div className="mb-8 h-1 w-full overflow-hidden rounded-full" style={{ background: "var(--app-divider)" }}>
+        <div className={cn("h-1 w-full overflow-hidden rounded-full", isShortPhone ? "mb-6" : "mb-8")} style={{ background: "var(--app-divider)" }}>
           <motion.div
             className="h-full"
             style={{ background: "var(--app-accent-gradient)" }}
@@ -249,7 +259,7 @@ export default function Onboarding() {
           />
         </div>
 
-        <span className="app-kicker mb-4 text-xs font-semibold">
+        <span className={cn("app-kicker text-xs font-semibold", isShortPhone ? "mb-3" : "mb-4")}>
           Question {currentStep + 1} of {questions.length}
         </span>
 
@@ -262,25 +272,25 @@ export default function Onboarding() {
             transition={{ duration: 0.3 }}
             className="flex-1"
           >
-            <h1 className="app-heading mb-4 pb-1 text-3xl font-serif leading-[1.24] sm:text-4xl">
+            <h1 className={cn("app-heading mb-4 pb-1 font-serif leading-[1.24]", isCompactPhone ? "text-[2rem]" : "text-3xl sm:text-4xl")}>
               {question.title}
             </h1>
-            <p className="app-muted mb-10 max-w-sm">
+            <p className={cn("app-muted max-w-sm", isShortPhone ? "mb-7" : "mb-10")}>
               A few quick choices will help the app adapt its tone and first suggestions.
             </p>
 
-            <div className="space-y-4">
+            <div className={cn(isCompactPhone ? "space-y-3" : "space-y-4")}>
               {question.options.map((option) => {
                 const isSelected = answers[question.id] === option.id;
                 return (
                   <button
                     key={option.id}
                     onClick={() => handleSelect(option.id)}
-                    className={`app-card-hover w-full rounded-card border p-5 text-left flex items-center justify-between transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] ${
+                    className={`touch-target app-card-hover w-full rounded-card border text-left flex items-center justify-between transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] ${
                       isSelected
                         ? "shadow-[0_14px_34px_rgba(0,0,0,0.08)]"
                         : ""
-                    }`}
+                    } ${isCompactPhone ? "p-4" : "p-5"}`}
                     style={{
                       background: isSelected ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                       borderColor: isSelected
@@ -301,7 +311,7 @@ export default function Onboarding() {
                         </div>
                       )}
                       <span
-                        className="text-lg"
+                        className={cn(isCompactPhone ? "text-[16px]" : "text-lg")}
                         style={{
                           color: isSelected ? "var(--app-accent)" : "var(--app-text)",
                           fontWeight: isSelected ? 600 : 500,

@@ -3,9 +3,11 @@ import { Flame, Wind, Eraser } from "lucide-react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import PageHeader from "../components/PageHeader";
+import { useMobileViewport } from "../context/MobileViewportContext";
 
 export default function Confession() {
   useDocumentTitle("Confess | Bible Nova Companion");
+  const { isCompactPhone, isShortPhone } = useMobileViewport();
   const [confession, setConfession] = useState("");
   const [isReleasing, setIsReleasing] = useState(false);
   const [timeLeft, setTimeLeft] = useState(10);
@@ -59,13 +61,20 @@ export default function Confession() {
   };
 
   const hasContent = confession.trim().length > 0;
+  const panelHeight = isShortPhone ? "min(38vh, 15rem)" : "min(46vh, 18rem)";
+
   return (
-    <div className="flex flex-1 flex-col px-6 pb-6 overflow-hidden">
+    <div
+      className={cn(
+        "flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 sm:px-6",
+        isCompactPhone && "px-3 pb-5 pt-2",
+      )}
+    >
       <PageHeader
         eyebrow="Unburden"
         title="Let it go"
         description="Write down what feels heavy. When you are ready, release it and let it disappear."
-        className="mb-6 sm:mb-10 relative z-40"
+        className={cn("relative z-40", isShortPhone ? "mb-5" : "mb-6 sm:mb-10")}
       />
 
       <AnimatePresence mode="wait">
@@ -79,7 +88,8 @@ export default function Confession() {
             className="flex flex-col gap-6 relative flex-1"
           >
             <motion.div
-              className="app-panel relative w-full h-56 sm:h-64 overflow-hidden rounded-[2rem] border shadow-2xl transition-colors group"
+              className="app-panel group relative w-full overflow-hidden rounded-[2rem] border shadow-2xl transition-colors"
+              style={{ height: panelHeight, minHeight: isShortPhone ? "13rem" : "15rem" }}
               animate={
                 isReleasing && !prefersReducedMotion
                   ? {
@@ -120,7 +130,8 @@ export default function Confession() {
                 aria-label="Confession"
                 enterKeyHint="done"
                 className={cn(
-                  "app-heading relative z-10 w-full h-full resize-none bg-transparent p-5 text-[17px] font-serif italic leading-[1.8] outline-none transition-opacity focus-visible:outline-none sm:p-8",
+                  "app-heading relative z-10 h-full w-full resize-none bg-transparent p-5 font-serif italic leading-[1.8] outline-none transition-opacity focus-visible:outline-none",
+                  isCompactPhone ? "text-[16px] sm:p-6" : "text-[17px] sm:p-8",
                   isReleasing && "pointer-events-none opacity-80",
                 )}
               />
@@ -164,12 +175,12 @@ export default function Confession() {
               )}
             </motion.div>
 
-            <div className="app-muted flex items-center justify-between text-xs">
-              <span>This note stays only in this temporary field.</span>
+            <div className="app-muted flex items-center justify-between gap-3 text-xs">
+              <span className="min-w-0 flex-1 leading-relaxed">This note stays only in this temporary field.</span>
               <button
                 onClick={() => setConfession("")}
                 disabled={!hasContent || isReleasing}
-                className="app-ghost-button inline-flex items-center gap-2 rounded-pill px-3 py-2 transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+                className="touch-target app-ghost-button inline-flex items-center gap-2 rounded-pill px-3 py-2 transition-colors disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
               >
                 <Eraser className="w-3.5 h-3.5" />
                 Clear
@@ -181,7 +192,8 @@ export default function Confession() {
               disabled={!hasContent || isReleasing}
               aria-busy={isReleasing}
               className={cn(
-                "z-30 flex w-full flex-col items-center justify-center gap-2 rounded-card py-5 font-medium shadow-lg transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]",
+                "touch-target z-30 mt-auto flex w-full flex-col items-center justify-center gap-2 rounded-card font-medium shadow-lg transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]",
+                isCompactPhone ? "py-4" : "py-5",
                 isReleasing
                   ? "app-secondary-button"
                   : "app-primary-button text-white disabled:opacity-40",
@@ -210,7 +222,7 @@ export default function Confession() {
             initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.8, filter: "blur(5px)" }}
             animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
             transition={{ duration: prefersReducedMotion ? 0.15 : 1, delay: prefersReducedMotion ? 0 : 0.2 }}
-            className="flex-1 flex flex-col items-center justify-center -mt-16"
+            className={cn("flex flex-1 flex-col items-center justify-center", isShortPhone ? "" : "-mt-16")}
           >
             <div className="relative mb-8">
               <motion.div

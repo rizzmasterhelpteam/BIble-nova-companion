@@ -10,11 +10,65 @@ export const hasModelsApiKey = () => Boolean(process.env.GROK_API_KEY?.trim());
 
 export const hasPrayerApiKey = () => Boolean(process.env.GEMINI_API_KEY?.trim());
 
+export const hasSpeechApiKey = () => Boolean(process.env.GROQ_API_KEY?.trim());
+
 export const getApiStatus = () => ({
   chatReady: hasChatApiKey(),
   modelsReady: hasModelsApiKey(),
   prayerReady: hasPrayerApiKey(),
+  speechReady: hasSpeechApiKey(),
 });
+
+const parseBase64Audio = (audio: string) => {
+  const match = audio.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) {
+    throw new Error("Audio must be provided as a base64 data URL.");
+  }
+
+  const [, mimeType, base64] = match;
+  return {
+    mimeType,
+    buffer: Buffer.from(base64, "base64"),
+  };
+};
+
+export async function transcribeAudio(audio: string, language?: string) {
+  const apiKey = process.env.GROQ_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("Speech transcription requires GROQ_API_KEY on the server.");
+  }
+
+  const { mimeType, buffer } = parseBase64Audio(audio);
+  const extension = mimeType.split("/")[1]?.split(";")[0] || "webm";
+  const formData = new FormData();
+  formData.append("file", new Blob([buffer], { type: mimeType }), `speech.${extension}`);
+  formData.append("model", "whisper-large-v3-turbo");
+  formData.append("response_format", "json");
+  formData.append("temperature", "0");
+
+  if (language) {
+    formData.append("language", language);
+  }
+
+  const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: formData,
+  });
+
+  const data = (await response.json().catch(() => ({}))) as { text?: string; error?: { message?: string } };
+  if (!response.ok) {
+    throw new Error(data.error?.message || "Speech transcription failed.");
+  }
+
+  if (!data.text?.trim()) {
+    throw new Error("Speech transcription returned no text.");
+  }
+
+  return data.text.trim();
+}
 
 export async function generatePrayer(prompt: string) {
   const { GoogleGenAI } = await import("@google/genai");

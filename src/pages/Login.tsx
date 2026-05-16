@@ -4,7 +4,8 @@ import { ChristianCross } from "../components/ChristianCross";
 import { useNavigate } from "react-router-dom";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
-import { useDocumentTitle } from "../lib/utils";
+import { cn, useDocumentTitle } from "../lib/utils";
+import { useMobileViewport } from "../context/MobileViewportContext";
 
 type LegalView = "terms" | "privacy";
 
@@ -65,6 +66,7 @@ const legalDocuments: Record<LegalView, { title: string; updatedAt: string; sect
 
 export default function Login() {
   useDocumentTitle("Sign in | Bible Nova Companion");
+  const { isCompactPhone, isShortPhone } = useMobileViewport();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -143,10 +145,10 @@ export default function Login() {
 
   return (
     <div
-      className="app-screen relative flex min-h-[100svh] flex-col overflow-hidden"
+      className="app-screen-scroll relative flex flex-col"
       style={{
-        paddingTop: "max(env(safe-area-inset-top, 0px), 1.5rem)",
-        paddingBottom: "max(env(safe-area-inset-bottom, 0px), 1.5rem)",
+        paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "1rem" : "1.5rem"})`,
+        paddingBottom: `max(env(safe-area-inset-bottom, 0px), ${isShortPhone ? "1rem" : "1.5rem"})`,
       }}
     >
       <div className="app-atmosphere">
@@ -155,14 +157,19 @@ export default function Login() {
         <div className="app-orb app-orb-b bottom-[-16%] right-[-8%] h-[26rem] w-[26rem]" />
       </div>
 
-      <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-6 sm:px-8">
-        <div className="app-logo-badge mb-6 flex h-24 w-24 items-center justify-center rounded-full ring-1 ring-white/10 sm:mb-10">
+      <div
+        className={cn(
+          "relative z-10 flex flex-1 flex-col items-center px-4 py-4 sm:px-8",
+          isShortPhone ? "justify-start" : "justify-center",
+        )}
+      >
+        <div className={cn("app-logo-badge flex items-center justify-center rounded-full ring-1 ring-white/10", isShortPhone ? "mb-5 h-20 w-20" : "mb-6 h-24 w-24 sm:mb-10")}>
           <ChristianCross className="h-10 w-10 text-white" strokeWidth={2.5} />
         </div>
 
-        <div className="mb-8 max-w-md text-center sm:mb-10">
+        <div className={cn("max-w-md text-center", isShortPhone ? "mb-6" : "mb-8 sm:mb-10")}>
           <p className="app-kicker mb-3">Premium Sanctuary</p>
-          <h1 className="app-heading mb-3 pb-1 font-serif text-4xl font-normal leading-[1.24]">
+          <h1 className={cn("app-heading mb-3 pb-1 font-serif font-normal leading-[1.24]", isCompactPhone ? "text-[2rem]" : "text-4xl")}>
             {mode === "login" ? "Welcome back" : "Find your peace"}
           </h1>
           <p className="app-muted px-2 text-[15px] leading-relaxed">
@@ -172,7 +179,7 @@ export default function Login() {
           </p>
         </div>
 
-        <div className="w-full max-w-md space-y-5">
+        <div className={cn("w-full max-w-md", isShortPhone ? "space-y-4" : "space-y-5")}>
           {!isSupabaseConfigured && (
             <div className="app-panel rounded-card px-4 py-4 text-center text-sm leading-relaxed" style={{ color: "var(--app-accent)" }}>
               {supabaseConfigMessage} You can still continue as guest.
@@ -188,7 +195,7 @@ export default function Login() {
           <button
             onClick={handleGoogleAuth}
             disabled={isLoading || !isSupabaseConfigured}
-            className="app-secondary-button flex w-full items-center justify-center gap-3 rounded-card px-4 py-3.5 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            className="touch-target app-secondary-button flex w-full items-center justify-center gap-3 rounded-card px-4 py-3.5 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -248,7 +255,7 @@ export default function Login() {
               type="submit"
               disabled={isLoading || !isSupabaseConfigured}
               aria-busy={isLoading}
-              className="app-primary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-medium text-white transition-all active:scale-[0.98] disabled:grayscale"
+              className="touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-medium text-white transition-all active:scale-[0.98] disabled:grayscale"
             >
               {isLoading ? (
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -287,7 +294,7 @@ export default function Login() {
               loginAsGuest();
               navigate("/");
             }}
-            className="app-secondary-button w-full rounded-card py-3.5 text-[15px] font-medium transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            className="touch-target app-secondary-button w-full rounded-card py-3.5 text-[15px] font-medium transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             Continue as guest
           </button>
@@ -327,6 +334,7 @@ export default function Login() {
             aria-modal="true"
             aria-labelledby="legal-dialog-title"
             className="app-panel-strong relative z-10 max-h-[82dvh] w-full max-w-md overflow-y-auto rounded-[2rem] border p-5 shadow-2xl scrollbar-hide sm:p-6"
+            style={{ maxHeight: "calc(var(--app-visible-height) - 2rem)" }}
           >
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>

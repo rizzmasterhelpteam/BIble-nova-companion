@@ -4,5 +4,7 @@ dist/
 coverage/
 .DS_Store
 *.log
+.idea/
+android/.idea/
 .env*
 !.env.example

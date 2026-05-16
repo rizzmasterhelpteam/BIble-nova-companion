@@ -1,10 +1,12 @@
 import { SpeechRecognition as NativeSpeechRecognition } from "@capacitor-community/speech-recognition";
 import type { PluginListenerHandle } from "@capacitor/core";
-import { isNativePlatform } from "./native/platform";
+import { apiFetch } from "./apiClient";
+import { getNativePlatform, isNativePlatform } from "./native/platform";
 
 type SpeechRecognitionCallbacks = {
   onTranscript: (text: string) => void;
   onListeningChange: (isListening: boolean) => void;
+  onProcessingChange: (isProcessing: boolean) => void;
   onError: (message: string) => void;
 };
 
@@ -15,57 +17,26 @@ export type SpeechRecognitionSession = {
   isSupported: () => Promise<boolean>;
 };
 
-interface BrowserRecognitionAlternative {
-  transcript: string;
+interface MediaRecorderOptionsWithMimeType extends MediaRecorderOptions {
+  mimeType?: string;
 }
 
-interface BrowserRecognitionResult {
-  readonly isFinal: boolean;
-  readonly length: number;
-  [index: number]: BrowserRecognitionAlternative;
-}
+const WEB_RECORDING_MIME_TYPES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/mp4",
+  "audio/ogg;codecs=opus",
+];
 
-interface BrowserRecognitionResultList {
-  readonly length: number;
-  [index: number]: BrowserRecognitionResult;
-}
+const shouldUseNativeSpeechRecognition = () =>
+  isNativePlatform() && getNativePlatform() === "android";
 
-interface BrowserRecognitionEvent extends Event {
-  readonly resultIndex: number;
-  readonly results: BrowserRecognitionResultList;
-}
-
-interface BrowserRecognitionErrorEvent extends Event {
-  readonly error: string;
-}
-
-interface BrowserSpeechRecognition {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  maxAlternatives: number;
-  onend: ((event: Event) => void) | null;
-  onerror: ((event: BrowserRecognitionErrorEvent) => void) | null;
-  onresult: ((event: BrowserRecognitionEvent) => void) | null;
-  onstart: ((event: Event) => void) | null;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-}
-
-interface BrowserSpeechRecognitionConstructor {
-  new (): BrowserSpeechRecognition;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
-    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
-  }
-}
-
-const getBrowserSpeechRecognition = () =>
-  window.SpeechRecognition || window.webkitSpeechRecognition || null;
+const isWebRecordingSupported = () =>
+  Boolean(
+    typeof navigator !== "undefined" &&
+      navigator.mediaDevices?.getUserMedia &&
+      typeof MediaRecorder !== "undefined",
+  );
 
 const normalizeTranscript = (text: string) => text.trim().replace(/\s+/g, " ");
 
@@ -79,37 +50,48 @@ const mergeTranscript = (prefix: string, transcript: string) => {
   return `${normalizedPrefix} ${normalizedTranscript}`;
 };
 
-const getWebSpeechErrorMessage = (error: string) => {
-  switch (error) {
-    case "not-allowed":
-    case "service-not-allowed":
-      return "Microphone access was denied. Allow it in your browser settings.";
-    case "audio-capture":
-      return "No microphone was found for speech recognition.";
-    case "network":
-      return "Speech recognition hit a network error.";
-    case "no-speech":
-      return "No speech was detected.";
-    default:
-      return "Speech recognition could not start.";
-  }
-};
-
 const removeNativeListener = async (listener: PluginListenerHandle | null) => {
   if (!listener) return;
   await listener.remove().catch(() => undefined);
 };
 
+const readBlobAsDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read the recorded audio."));
+    reader.onloadend = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("Recorded audio could not be prepared for transcription."));
+        return;
+      }
+      resolve(result);
+    };
+    reader.readAsDataURL(blob);
+  });
+
+const getSupportedRecordingMimeType = () => {
+  for (const mimeType of WEB_RECORDING_MIME_TYPES) {
+    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(mimeType)) {
+      return mimeType;
+    }
+  }
+
+  return "";
+};
+
 export const createSpeechRecognitionSession = ({
   onTranscript,
   onListeningChange,
+  onProcessingChange,
   onError,
 }: SpeechRecognitionCallbacks): SpeechRecognitionSession => {
   let baseText = "";
-  let browserRecognition: BrowserSpeechRecognition | null = null;
+  let mediaRecorder: MediaRecorder | null = null;
+  let mediaStream: MediaStream | null = null;
+  let mediaChunks: Blob[] = [];
   let nativePartialResultsListener: PluginListenerHandle | null = null;
   let nativeListeningStateListener: PluginListenerHandle | null = null;
-  let manuallyStopped = false;
 
   const stopNativeRecognition = async () => {
     await NativeSpeechRecognition.stop().catch(() => undefined);
@@ -119,38 +101,94 @@ export const createSpeechRecognitionSession = ({
     nativeListeningStateListener = null;
   };
 
-  const stopBrowserRecognition = async (abort = false) => {
-    if (!browserRecognition) return;
+  const releaseMediaStream = () => {
+    mediaStream?.getTracks().forEach((track) => track.stop());
+    mediaStream = null;
+  };
 
-    const currentRecognition = browserRecognition;
-    browserRecognition = null;
-    currentRecognition.onstart = null;
-    currentRecognition.onresult = null;
-    currentRecognition.onerror = null;
-    currentRecognition.onend = null;
+  const stopWebRecording = async () => {
+    if (!mediaRecorder) return;
 
-    if (abort) {
-      currentRecognition.abort();
-      return;
-    }
+    const currentRecorder = mediaRecorder;
+    mediaRecorder = null;
 
-    currentRecognition.stop();
+    await new Promise<void>((resolve) => {
+      const finalize = async () => {
+        currentRecorder.ondataavailable = null;
+        currentRecorder.onerror = null;
+        currentRecorder.onstart = null;
+        currentRecorder.onstop = null;
+
+        releaseMediaStream();
+        const blobType = mediaChunks[0]?.type || currentRecorder.mimeType || "audio/webm";
+        const audioBlob = new Blob(mediaChunks, { type: blobType });
+        mediaChunks = [];
+
+        if (!audioBlob.size) {
+          onListeningChange(false);
+          onError("No speech was captured.");
+          resolve();
+          return;
+        }
+
+        onListeningChange(false);
+        onProcessingChange(true);
+
+        try {
+          const audio = await readBlobAsDataUrl(audioBlob);
+          const response = await apiFetch("/api/transcribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              audio,
+              language: navigator.language?.slice(0, 2) || "en",
+            }),
+          });
+
+          const data = (await response.json().catch(() => ({}))) as { text?: string; error?: string };
+          if (!response.ok) {
+            throw new Error(data.error || "Speech transcription failed.");
+          }
+
+          onTranscript(mergeTranscript(baseText, data.text || ""));
+        } catch (error) {
+          onError(error instanceof Error ? error.message : "Speech transcription failed.");
+        } finally {
+          onProcessingChange(false);
+          resolve();
+        }
+      };
+
+      currentRecorder.onstop = () => {
+        void finalize();
+      };
+
+      if (currentRecorder.state === "inactive") {
+        void finalize();
+        return;
+      }
+
+      currentRecorder.stop();
+    });
   };
 
   return {
     isSupported: async () => {
-      if (isNativePlatform()) {
-        const { available } = await NativeSpeechRecognition.available();
-        return available;
+      if (shouldUseNativeSpeechRecognition()) {
+        try {
+          const { available } = await NativeSpeechRecognition.available();
+          return available;
+        } catch {
+          return false;
+        }
       }
 
-      return Boolean(getBrowserSpeechRecognition());
+      return isWebRecordingSupported();
     },
     start: async (initialText = "") => {
       baseText = initialText;
-      manuallyStopped = false;
 
-      if (isNativePlatform()) {
+      if (shouldUseNativeSpeechRecognition()) {
         const { available } = await NativeSpeechRecognition.available();
         if (!available) {
           throw new Error("Speech recognition is not available on this device.");
@@ -189,66 +227,59 @@ export const createSpeechRecognitionSession = ({
         return;
       }
 
-      const BrowserRecognition = getBrowserSpeechRecognition();
-      if (!BrowserRecognition) {
+      if (!isWebRecordingSupported()) {
         throw new Error("Speech recognition is not available in this browser.");
       }
 
-      await stopBrowserRecognition(true);
+      await stopWebRecording();
 
-      const recognition = new BrowserRecognition();
-      browserRecognition = recognition;
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = navigator.language || "en-US";
-      recognition.maxAlternatives = 1;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStream = stream;
+      const mimeType = getSupportedRecordingMimeType();
+      const recorderOptions: MediaRecorderOptionsWithMimeType = mimeType ? { mimeType } : {};
+      const recorder = new MediaRecorder(stream, recorderOptions);
+      mediaRecorder = recorder;
+      mediaChunks = [];
 
-      recognition.onstart = () => {
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          mediaChunks.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        releaseMediaStream();
+        mediaRecorder = null;
+        mediaChunks = [];
+        onListeningChange(false);
+        onError("Microphone recording failed.");
+      };
+
+      recorder.onstart = () => {
         onListeningChange(true);
       };
 
-      recognition.onresult = (event) => {
-        let transcript = "";
-        for (let index = 0; index < event.results.length; index += 1) {
-          transcript += event.results[index][0]?.transcript || "";
-        }
-
-        onTranscript(mergeTranscript(baseText, transcript));
-      };
-
-      recognition.onerror = (event) => {
-        if (event.error === "aborted" && manuallyStopped) return;
-        onListeningChange(false);
-        onError(getWebSpeechErrorMessage(event.error));
-      };
-
-      recognition.onend = () => {
-        onListeningChange(false);
-      };
-
-      recognition.start();
+      recorder.start();
     },
     stop: async () => {
-      manuallyStopped = true;
-
-      if (isNativePlatform()) {
+      if (shouldUseNativeSpeechRecognition()) {
         await stopNativeRecognition();
         onListeningChange(false);
         return;
       }
 
-      await stopBrowserRecognition();
+      await stopWebRecording();
       onListeningChange(false);
     },
     destroy: async () => {
-      manuallyStopped = true;
-
-      if (isNativePlatform()) {
+      if (shouldUseNativeSpeechRecognition()) {
         await stopNativeRecognition();
         return;
       }
 
-      await stopBrowserRecognition(true);
+      releaseMediaStream();
+      mediaRecorder = null;
+      mediaChunks = [];
     },
   };
 };

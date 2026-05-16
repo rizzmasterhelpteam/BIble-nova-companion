@@ -8,6 +8,7 @@ import {
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
+  transcribeAudio,
 } from "./server-api";
 
 dotenv.config({ path: ".env.local" });
@@ -16,7 +17,7 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
-app.use(express.json());
+app.use(express.json({ limit: "12mb" }));
 
 app.get("/api/status", (_req, res) => {
   res.json(getApiStatus());
@@ -71,6 +72,17 @@ app.post("/api/generate", async (req, res) => {
     } else {
       res.status(500).json({ error: "Failed to generate content. Please try again." });
     }
+  }
+});
+
+app.post("/api/transcribe", async (req, res) => {
+  try {
+    const { audio, language } = req.body;
+    const text = await transcribeAudio(audio, language);
+    res.json({ text });
+  } catch (error) {
+    console.error("Speech transcription error:", error);
+    res.status(500).json({ error: getClientErrorMessage(error) });
   }
 });
 

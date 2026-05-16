@@ -5,7 +5,9 @@ import { ChristianCross } from "../components/ChristianCross";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../context/AuthContext";
+import { useMobileViewport } from "../context/MobileViewportContext";
 import { apiFetch } from "../lib/apiClient";
+import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import {
   createSpeechRecognitionSession,
   type SpeechRecognitionSession,
@@ -22,6 +24,7 @@ type Message = {
 type ApiStatus = {
   chatReady: boolean;
   prayerReady: boolean;
+  speechReady?: boolean;
 };
 
 const WELCOME_MESSAGE: Message = {
@@ -52,10 +55,12 @@ export default function Chat() {
   const location = useLocation();
   const navigate = useNavigate();
   const { identityKey, isGuest } = useAuth();
+  const { isCompactPhone, isKeyboardOpen, isShortPhone } = useMobileViewport();
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribingSpeech, setIsTranscribingSpeech] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [hasLoadedMessages, setHasLoadedMessages] = useState(false);
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
@@ -90,9 +95,13 @@ export default function Chat() {
           textareaRef.current?.focus();
         }
       },
+      onProcessingChange: (isProcessing) => {
+        setIsTranscribingSpeech(isProcessing);
+      },
       onError: (message) => {
         setSpeechError(message);
         setIsRecording(false);
+        setIsTranscribingSpeech(false);
       },
     });
   }
@@ -188,7 +197,7 @@ export default function Chat() {
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [messages, isTyping]);
+  }, [isKeyboardOpen, messages, isTyping]);
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -201,9 +210,15 @@ export default function Chat() {
   };
 
   const startSpeechRecognition = async () => {
-    if (isTyping || chatUnavailable) return;
+    if (isTyping || chatUnavailable || isTranscribingSpeech) return;
 
     setSpeechError(null);
+
+    const usesNativeDeviceSpeech = isNativePlatform() && getNativePlatform() === "android";
+    if (!usesNativeDeviceSpeech && apiStatus?.speechReady === false) {
+      setSpeechError("Voice input needs GROQ_API_KEY configured on the server.");
+      return;
+    }
 
     try {
       await speechSessionRef.current?.start(input);
@@ -212,6 +227,7 @@ export default function Chat() {
         error instanceof Error ? error.message : "Speech recognition could not start.",
       );
       setIsRecording(false);
+      setIsTranscribingSpeech(false);
     }
   };
 
@@ -224,6 +240,7 @@ export default function Chat() {
       setSpeechError(
         error instanceof Error ? error.message : "Speech recognition could not stop cleanly.",
       );
+      setIsTranscribingSpeech(false);
     }
   };
 
@@ -340,14 +357,17 @@ export default function Chat() {
   const chatUnavailable = apiStatus?.chatReady === false;
 
   return (
-    <div className="flex flex-1 flex-col relative overflow-hidden bg-transparent min-h-0">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent">
       <header
-        className="sticky top-0 z-30 flex min-h-[88px] shrink-0 items-center justify-between border-b border-[color:color-mix(in_srgb,var(--app-divider)_50%,transparent)] px-6 py-4 pr-16 shadow-sm backdrop-blur-3xl transition-colors duration-300"
+        className={cn(
+          "z-20 flex shrink-0 items-center justify-between border-b border-[color:color-mix(in_srgb,var(--app-divider)_50%,transparent)] pr-14 shadow-sm backdrop-blur-2xl transition-colors duration-300",
+          isCompactPhone ? "min-h-[80px] px-4 py-3" : "min-h-[88px] px-5 py-4 sm:px-6",
+        )}
         style={{
           background: "color-mix(in srgb, var(--app-shell-bg) 75%, transparent)",
         }}
       >
-        <div className="flex items-center gap-4">
+        <div className={cn("flex items-center", isCompactPhone ? "gap-3" : "gap-4")}>
           <div className="relative">
             <div className="app-logo-badge flex h-[42px] w-[42px] items-center justify-center rounded-full">
               <ChristianCross className="w-5 h-5 text-white" strokeWidth={2.5} />
@@ -358,7 +378,7 @@ export default function Chat() {
             />
           </div>
           <div>
-            <h3 className="app-heading text-[15px] font-medium tracking-wide">
+            <h3 className={cn("app-heading font-medium tracking-wide", isCompactPhone ? "text-[14px]" : "text-[15px]")}>
               Bible Nova Companion
             </h3>
             <p className="app-kicker mt-1 text-[10px]">
@@ -370,15 +390,20 @@ export default function Chat() {
 
       <div
         ref={scrollContainerRef}
-        className="flex flex-1 flex-col overflow-y-auto px-6 pt-[104px] scroll-smooth scrollbar-hide z-10"
-        style={{ paddingBottom: "calc(7.5rem + env(safe-area-inset-bottom, 0px))" }}
+        className={cn(
+          "app-scroll-region z-10 flex flex-1 flex-col scroll-smooth scrollbar-hide",
+          isCompactPhone ? "px-4 py-4" : "px-5 py-5 sm:px-6",
+        )}
       >
-        <div className="mt-auto flex flex-col gap-6">
+        <div className={cn("mx-auto flex w-full max-w-xl flex-col", isCompactPhone ? "gap-4" : "gap-6")}>
         {showQuickPrompts && (
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="app-panel relative overflow-hidden rounded-[2.5rem] p-6 shadow-xl backdrop-blur-2xl"
+            className={cn(
+              "app-panel relative overflow-hidden shadow-xl backdrop-blur-2xl",
+              isCompactPhone ? "rounded-[2rem] p-5" : "rounded-[2.5rem] p-6",
+            )}
             style={{
               background: "color-mix(in srgb, var(--app-card-bg) 75%, transparent)",
               borderColor: "color-mix(in srgb, var(--app-card-border) 60%, transparent)",
@@ -392,7 +417,7 @@ export default function Chat() {
                   Start gently
                 </p>
               </div>
-              <p className="app-muted mb-5 text-[14px] leading-relaxed max-w-[90%]">
+              <p className="app-muted mb-5 max-w-[96%] text-[14px] leading-relaxed">
                 {isGuest
                   ? "Your guidance stays on this device while you explore in guest mode."
                   : "Pick a prompt to start, or write your own reflection below."}
@@ -402,7 +427,7 @@ export default function Chat() {
                   <button
                     key={prompt}
                     onClick={() => handleSend(prompt)}
-                    className="app-secondary-button rounded-[1.25rem] px-5 py-3.5 text-left text-[14px] font-medium leading-[1.4] transition-all hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--app-accent)_50%,transparent)] shadow-sm"
+                    className="app-secondary-button rounded-[1.25rem] px-4 py-3.5 text-left text-[14px] font-medium leading-[1.4] transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--app-accent)_50%,transparent)] shadow-sm"
                   >
                     {prompt}
                   </button>
@@ -450,7 +475,7 @@ export default function Chat() {
                 )}
               >
                 {message.role === "ai" && (
-                  <div className="flex items-start gap-3 w-full max-w-[96%]">
+                  <div className="flex w-full max-w-full items-start gap-3">
                     <div
                       className={cn(
                         "w-[30px] h-[30px] mt-0.5 flex-shrink-0 rounded-full border flex items-center justify-center",
@@ -479,7 +504,7 @@ export default function Chat() {
                     <div className="flex flex-col gap-2 relative">
                       <div
                         className={cn(
-                          "text-[16px] leading-[1.8] font-serif font-light",
+                          "break-words text-[16px] leading-[1.8] font-serif font-light",
                           isError ? "rounded-[1.5rem] border px-4 py-3" : "",
                         )}
                         style={
@@ -532,7 +557,10 @@ export default function Chat() {
 
                 {message.role === "user" && (
                   <div
-                    className="max-w-[85%] rounded-[1.5rem] rounded-tr-[0.5rem] border px-6 py-4 text-[15px] font-light leading-relaxed backdrop-blur-xl transition-all"
+                    className={cn(
+                      "break-words rounded-[1.5rem] rounded-tr-[0.5rem] border text-[15px] font-light leading-relaxed backdrop-blur-xl transition-all",
+                      isCompactPhone ? "max-w-[90%] px-5 py-3.5" : "max-w-[85%] px-6 py-4",
+                    )}
                     style={{
                       background: "color-mix(in srgb, var(--app-card-strong) 92%, transparent)",
                       color: "var(--app-heading)",
@@ -553,7 +581,7 @@ export default function Chat() {
             initial={{ opacity: 0, y: 5 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="flex items-center gap-3 max-w-[85%]"
+            className="flex max-w-[88%] items-center gap-3"
           >
             <div className="w-[30px] h-[30px] flex-shrink-0 flex items-center justify-center">
               <ChristianCross strokeWidth={1} className="w-4 h-4 animate-pulse" style={{ color: "color-mix(in srgb, var(--app-accent) 60%, transparent)" }} />
@@ -580,12 +608,40 @@ export default function Chat() {
       </div>
 
       <div
-        className="pointer-events-none absolute bottom-0 left-0 right-0 z-40 px-6 pb-0 pt-2 transition-colors duration-300"
-        style={{ background: "linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--bg-base) 82%, transparent) 36%, var(--bg-base) 100%)" }}
+        className={cn(
+          "shrink-0 border-t border-[color:color-mix(in_srgb,var(--app-divider)_50%,transparent)] transition-colors duration-300",
+          isCompactPhone ? "px-4 pb-safe pt-3" : "px-5 pb-safe pt-3 sm:px-6",
+        )}
+        style={{
+          background:
+            "linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 82%, transparent) 0%, var(--bg-base) 100%)",
+        }}
       >
-        <div className="max-w-xl mx-auto w-full relative pointer-events-auto">
+        <div className="mx-auto w-full max-w-xl">
+          {(isRecording || isTranscribingSpeech || chatUnavailable || speechError) && (
+            <p
+              className="mb-3 px-1 text-center text-[11px]"
+              style={{
+                color: speechError ? "var(--app-danger)" : "var(--app-text-muted)",
+              }}
+            >
+              {speechError
+                ? speechError
+                : isRecording
+                ? "Listening. Tap stop when you're done."
+                : isTranscribingSpeech
+                ? "Transcribing your speech..."
+                : chatUnavailable
+                ? "Chat will unlock after the required API key is configured."
+                : ""}
+            </p>
+          )}
+
           <div
-            className="flex w-full items-end gap-2 rounded-pill border p-1.5 pl-4 backdrop-blur-3xl transition-all duration-300 focus-within:ring-2 focus-within:ring-[color:color-mix(in_srgb,var(--app-accent)_20%,transparent)] focus-within:border-[color:color-mix(in_srgb,var(--app-accent)_40%,transparent)]"
+            className={cn(
+              "flex w-full items-end gap-2 rounded-pill border p-1.5 backdrop-blur-2xl transition-all duration-300 focus-within:ring-2 focus-within:ring-[color:color-mix(in_srgb,var(--app-accent)_20%,transparent)] focus-within:border-[color:color-mix(in_srgb,var(--app-accent)_40%,transparent)]",
+              isCompactPhone ? "pl-3.5" : "pl-4",
+            )}
             style={{
               background: "color-mix(in srgb, var(--app-nav-bg) 85%, transparent)",
               borderColor: "color-mix(in srgb, var(--app-card-border) 80%, transparent)",
@@ -605,7 +661,10 @@ export default function Chat() {
               }}
               placeholder={chatUnavailable ? "Add an API key to enable chat..." : "Share your thoughts..."}
               enterKeyHint="send"
-              className="scrollbar-hide min-h-[44px] max-h-32 w-full resize-none bg-transparent py-3 font-sans text-[15px] font-light leading-[1.6] outline-none"
+              className={cn(
+                "scrollbar-hide w-full resize-none bg-transparent py-3 font-sans font-light leading-[1.6] outline-none",
+                isShortPhone ? "min-h-[44px] max-h-28 text-[14px]" : "min-h-[44px] max-h-32 text-[15px]",
+              )}
               style={{ color: "var(--app-heading)" }}
               rows={1}
             />
@@ -617,7 +676,7 @@ export default function Chat() {
                     void toggleRecording();
                   }}
                   disabled={isTyping || chatUnavailable}
-                  className={cn("relative flex h-[38px] w-[38px] items-center justify-center rounded-full border transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] shadow-sm", isTyping && "cursor-not-allowed opacity-50")}
+                  className={cn("touch-target relative flex h-[38px] w-[38px] items-center justify-center rounded-full border transition-all duration-300 active:scale-[0.97] shadow-sm", isTyping && "cursor-not-allowed opacity-50")}
                   style={{
                     background: "var(--app-danger-soft)",
                     color: "var(--app-danger)",
@@ -626,11 +685,22 @@ export default function Chat() {
                 >
                   <StopCircle className="w-4 h-4" />
                 </button>
+              ) : isTranscribingSpeech ? (
+                <div
+                  className="touch-target flex h-[38px] w-[38px] items-center justify-center rounded-full border shadow-sm"
+                  style={{
+                    background: "var(--app-secondary-bg)",
+                    borderColor: "var(--app-secondary-border)",
+                    color: "var(--app-text-muted)",
+                  }}
+                >
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-current/25 border-t-current" />
+                </div>
               ) : input.trim() ? (
                 <button
                   onClick={() => handleSend(input)}
-                  disabled={isTyping || chatUnavailable}
-                  className={cn("app-primary-button flex h-[38px] w-[38px] items-center justify-center rounded-full text-white transition-all hover:scale-105 active:scale-95 shadow-[0_4px_12px_color-mix(in_srgb,var(--app-accent)_30%,transparent)]", isTyping && "cursor-not-allowed opacity-50 grayscale")}
+                  disabled={isTyping || chatUnavailable || isTranscribingSpeech}
+                  className={cn("touch-target app-primary-button flex h-[38px] w-[38px] items-center justify-center rounded-full text-white transition-all active:scale-95 shadow-[0_4px_12px_color-mix(in_srgb,var(--app-accent)_30%,transparent)]", isTyping && "cursor-not-allowed opacity-50 grayscale")}
                 >
                   <Send strokeWidth={2.5} className="w-[18px] h-[18px] ml-0.5" />
                 </button>
@@ -639,8 +709,8 @@ export default function Chat() {
                   onClick={() => {
                     void toggleRecording();
                   }}
-                  disabled={isTyping || chatUnavailable}
-                  className={cn("relative flex h-[38px] w-[38px] items-center justify-center rounded-full border transition-all duration-300 hover:scale-[1.03] active:scale-[0.97] shadow-sm", isTyping && "cursor-not-allowed opacity-50")}
+                  disabled={isTyping || chatUnavailable || isTranscribingSpeech}
+                  className={cn("touch-target relative flex h-[38px] w-[38px] items-center justify-center rounded-full border transition-all duration-300 active:scale-[0.97] shadow-sm", isTyping && "cursor-not-allowed opacity-50")}
                   style={
                     {
                       background: "var(--app-secondary-bg)",
@@ -654,18 +724,6 @@ export default function Chat() {
               )}
             </div>
           </div>
-
-          {(isRecording || chatUnavailable || speechError) && (
-            <p className="app-muted mt-3 pb-safe text-center text-[11px]">
-              {speechError
-                ? speechError
-                : isRecording
-                ? "Listening. Tap stop when you're done."
-                : chatUnavailable
-                ? "Chat will unlock after the required API key is configured."
-                : ""}
-            </p>
-          )}
         </div>
       </div>
     </div>
