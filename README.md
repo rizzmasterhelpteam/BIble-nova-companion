@@ -30,7 +30,9 @@ Set these in Vercel for the environments you deploy to:
 - `SUPABASE_SERVICE_ROLE_KEY` only needed for signed-in account deletion
 - `GEMINI_API_KEY` only needed for `/api/generate`
 - `VITE_API_BASE_URL` required in native mobile builds, set to your Vercel site URL
-- `VITE_REVENUECAT_IOS_API_KEY` and `VITE_REVENUECAT_ANDROID_API_KEY` required for native IAP
+- `VITE_GOOGLE_PLAY_PUBLIC_KEY` optional Google Play monetization RSA public key for Android billing or verification integrations
+- `VITE_IAP_MONTHLY_PRODUCT_ID` and `VITE_IAP_YEARLY_PRODUCT_ID` required for native subscription IAP
+- `VITE_IAP_MONTHLY_BASE_PLAN_ID` and `VITE_IAP_YEARLY_BASE_PLAN_ID` required for Android subscription IAP (Google Play base plans)
 
 `VITE_` variables are embedded into the browser bundle. Keep `GROQ_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `GEMINI_API_KEY` server-only.
 
