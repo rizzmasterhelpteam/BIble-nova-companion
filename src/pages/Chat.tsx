@@ -1,7 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Mic, Send, StopCircle, AlertCircle, Sparkles, KeyRound } from "lucide-react";
-import { ChristianCross } from "../components/ChristianCross";
+import {
+  Mic,
+  Send,
+  StopCircle,
+  AlertCircle,
+  Sparkles,
+  KeyRound,
+  Volume2,
+  Square,
+} from "lucide-react";
 import { AppLogo } from "../components/AppLogo";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { motion, AnimatePresence } from "motion/react";
@@ -13,6 +21,10 @@ import {
   createSpeechRecognitionSession,
   type SpeechRecognitionSession,
 } from "../lib/speechRecognition";
+import {
+  createTextToSpeechSession,
+  type TextToSpeechSession,
+} from "../lib/textToSpeech";
 
 type Message = {
   id: string;
@@ -26,6 +38,7 @@ type ApiStatus = {
   chatReady: boolean;
   prayerReady: boolean;
   speechReady?: boolean;
+  ttsReady?: boolean;
 };
 
 const WELCOME_MESSAGE: Message = {
@@ -63,14 +76,18 @@ export default function Chat() {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribingSpeech, setIsTranscribingSpeech] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
+  const [ttsError, setTtsError] = useState<string | null>(null);
   const [hasLoadedMessages, setHasLoadedMessages] = useState(false);
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const [voiceSupported, setVoiceSupported] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const initialized = useRef(false);
   const messagesRef = useRef(messages);
   const requestControllerRef = useRef<AbortController | null>(null);
   const speechSessionRef = useRef<SpeechRecognitionSession | null>(null);
+  const ttsSessionRef = useRef<TextToSpeechSession | null>(null);
 
   const resizeTextarea = () => {
     if (!textareaRef.current) return;
@@ -107,9 +124,24 @@ export default function Chat() {
     });
   }
 
+  if (!ttsSessionRef.current) {
+    ttsSessionRef.current = createTextToSpeechSession({
+      onSpeakingChange: (messageId) => {
+        setSpeakingMessageId(messageId);
+      },
+      onError: (message) => {
+        setTtsError(message);
+      },
+    });
+  }
+
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    setVoiceSupported(Boolean(ttsSessionRef.current?.isSupported()));
+  }, []);
 
   useEffect(() => {
     const storageKey = getMessageStorageKey(identityKey);
@@ -144,6 +176,7 @@ export default function Chat() {
     return () => {
       requestControllerRef.current?.abort();
       void speechSessionRef.current?.destroy();
+      ttsSessionRef.current?.destroy();
     };
   }, []);
 
@@ -159,7 +192,7 @@ export default function Chat() {
       })
       .catch(() => {
         if (isMounted) {
-          setApiStatus({ chatReady: true, prayerReady: true });
+          setApiStatus({ chatReady: true, prayerReady: true, ttsReady: true });
         }
       });
 
@@ -246,16 +279,42 @@ export default function Chat() {
   };
 
   const appendAiMessage = (content: string, tone: "default" | "error" = "default") => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        role: "ai",
-        content,
-        reference: tone === "default" ? extractReference(content) : undefined,
-        tone,
-      },
-    ]);
+    const nextMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "ai",
+      content,
+      reference: tone === "default" ? extractReference(content) : undefined,
+      tone,
+    };
+
+    setMessages((prev) => [...prev, nextMessage]);
+
+  };
+
+  const handleSpeakMessage = async (message: Message) => {
+    if (
+      message.role !== "ai" ||
+      message.tone === "error" ||
+      !voiceSupported ||
+      apiStatus?.ttsReady === false
+    ) {
+      return;
+    }
+
+    setTtsError(null);
+
+    if (speakingMessageId === message.id) {
+      ttsSessionRef.current?.stop();
+      return;
+    }
+
+    try {
+      await ttsSessionRef.current?.speak(message.id, message.content);
+    } catch (error) {
+      setTtsError(
+        error instanceof Error ? error.message : "Voice playback could not start on this device.",
+      );
+    }
   };
 
   const handleSend = async (text: string) => {
@@ -269,6 +328,8 @@ export default function Chat() {
     if (isRecording) {
       await speechSessionRef.current?.stop();
     }
+
+    ttsSessionRef.current?.stop();
 
     requestControllerRef.current?.abort();
     const controller = new AbortController();
@@ -503,6 +564,41 @@ export default function Chat() {
                     </div>
 
                     <div className="flex flex-col gap-2 relative">
+                      {!isError && voiceSupported && apiStatus?.ttsReady !== false && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleSpeakMessage(message);
+                          }}
+                          className="flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] transition-all"
+                          style={{
+                            background:
+                              speakingMessageId === message.id
+                                ? "color-mix(in srgb, var(--app-accent-soft) 92%, transparent)"
+                                : "color-mix(in srgb, var(--app-card-soft) 82%, transparent)",
+                            borderColor:
+                              speakingMessageId === message.id
+                                ? "color-mix(in srgb, var(--app-accent) 28%, transparent)"
+                                : "color-mix(in srgb, var(--app-card-border) 55%, transparent)",
+                            color:
+                              speakingMessageId === message.id
+                                ? "var(--app-accent)"
+                                : "var(--app-text-muted)",
+                          }}
+                        >
+                          {speakingMessageId === message.id ? (
+                            <>
+                              <Square className="h-3.5 w-3.5 fill-current" />
+                              Stop voice
+                            </>
+                          ) : (
+                            <>
+                              <Volume2 className="h-3.5 w-3.5" />
+                              Father voice
+                            </>
+                          )}
+                        </button>
+                      )}
                       <div
                         className={cn(
                           "break-words text-[16px] leading-[1.8] font-serif font-light",
@@ -619,15 +715,22 @@ export default function Chat() {
         }}
       >
         <div className="mx-auto w-full max-w-xl">
-          {(isRecording || isTranscribingSpeech || chatUnavailable || speechError) && (
+          {(isRecording ||
+            isTranscribingSpeech ||
+            speakingMessageId ||
+            chatUnavailable ||
+            speechError ||
+            ttsError) && (
             <p
               className="mb-3 px-1 text-center text-[11px]"
               style={{
-                color: speechError ? "var(--app-danger)" : "var(--app-text-muted)",
+                color: speechError || ttsError ? "var(--app-danger)" : "var(--app-text-muted)",
               }}
             >
-              {speechError
-                ? speechError
+              {speechError || ttsError
+                ? speechError || ttsError
+                : speakingMessageId
+                ? "Playing the same server-generated fatherly voice on this device."
                 : isRecording
                 ? "Listening. Tap stop when you're done."
                 : isTranscribingSpeech
