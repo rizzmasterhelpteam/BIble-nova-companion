@@ -74,13 +74,20 @@ export default function Login() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [legalView, setLegalView] = useState<LegalView | null>(null);
   const navigate = useNavigate();
-  const { user, isGuest, loginAsGuest } = useAuth();
+  const { user, isGuest, isLoading: isAuthLoading, hasCompletedOnboarding, isSubscribed, loginAsGuest } = useAuth();
 
   useEffect(() => {
+    if (isAuthLoading) return;
+
     if (user || isGuest) {
-      navigate("/");
+      const destination = !hasCompletedOnboarding
+        ? "/onboarding"
+        : !isSubscribed
+          ? "/paywall"
+          : "/";
+      navigate(destination, { replace: true });
     }
-  }, [isGuest, navigate, user]);
+  }, [hasCompletedOnboarding, isAuthLoading, isGuest, isSubscribed, navigate, user]);
 
   const handleEmailAuth = async (event: React.FormEvent) => {
     event.preventDefault();

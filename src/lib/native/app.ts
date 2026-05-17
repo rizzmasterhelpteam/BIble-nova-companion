@@ -6,6 +6,19 @@ import { StatusBar, Style } from "@capacitor/status-bar";
 import { isNativePlatform } from "./platform";
 import { initializePurchases } from "./purchases";
 
+let nativeSplashHidden = false;
+
+export async function hideNativeSplashScreen() {
+  if (!isNativePlatform() || nativeSplashHidden) return;
+
+  nativeSplashHidden = true;
+  try {
+    await SplashScreen.hide();
+  } catch {
+    nativeSplashHidden = false;
+  }
+}
+
 export async function initializeNativeApp() {
   if (!isNativePlatform()) return;
 
@@ -29,8 +42,4 @@ export async function initializeNativeApp() {
       void Network.getStatus();
     }
   });
-
-  window.setTimeout(() => {
-    void SplashScreen.hide();
-  }, 250);
 }

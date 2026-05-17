@@ -81,6 +81,7 @@ export const createTextToSpeechSession = ({
   onError,
 }: TextToSpeechCallbacks): TextToSpeechSession => {
   let activeMessageId: string | null = null;
+  let playbackRequestId = 0;
 
   const reset = () => {
     activeMessageId = null;
@@ -97,11 +98,17 @@ export const createTextToSpeechSession = ({
       const normalizedText = normalizeText(text);
       if (!normalizedText) return;
 
+      playbackRequestId += 1;
+      const requestId = playbackRequestId;
       window.speechSynthesis.cancel();
       reset();
 
       const utterance = new SpeechSynthesisUtterance(normalizedText);
       const preferredVoice = await pickPreferredVoice();
+
+      if (requestId !== playbackRequestId) {
+        return;
+      }
 
       if (preferredVoice) {
         utterance.voice = preferredVoice;
@@ -136,11 +143,13 @@ export const createTextToSpeechSession = ({
     },
     stop: () => {
       if (!hasSpeechSynthesisSupport()) return;
+      playbackRequestId += 1;
       window.speechSynthesis.cancel();
       reset();
     },
     destroy: () => {
       if (!hasSpeechSynthesisSupport()) return;
+      playbackRequestId += 1;
       window.speechSynthesis.cancel();
       reset();
     },

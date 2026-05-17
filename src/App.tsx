@@ -3,13 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import { Loader2 } from "lucide-react";
 import { ThemeProvider } from "./context/ThemeContext";
 import { HapticsProvider } from "./context/HapticsContext";
 import { MobileViewportProvider } from "./context/MobileViewportContext";
+import { SplashScreen } from "./components/SplashScreen";
+import { AnimatePresence, motion } from "motion/react";
+import { hideNativeSplashScreen } from "./lib/native/app";
 
 const Layout = lazy(() => import("./components/Layout"));
 const Chat = lazy(() => import("./pages/Chat"));
@@ -20,11 +22,7 @@ const Login = lazy(() => import("./pages/Login"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const Paywall = lazy(() => import("./pages/Paywall"));
 
-const FullScreenLoader = () => (
-  <div className="app-screen flex h-[100dvh] w-full items-center justify-center">
-    <Loader2 className="h-8 w-8 animate-spin" style={{ color: "var(--app-accent)" }} />
-  </div>
-);
+const FullScreenLoader = () => <SplashScreen />;
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, isLoading, isGuest, hasCompletedOnboarding, isSubscribed } = useAuth();
@@ -56,32 +54,72 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
 };
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
+  useEffect(() => {
+    // Keep the custom splash visible long enough for its entrance animation.
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    let frameOne = 0;
+    let frameTwo = 0;
+
+    frameOne = window.requestAnimationFrame(() => {
+      frameTwo = window.requestAnimationFrame(() => {
+        void hideNativeSplashScreen();
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameOne);
+      window.cancelAnimationFrame(frameTwo);
+    };
+  }, []);
+
   return (
     <ThemeProvider>
       <MobileViewportProvider>
-        <HapticsProvider>
-          <AuthProvider>
-            <BrowserRouter>
-              <Suspense fallback={<FullScreenLoader />}>
-                <Routes>
-                  <Route path="/login" element={<Login />} />
+        <AnimatePresence mode="wait">
+          {showSplash ? (
+            <SplashScreen key="splash" />
+          ) : (
+            <motion.div
+              key="main-app"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.8, ease: "easeInOut" }}
+              className="flex h-full w-full flex-col"
+            >
+              <HapticsProvider>
+                <AuthProvider>
+                  <BrowserRouter>
+                    <Suspense fallback={<FullScreenLoader />}>
+                      <Routes>
+                        <Route path="/login" element={<Login />} />
 
-                  {/* Guarded App Routes */}
-                  <Route path="/onboarding" element={<AuthGuard><Onboarding /></AuthGuard>} />
-                  <Route path="/paywall" element={<AuthGuard><Paywall /></AuthGuard>} />
+                        {/* Guarded App Routes */}
+                        <Route path="/onboarding" element={<AuthGuard><Onboarding /></AuthGuard>} />
+                        <Route path="/paywall" element={<AuthGuard><Paywall /></AuthGuard>} />
 
-                  <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
-                    <Route index element={<Chat />} />
-                    <Route path="breathe" element={<Breathe />} />
-                    <Route path="intentions" element={<Intentions />} />
-                    <Route path="confess" element={<Confession />} />
-                  </Route>
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </Suspense>
-            </BrowserRouter>
-          </AuthProvider>
-        </HapticsProvider>
+                        <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
+                          <Route index element={<Chat />} />
+                          <Route path="breathe" element={<Breathe />} />
+                          <Route path="intentions" element={<Intentions />} />
+                          <Route path="confess" element={<Confession />} />
+                        </Route>
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                      </Routes>
+                    </Suspense>
+                  </BrowserRouter>
+                </AuthProvider>
+              </HapticsProvider>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </MobileViewportProvider>
     </ThemeProvider>
   );
