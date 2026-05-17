@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { storageGet, storageSet } from "../lib/webStorage";
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -27,7 +28,7 @@ export function ThemeProvider({
   ...props
 }: ThemeProviderProps) {
   const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
+    () => (storageGet(storageKey) as Theme) || defaultTheme
   );
 
   useEffect(() => {
@@ -51,14 +52,19 @@ export function ThemeProvider({
     }
 
     const handleChange = () => applyTheme('system');
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
   }, [theme]);
 
   const value = {
     theme,
     setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme);
+      storageSet(storageKey, theme);
       setTheme(theme);
     },
   };

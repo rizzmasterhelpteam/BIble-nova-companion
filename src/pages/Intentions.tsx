@@ -4,6 +4,7 @@ import PageHeader from "../components/PageHeader";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { useAuth } from "../context/AuthContext";
 import { useMobileViewport } from "../context/MobileViewportContext";
+import { storageGetJson, storageSet } from "../lib/webStorage";
 
 type Intention = {
   id: number;
@@ -42,17 +43,12 @@ export default function Intentions() {
   useEffect(() => {
     if (!storageKey) return;
 
-    try {
-      const raw = localStorage.getItem(storageKey);
-      setIntentions(raw ? (JSON.parse(raw) as Intention[]) : FALLBACK_INTENTIONS);
-    } catch {
-      setIntentions(FALLBACK_INTENTIONS);
-    }
+    setIntentions(storageGetJson<Intention[]>(storageKey, FALLBACK_INTENTIONS));
   }, [storageKey]);
 
   useEffect(() => {
     if (!storageKey) return;
-    localStorage.setItem(storageKey, JSON.stringify(intentions));
+    storageSet(storageKey, JSON.stringify(intentions));
   }, [intentions, storageKey]);
 
   const addIntention = (value = newIntention) => {

@@ -17,6 +17,7 @@ import { useAuth } from "../context/AuthContext";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { apiFetch } from "../lib/apiClient";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
+import { storageGetJson, storageSet } from "../lib/webStorage";
 import {
   createSpeechRecognitionSession,
   type SpeechRecognitionSession,
@@ -151,13 +152,8 @@ export default function Chat() {
     }
 
     try {
-      const stored = localStorage.getItem(storageKey);
-      if (!stored) {
-        setMessages([WELCOME_MESSAGE]);
-      } else {
-        const parsed = JSON.parse(stored) as Message[];
-        setMessages(parsed.length ? parsed : [WELCOME_MESSAGE]);
-      }
+      const parsed = storageGetJson<Message[]>(storageKey, [WELCOME_MESSAGE]);
+      setMessages(parsed.length ? parsed : [WELCOME_MESSAGE]);
     } catch {
       setMessages([WELCOME_MESSAGE]);
     }
@@ -168,7 +164,7 @@ export default function Chat() {
   useEffect(() => {
     const storageKey = getMessageStorageKey(identityKey);
     if (!storageKey || !hasLoadedMessages) return;
-    localStorage.setItem(storageKey, JSON.stringify(messages));
+    storageSet(storageKey, JSON.stringify(messages));
   }, [hasLoadedMessages, identityKey, messages]);
 
   useEffect(() => {
@@ -287,7 +283,6 @@ export default function Chat() {
     };
 
     setMessages((prev) => [...prev, nextMessage]);
-
   };
 
   const handleSpeakMessage = async (message: Message) => {

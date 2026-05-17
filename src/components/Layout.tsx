@@ -118,6 +118,7 @@ export default function Layout() {
   const accountInitial = displayName.trim().charAt(0).toUpperCase() || "?";
   const isAccountBusy = isDeletingAccount || isSavingProfile || isProcessingAvatar;
   const nativeControlsAvailable = isNativePlatform();
+  const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "1.1.1";
 
   useEffect(() => {
     if (!nativeControlsAvailable) return;
@@ -280,8 +281,8 @@ export default function Layout() {
 
       <div
         className={cn(
-          "app-shell relative flex h-full w-full min-h-0 flex-col overflow-hidden ring-1 sm:max-w-md sm:rounded-shell sm:ring-[color:var(--app-shell-ring)]",
-          isCompactPhone && "sm:max-w-sm",
+          "app-shell relative flex h-full w-full min-h-0 flex-col overflow-hidden ring-1 sm:max-w-lg sm:rounded-shell sm:ring-[color:var(--app-shell-ring)] xl:max-w-xl",
+          isCompactPhone && "sm:max-w-md",
         )}
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 0px)" }}
       >
@@ -734,7 +735,7 @@ export default function Layout() {
                       }}
                     >
                       <span className="text-[14px] app-muted">Bible Nova Companion</span>
-                      <span className="text-[12px] app-soft">v1.0.0</span>
+                      <span className="text-[12px] app-soft">v{appVersion}</span>
                     </div>
                   </section>
                 </div>

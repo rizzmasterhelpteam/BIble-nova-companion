@@ -36,6 +36,8 @@ const MIN_VISIBLE_HEIGHT = 280;
 const round = (value: number) => Math.round(Math.max(0, value));
 
 const applyRootViewportState = (state: MobileViewportState) => {
+  if (typeof document === "undefined") return;
+
   const root = document.documentElement;
   root.style.setProperty("--app-visible-height", `${state.visibleHeight}px`);
   root.style.setProperty("--app-viewport-width", `${state.width}px`);
@@ -139,10 +141,10 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
     };
 
     syncViewport();
-    window.addEventListener("resize", handleViewportChange);
-    window.addEventListener("orientationchange", handleViewportChange);
-    window.visualViewport?.addEventListener("resize", handleViewportChange);
-    window.visualViewport?.addEventListener("scroll", handleViewportChange);
+    window.addEventListener("resize", handleViewportChange, { passive: true });
+    window.addEventListener("orientationchange", handleViewportChange, { passive: true });
+    window.visualViewport?.addEventListener("resize", handleViewportChange, { passive: true });
+    window.visualViewport?.addEventListener("scroll", handleViewportChange, { passive: true });
 
     if (isNativePlatform()) {
       void Promise.all([

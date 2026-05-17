@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
 import { isNativePlatform } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
+import { storageGet, storageSet } from "../lib/webStorage";
 
 type HapticsContextType = {
   hapticsEnabled: boolean;
@@ -22,12 +23,8 @@ const canVibrate = () =>
   typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
 
 const getStoredHapticsPreference = () => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored === null ? DEFAULT_HAPTICS_ENABLED : stored === "true";
-  } catch {
-    return DEFAULT_HAPTICS_ENABLED;
-  }
+  const stored = storageGet(STORAGE_KEY);
+  return stored === null ? DEFAULT_HAPTICS_ENABLED : stored === "true";
 };
 
 export function HapticsProvider({ children }: { children: React.ReactNode }) {
@@ -45,12 +42,7 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setHapticsEnabled = (enabled: boolean) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, String(enabled));
-    } catch {
-      // Keep the in-memory setting even if storage is unavailable.
-    }
-
+    storageSet(STORAGE_KEY, String(enabled));
     void nativeStorage.set(STORAGE_KEY, String(enabled)).catch(() => undefined);
     setHapticsEnabledState(enabled);
     if (enabled) {

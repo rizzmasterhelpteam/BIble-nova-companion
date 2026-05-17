@@ -7,6 +7,7 @@ import { AppLogo } from "../components/AppLogo";
 import { motion, AnimatePresence } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
+import { storageGetJson, storageRemove, storageSet } from "../lib/webStorage";
 
 const STORAGE_KEY = "bible_nova_companion_onboarding_answers";
 
@@ -73,14 +74,9 @@ export default function Onboarding() {
   useDocumentTitle("Welcome | Bible Nova Companion");
   const { isCompactPhone, isShortPhone } = useMobileViewport();
   const [currentStep, setCurrentStep] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [answers, setAnswers] = useState<Record<string, string>>(() =>
+    storageGetJson<Record<string, string>>(STORAGE_KEY, {}),
+  );
   const [showAnalysis, setShowAnalysis] = useState(false);
   const { completeOnboarding } = useAuth();
   const navigate = useNavigate();
@@ -97,11 +93,7 @@ export default function Onboarding() {
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(answers));
-    } catch {
-      return;
-    }
+    storageSet(STORAGE_KEY, JSON.stringify(answers));
   }, [answers]);
 
   const handleSelect = (optionId: string) => {
@@ -130,7 +122,7 @@ export default function Onboarding() {
   };
 
   const handleGetStarted = () => {
-    localStorage.removeItem(STORAGE_KEY);
+    storageRemove(STORAGE_KEY);
     completeOnboarding();
     navigate("/paywall");
   };

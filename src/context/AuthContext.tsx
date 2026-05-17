@@ -5,6 +5,7 @@ import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { apiFetch } from "../lib/apiClient";
 import { hasActiveSubscription } from "../lib/native/purchases";
 import { isNativePlatform } from "../lib/native/platform";
+import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
 
 type AuthContextType = {
   user: User | null;
@@ -47,13 +48,13 @@ const AuthContext = createContext<AuthContextType>({
 const AVATAR_NONE = "__none__";
 
 const clearLocalIdentityData = (id: string) => {
-  localStorage.removeItem(`bible-nova-companion-chat-${id}`);
-  localStorage.removeItem(`bible-nova-companion-intentions-${id}`);
-  localStorage.removeItem(`bible-nova-companion-profile-name-${id}`);
-  localStorage.removeItem(`bible-nova-companion-profile-avatar-${id}`);
-  localStorage.removeItem(`onboardingComplete_${id}`);
-  localStorage.removeItem(`isSubscribed_${id}`);
-  localStorage.removeItem("bible_nova_companion_onboarding_answers");
+  storageRemove(`bible-nova-companion-chat-${id}`);
+  storageRemove(`bible-nova-companion-intentions-${id}`);
+  storageRemove(`bible-nova-companion-profile-name-${id}`);
+  storageRemove(`bible-nova-companion-profile-avatar-${id}`);
+  storageRemove(`onboardingComplete_${id}`);
+  storageRemove(`isSubscribed_${id}`);
+  storageRemove("bible_nova_companion_onboarding_answers");
 };
 
 const getUserDisplayName = (currentUser: User | null) => {
@@ -69,7 +70,7 @@ const getUserDisplayName = (currentUser: User | null) => {
 };
 
 const getStoredProfileName = (id: string, currentUser: User | null, guest: boolean) =>
-  localStorage.getItem(`bible-nova-companion-profile-name-${id}`) ||
+  storageGet(`bible-nova-companion-profile-name-${id}`) ||
   getUserDisplayName(currentUser) ||
   (guest ? "Guest" : null);
 
@@ -80,16 +81,16 @@ const getUserAvatarUrl = (currentUser: User | null) => {
 };
 
 const getStoredProfileAvatarUrl = (id: string, currentUser: User | null) => {
-  const stored = localStorage.getItem(`bible-nova-companion-profile-avatar-${id}`);
+  const stored = storageGet(`bible-nova-companion-profile-avatar-${id}`);
   if (stored === AVATAR_NONE) return null;
   return stored || getUserAvatarUrl(currentUser);
 };
 
 const getActiveIdentityId = (userId: string | null) =>
-  userId || (localStorage.getItem("is_guest") === "true" ? "guest" : null);
+  userId || (storageGet("is_guest") === "true" ? "guest" : null);
 
 const setStoredSubscriptionState = (id: string, value: boolean) => {
-  localStorage.setItem(`isSubscribed_${id}`, value ? "true" : "false");
+  storageSet(`isSubscribed_${id}`, value ? "true" : "false");
 };
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -104,7 +105,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isSubscribed, setIsSubscribed] = useState(false);
 
   useEffect(() => {
-    const storedGuest = localStorage.getItem("is_guest") === "true";
+    const storedGuest = storageGet("is_guest") === "true";
     if (storedGuest) {
       setIsGuest(true);
       setIdentityKey("guest");
@@ -118,8 +119,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
 
-      setHasCompletedOnboarding(localStorage.getItem(`onboardingComplete_${id}`) === "true");
-      setIsSubscribed(localStorage.getItem(`isSubscribed_${id}`) === "true");
+      setHasCompletedOnboarding(storageGet(`onboardingComplete_${id}`) === "true");
+      setIsSubscribed(storageGet(`isSubscribed_${id}`) === "true");
     };
 
     const syncProfileName = (id: string | null, currentUser: User | null, guest: boolean) => {
@@ -161,7 +162,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (currentUser) {
          setIsGuest(false);
          setIdentityKey(currentUser.id);
-         localStorage.removeItem("is_guest");
+         storageRemove("is_guest");
       } else if (storedGuest) {
          setIdentityKey("guest");
       }
@@ -186,13 +187,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (currentUser) {
          setIsGuest(false);
          setIdentityKey(currentUser.id);
-         localStorage.removeItem("is_guest");
+         storageRemove("is_guest");
       } else {
-         const guestMode = localStorage.getItem("is_guest") === "true";
+         const guestMode = storageGet("is_guest") === "true";
          setIsGuest(guestMode);
          setIdentityKey(guestMode ? "guest" : null);
       }
-      const guestMode = localStorage.getItem("is_guest") === "true";
+      const guestMode = storageGet("is_guest") === "true";
       checkOnboardingAndSub(currentUser?.id || (guestMode ? "guest" : null));
       syncProfileName(currentUser?.id || (guestMode ? "guest" : null), currentUser, guestMode && !currentUser);
       void syncNativeSubscriptionState(currentUser?.id || (guestMode ? "guest" : null)).finally(() => {
@@ -232,17 +233,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const loginAsGuest = () => {
-    localStorage.setItem("is_guest", "true");
+    storageSet("is_guest", "true");
     setIsGuest(true);
     setIdentityKey("guest");
     setProfileName(getStoredProfileName("guest", null, true));
     setProfileAvatarUrl(getStoredProfileAvatarUrl("guest", null));
-    setHasCompletedOnboarding(localStorage.getItem(`onboardingComplete_guest`) === "true");
-    setIsSubscribed(localStorage.getItem(`isSubscribed_guest`) === "true");
+    setHasCompletedOnboarding(storageGet(`onboardingComplete_guest`) === "true");
+    setIsSubscribed(storageGet(`isSubscribed_guest`) === "true");
   };
 
   const logout = async () => {
-    localStorage.removeItem("is_guest");
+    storageRemove("is_guest");
     setIsGuest(false);
     setIdentityKey(null);
     setProfileName(null);
@@ -280,7 +281,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       clearLocalIdentityData(id);
     }
 
-    localStorage.removeItem("is_guest");
+    storageRemove("is_guest");
     setUser(null);
     setSession(null);
     setIsGuest(false);
@@ -323,7 +324,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(data.user);
     }
 
-    localStorage.setItem(`bible-nova-companion-profile-name-${id}`, trimmed);
+    storageSet(`bible-nova-companion-profile-name-${id}`, trimmed);
     setProfileName(trimmed);
   };
 
@@ -338,14 +339,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       throw new Error("Profile picture is too large. Choose a smaller image.");
     }
 
-    localStorage.setItem(`bible-nova-companion-profile-avatar-${id}`, avatarUrl || AVATAR_NONE);
+    storageSet(`bible-nova-companion-profile-avatar-${id}`, avatarUrl || AVATAR_NONE);
     setProfileAvatarUrl(avatarUrl);
   };
 
   const completeOnboarding = () => {
     const id = user?.id || (isGuest ? "guest" : null);
     if (id) {
-      localStorage.setItem(`onboardingComplete_${id}`, "true");
+      storageSet(`onboardingComplete_${id}`, "true");
       setHasCompletedOnboarding(true);
     }
   };
