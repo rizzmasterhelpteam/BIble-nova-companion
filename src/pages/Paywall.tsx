@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Check, Star, AlertCircle, ShieldCheck } from "lucide-react";
-import { ChristianCross } from "../components/ChristianCross";
+import { AppLogo } from "../components/AppLogo";
 import { motion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { isNativePlatform } from "../lib/native/platform";
@@ -262,8 +262,8 @@ export default function Paywall() {
           )}
         >
           <div className={cn("flex justify-center", isShortPhone ? "mb-6" : "mb-8")}>
-            <div className="app-logo-badge flex h-16 w-16 items-center justify-center rounded-full ring-1 ring-white/10">
-              <ChristianCross className="w-8 h-8 text-white" strokeWidth={2.5} />
+            <div className="app-logo-badge overflow-hidden flex h-16 w-16 items-center justify-center rounded-full ring-1 ring-white/10">
+              <AppLogo className="h-full w-full object-cover" />
             </div>
           </div>
 
@@ -410,6 +410,9 @@ export default function Paywall() {
               >
                 Manage subscriptions
               </button>
+              <p className="app-muted px-2 text-center text-[11px] leading-relaxed">
+                Google Play promo-code redemptions unlock automatically when you return to the app. Restore is available if the store state needs a manual refresh.
+              </p>
             </div>
           )}
 

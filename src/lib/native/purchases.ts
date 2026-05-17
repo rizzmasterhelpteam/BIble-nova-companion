@@ -96,6 +96,13 @@ const isActivePurchase = (purchase: Transaction) => {
   return true;
 };
 
+const getConfiguredProductIds = () => {
+  const configs = getSubscriptionConfigs();
+  return Object.values(configs)
+    .map((entry) => entry.productId)
+    .filter((value): value is string => Boolean(value));
+};
+
 const assertValidSubscriptionPurchase = (
   purchase: Transaction,
   aPackage: SubscriptionPackage,
@@ -194,10 +201,7 @@ export async function restorePurchases() {
 
   await NativePurchases.restorePurchases();
 
-  const configs = getSubscriptionConfigs();
-  const activeProductIds = Object.values(configs)
-    .map((entry) => entry.productId)
-    .filter((value): value is string => Boolean(value));
+  const activeProductIds = getConfiguredProductIds();
 
   if (!activeProductIds.length) {
     throw new Error("IAP product IDs are not configured.");
@@ -218,6 +222,23 @@ export async function restorePurchases() {
   }
 
   return purchases;
+}
+
+export async function hasActiveSubscription() {
+  if (!(await initializePurchases())) return false;
+
+  const activeProductIds = getConfiguredProductIds();
+  if (!activeProductIds.length) return false;
+
+  const { purchases } = await NativePurchases.getPurchases({
+    productType: PURCHASE_TYPE.SUBS,
+    onlyCurrentEntitlements: true,
+  });
+
+  return purchases.some(
+    (purchase) =>
+      activeProductIds.includes(purchase.productIdentifier) && isActivePurchase(purchase),
+  );
 }
 
 export async function openSubscriptionManagement() {

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Mic, Send, StopCircle, AlertCircle, Sparkles, KeyRound } from "lucide-react";
 import { ChristianCross } from "../components/ChristianCross";
+import { AppLogo } from "../components/AppLogo";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../context/AuthContext";
@@ -369,8 +370,8 @@ export default function Chat() {
       >
         <div className={cn("flex items-center", isCompactPhone ? "gap-3" : "gap-4")}>
           <div className="relative">
-            <div className="app-logo-badge flex h-[42px] w-[42px] items-center justify-center rounded-full">
-              <ChristianCross className="w-5 h-5 text-white" strokeWidth={2.5} />
+            <div className="app-logo-badge overflow-hidden flex h-[42px] w-[42px] items-center justify-center rounded-full">
+              <AppLogo alt="" className="h-full w-full object-cover" />
             </div>
             <div
               className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2"
@@ -497,7 +498,7 @@ export default function Chat() {
                       {isError ? (
                         <AlertCircle className="w-[14px] h-[14px]" />
                       ) : (
-                        <ChristianCross strokeWidth={1.5} className="w-[14px] h-[14px]" />
+                        <AppLogo alt="" className="h-[14px] w-[14px] rounded-full object-cover" />
                       )}
                     </div>
 
@@ -584,7 +585,7 @@ export default function Chat() {
             className="flex max-w-[88%] items-center gap-3"
           >
             <div className="w-[30px] h-[30px] flex-shrink-0 flex items-center justify-center">
-              <ChristianCross strokeWidth={1} className="w-4 h-4 animate-pulse" style={{ color: "color-mix(in srgb, var(--app-accent) 60%, transparent)" }} />
+              <AppLogo alt="" className="h-4 w-4 rounded-full object-cover animate-pulse" />
             </div>
             <div className="flex items-center gap-[5px] rounded-card rounded-tl-[0.5rem] px-4 py-3" style={{ background: "var(--app-card-soft)" }}>
               {[0, 150, 300].map((delay) => (

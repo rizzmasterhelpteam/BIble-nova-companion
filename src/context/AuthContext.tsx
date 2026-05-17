@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { App as CapacitorApp } from "@capacitor/app";
 import { User, Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { apiFetch } from "../lib/apiClient";
+import { hasActiveSubscription } from "../lib/native/purchases";
+import { isNativePlatform } from "../lib/native/platform";
 
 type AuthContextType = {
   user: User | null;
@@ -82,6 +85,13 @@ const getStoredProfileAvatarUrl = (id: string, currentUser: User | null) => {
   return stored || getUserAvatarUrl(currentUser);
 };
 
+const getActiveIdentityId = (userId: string | null) =>
+  userId || (localStorage.getItem("is_guest") === "true" ? "guest" : null);
+
+const setStoredSubscriptionState = (id: string, value: boolean) => {
+  localStorage.setItem(`isSubscribed_${id}`, value ? "true" : "false");
+};
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -101,20 +111,42 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     const checkOnboardingAndSub = (userId: string | null) => {
-      const id = userId || "guest";
+      const id = getActiveIdentityId(userId);
+      if (!id) {
+        setHasCompletedOnboarding(false);
+        setIsSubscribed(false);
+        return;
+      }
+
       setHasCompletedOnboarding(localStorage.getItem(`onboardingComplete_${id}`) === "true");
       setIsSubscribed(localStorage.getItem(`isSubscribed_${id}`) === "true");
     };
 
     const syncProfileName = (id: string | null, currentUser: User | null, guest: boolean) => {
-      setProfileName(id ? getStoredProfileName(id, currentUser, guest) : null);
-      setProfileAvatarUrl(id ? getStoredProfileAvatarUrl(id, currentUser) : null);
+      const activeId = getActiveIdentityId(id);
+      setProfileName(activeId ? getStoredProfileName(activeId, currentUser, guest) : null);
+      setProfileAvatarUrl(activeId ? getStoredProfileAvatarUrl(activeId, currentUser) : null);
+    };
+
+    const syncNativeSubscriptionState = async (userId: string | null) => {
+      const id = getActiveIdentityId(userId);
+      if (!isNativePlatform() || !id) return;
+
+      try {
+        const hasEntitlement = await hasActiveSubscription();
+        setStoredSubscriptionState(id, hasEntitlement);
+        setIsSubscribed(hasEntitlement);
+      } catch (error) {
+        console.warn("Could not sync native subscription state:", error);
+      }
     };
 
     if (!isSupabaseConfigured) {
       checkOnboardingAndSub(storedGuest ? "guest" : null);
       syncProfileName(storedGuest ? "guest" : null, null, storedGuest);
-      setIsLoading(false);
+      void syncNativeSubscriptionState(storedGuest ? "guest" : null).finally(() => {
+        setIsLoading(false);
+      });
       return;
     }
 
@@ -136,7 +168,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       checkOnboardingAndSub(currentUser?.id || (storedGuest ? "guest" : null));
       syncProfileName(currentUser?.id || (storedGuest ? "guest" : null), currentUser, storedGuest && !currentUser);
-      setIsLoading(false);
+      void syncNativeSubscriptionState(currentUser?.id || (storedGuest ? "guest" : null)).finally(() => {
+        setIsLoading(false);
+      });
     }).catch(err => {
       console.error("Failed to get session:", err);
       setIsLoading(false);
@@ -161,10 +195,40 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const guestMode = localStorage.getItem("is_guest") === "true";
       checkOnboardingAndSub(currentUser?.id || (guestMode ? "guest" : null));
       syncProfileName(currentUser?.id || (guestMode ? "guest" : null), currentUser, guestMode && !currentUser);
-      setIsLoading(false);
+      void syncNativeSubscriptionState(currentUser?.id || (guestMode ? "guest" : null)).finally(() => {
+        setIsLoading(false);
+      });
     });
 
-    return () => subscription.unsubscribe();
+    let removeAppStateListener: (() => void) | undefined;
+    if (isNativePlatform()) {
+      void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+        if (!isActive) return;
+
+        if (!isSupabaseConfigured) {
+          void syncNativeSubscriptionState(getActiveIdentityId(null));
+          return;
+        }
+
+        void supabase.auth
+          .getSession()
+          .then(({ data: { session } }) =>
+            syncNativeSubscriptionState(session?.user?.id || getActiveIdentityId(null)),
+          )
+          .catch((error) => {
+            console.warn("Could not refresh session while syncing subscriptions:", error);
+          });
+      }).then((listener) => {
+        removeAppStateListener = () => {
+          void listener.remove();
+        };
+      });
+    }
+
+    return () => {
+      subscription.unsubscribe();
+      removeAppStateListener?.();
+    };
   }, []);
 
   const loginAsGuest = () => {
@@ -289,7 +353,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const subscribe = () => {
     const id = user?.id || (isGuest ? "guest" : null);
     if (id) {
-      localStorage.setItem(`isSubscribed_${id}`, "true");
+      setStoredSubscriptionState(id, true);
       setIsSubscribed(true);
     }
   };

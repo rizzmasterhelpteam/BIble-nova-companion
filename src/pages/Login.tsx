@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Mail, Lock, ArrowRight, X } from "lucide-react";
-import { ChristianCross } from "../components/ChristianCross";
+import { AppLogo } from "../components/AppLogo";
 import { useNavigate } from "react-router-dom";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -163,8 +163,8 @@ export default function Login() {
           isShortPhone ? "justify-start" : "justify-center",
         )}
       >
-        <div className={cn("app-logo-badge flex items-center justify-center rounded-full ring-1 ring-white/10", isShortPhone ? "mb-5 h-20 w-20" : "mb-6 h-24 w-24 sm:mb-10")}>
-          <ChristianCross className="h-10 w-10 text-white" strokeWidth={2.5} />
+        <div className={cn("app-logo-badge overflow-hidden flex items-center justify-center rounded-full ring-1 ring-white/10", isShortPhone ? "mb-5 h-20 w-20" : "mb-6 h-24 w-24 sm:mb-10")}>
+          <AppLogo className="h-full w-full object-cover" />
         </div>
 
         <div className={cn("max-w-md text-center", isShortPhone ? "mb-6" : "mb-8 sm:mb-10")}>

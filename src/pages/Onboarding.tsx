@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Sunrise } from "lucide-react";
 import { ChristianCross } from "../components/ChristianCross";
+import { AppLogo } from "../components/AppLogo";
 import { motion, AnimatePresence } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
@@ -171,8 +172,8 @@ export default function Onboarding() {
           </button>
 
           <div className={cn("flex justify-center", isShortPhone ? "mb-5" : "mb-7")}>
-            <div className={cn("app-logo-badge flex items-center justify-center rounded-full ring-1 ring-white/10", isCompactPhone ? "h-16 w-16" : "h-20 w-20")}>
-              <ChristianCross className="h-9 w-9 text-white" strokeWidth={2.5} />
+            <div className={cn("app-logo-badge overflow-hidden flex items-center justify-center rounded-full ring-1 ring-white/10", isCompactPhone ? "h-16 w-16" : "h-20 w-20")}>
+              <AppLogo className="h-full w-full object-cover" />
             </div>
           </div>
 
