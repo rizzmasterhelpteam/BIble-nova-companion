@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 export function SplashScreen() {
   return (
     <motion.div 
-      className="app-screen relative flex h-[100dvh] w-full flex-col items-center justify-center overflow-hidden bg-[color:var(--app-bg)]"
+      className="app-screen fixed inset-0 z-[100] flex w-full flex-col items-center justify-center overflow-hidden bg-[color:var(--app-bg)]"
       exit={{ opacity: 0, scale: 1.05 }}
       transition={{ duration: 0.8, ease: "easeInOut" }}
     >

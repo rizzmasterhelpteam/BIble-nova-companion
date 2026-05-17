@@ -66,7 +66,7 @@ const legalDocuments: Record<LegalView, { title: string; updatedAt: string; sect
 
 export default function Login() {
   useDocumentTitle("Sign in | Bible Nova Companion");
-  const { isCompactPhone, isShortPhone } = useMobileViewport();
+  const { isCompactPhone, isKeyboardOpen, isShortPhone } = useMobileViewport();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -75,6 +75,7 @@ export default function Login() {
   const [legalView, setLegalView] = useState<LegalView | null>(null);
   const navigate = useNavigate();
   const { user, isGuest, isLoading: isAuthLoading, hasCompletedOnboarding, isSubscribed, loginAsGuest } = useAuth();
+  const shouldTopAlign = isShortPhone || isKeyboardOpen;
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -88,6 +89,17 @@ export default function Login() {
       navigate(destination, { replace: true });
     }
   }, [hasCompletedOnboarding, isAuthLoading, isGuest, isSubscribed, navigate, user]);
+
+  useEffect(() => {
+    if (!legalView) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [legalView]);
 
   const handleEmailAuth = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -166,8 +178,8 @@ export default function Login() {
 
       <div
         className={cn(
-          "relative z-10 flex flex-1 flex-col items-center px-4 py-4 sm:px-8",
-          isShortPhone ? "justify-start" : "justify-center",
+          "relative z-10 flex min-h-full w-full flex-col items-center px-4 py-4 sm:px-8",
+          shouldTopAlign ? "justify-start" : "justify-center",
         )}
       >
         <div className={cn("app-logo-badge overflow-hidden flex items-center justify-center rounded-full ring-1 ring-white/10", isShortPhone ? "mb-5 h-20 w-20" : "mb-6 h-24 w-24 sm:mb-10")}>

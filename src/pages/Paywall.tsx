@@ -20,6 +20,7 @@ type Plan = "monthly" | "yearly";
 export default function Paywall() {
   useDocumentTitle("Subscribe | Bible Nova Companion");
   const { isCompactPhone, isShortPhone } = useMobileViewport();
+  const shouldTopAlign = isShortPhone;
   const nativeStoreAvailable = isNativePlatform();
   const [selectedPlan, setSelectedPlan] = useState<Plan>("yearly");
   const [isLoading, setIsLoading] = useState(false);
@@ -249,8 +250,8 @@ export default function Paywall() {
 
       <div
         className={cn(
-          "relative z-10 flex flex-1 flex-col items-center p-4 sm:py-12",
-          isShortPhone ? "justify-start" : "justify-center",
+          "relative z-10 flex min-h-full w-full flex-1 flex-col items-center p-4 sm:py-12",
+          shouldTopAlign ? "justify-start" : "justify-center",
         )}
       >
         <motion.div
@@ -258,6 +259,7 @@ export default function Paywall() {
           animate={{ opacity: 1, y: 0 }}
           className={cn(
             "app-panel w-full max-w-sm rounded-[2rem]",
+            !shouldTopAlign && "my-auto",
             isCompactPhone ? "p-5" : "p-6 sm:p-7",
           )}
         >

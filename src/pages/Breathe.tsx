@@ -82,7 +82,7 @@ export default function Breathe() {
   return (
     <div
       className={cn(
-        "relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 sm:px-8 sm:pb-8 sm:pt-4",
+        "app-scroll-region relative flex min-h-0 flex-1 flex-col px-4 pb-6 pt-3 sm:px-8 sm:pb-8 sm:pt-4",
         isCompactPhone && "px-3 pb-5 pt-2",
       )}
     >
@@ -94,7 +94,12 @@ export default function Breathe() {
         className={cn("shrink-0", isShortPhone ? "mb-2.5" : "mb-3 sm:mb-8")}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center">
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 flex-col items-center",
+          isShortPhone ? "justify-start" : "justify-center",
+        )}
+      >
         <div
           className={cn(
             "relative flex w-full flex-shrink-0 items-center justify-center",

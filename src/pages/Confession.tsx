@@ -66,7 +66,7 @@ export default function Confession() {
   return (
     <div
       className={cn(
-        "flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 sm:px-6",
+        "app-scroll-region flex min-h-0 flex-1 flex-col px-4 pb-6 pt-3 sm:px-6",
         isCompactPhone && "px-3 pb-5 pt-2",
       )}
     >

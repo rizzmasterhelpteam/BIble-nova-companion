@@ -73,6 +73,7 @@ const getSelectedLabel = (answers: Record<string, string>, questionId: string) =
 export default function Onboarding() {
   useDocumentTitle("Welcome | Bible Nova Companion");
   const { isCompactPhone, isShortPhone } = useMobileViewport();
+  const shouldTopAlign = isShortPhone;
   const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>(() =>
     storageGetJson<Record<string, string>>(STORAGE_KEY, {}),
@@ -137,7 +138,7 @@ export default function Onboarding() {
       <div
         className={cn(
           "app-screen-scroll relative flex flex-col items-center px-4 py-4 scrollbar-hide",
-          isShortPhone ? "justify-start" : "justify-center",
+          shouldTopAlign ? "justify-start" : "justify-center",
         )}
       >
         <div className="app-atmosphere">
@@ -152,6 +153,7 @@ export default function Onboarding() {
           transition={{ duration: 0.35, ease: "easeOut" }}
           className={cn(
             "app-panel relative z-10 w-full max-w-md rounded-[2rem] shadow-2xl",
+            !shouldTopAlign && "my-auto",
             isCompactPhone ? "p-5" : "p-6 sm:p-8",
           )}
         >
