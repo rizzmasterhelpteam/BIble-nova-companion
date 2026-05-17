@@ -22,6 +22,5 @@ export default function handler(req: any, res: any) {
     modelsReady: Boolean(process.env.GROK_API_KEY?.trim()),
     prayerReady: Boolean(process.env.GEMINI_API_KEY?.trim()),
     speechReady: Boolean(process.env.GROQ_API_KEY?.trim()),
-    ttsReady: Boolean(process.env.GEMINI_API_KEY?.trim()),
   });
 }

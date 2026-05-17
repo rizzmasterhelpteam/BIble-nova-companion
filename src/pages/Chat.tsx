@@ -38,7 +38,6 @@ type ApiStatus = {
   chatReady: boolean;
   prayerReady: boolean;
   speechReady?: boolean;
-  ttsReady?: boolean;
 };
 
 const WELCOME_MESSAGE: Message = {
@@ -192,7 +191,7 @@ export default function Chat() {
       })
       .catch(() => {
         if (isMounted) {
-          setApiStatus({ chatReady: true, prayerReady: true, ttsReady: true });
+          setApiStatus({ chatReady: true, prayerReady: true });
         }
       });
 
@@ -295,8 +294,7 @@ export default function Chat() {
     if (
       message.role !== "ai" ||
       message.tone === "error" ||
-      !voiceSupported ||
-      apiStatus?.ttsReady === false
+      !voiceSupported
     ) {
       return;
     }
@@ -564,7 +562,7 @@ export default function Chat() {
                     </div>
 
                     <div className="flex flex-col gap-2 relative">
-                      {!isError && voiceSupported && apiStatus?.ttsReady !== false && (
+                      {!isError && voiceSupported && (
                         <button
                           type="button"
                           onClick={() => {
@@ -730,7 +728,7 @@ export default function Chat() {
               {speechError || ttsError
                 ? speechError || ttsError
                 : speakingMessageId
-                ? "Playing the same server-generated fatherly voice on this device."
+                ? "Playing the best available fatherly device voice."
                 : isRecording
                 ? "Listening. Tap stop when you're done."
                 : isTranscribingSpeech

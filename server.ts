@@ -6,7 +6,6 @@ import {
   createChatCompletion,
   deleteSupabaseAccount,
   generatePrayer,
-  generateSpeechAudioDataUrl,
   getApiStatus,
   getClientErrorMessage,
   transcribeAudio,
@@ -87,16 +86,6 @@ app.post("/api/transcribe", async (req, res) => {
   }
 });
 
-app.post("/api/speak", async (req, res) => {
-  try {
-    const { text } = req.body;
-    const audio = await generateSpeechAudioDataUrl(String(text || ""));
-    res.json({ audio, voice: "Gacrux" });
-  } catch (error) {
-    console.error("Speech generation error:", error);
-    res.status(500).json({ error: getClientErrorMessage(error) });
-  }
-});
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

@@ -1,5 +1,3 @@
-import { apiFetch } from "./apiClient";
-
 type TextToSpeechCallbacks = {
   onSpeakingChange: (messageId: string | null) => void;
   onError: (message: string) => void;
@@ -12,89 +10,138 @@ export type TextToSpeechSession = {
   destroy: () => void;
 };
 
+const hasSpeechSynthesisSupport = () =>
+  typeof window !== "undefined" &&
+  "speechSynthesis" in window &&
+  "SpeechSynthesisUtterance" in window;
+
 const normalizeText = (text: string) => text.trim().replace(/\s+/g, " ");
+
+const scoreVoice = (voice: SpeechSynthesisVoice) => {
+  const name = voice.name.toLowerCase();
+  const lang = voice.lang.toLowerCase();
+  let score = 0;
+
+  if (lang.startsWith("en")) score += 40;
+  if (voice.localService) score += 20;
+  if (voice.default) score += 10;
+
+  if (/google uk english male/.test(name)) score += 220;
+  if (/male|man/.test(name)) score += 100;
+  if (/deep|baritone|bass|narrator|news|mature|smooth|velvet|rich/.test(name)) score += 95;
+  if (/british male|english male|male english/.test(name)) score += 70;
+  if (/daniel|fred|aaron|arthur|david|nathan|oliver|thomas|alex|jorge|diego/i.test(voice.name)) {
+    score += 80;
+  }
+  if (/english|british|australian|irish/.test(name)) score += 20;
+  if (/female|woman|girl|child|junior|zira|samantha|victoria|karen|moira|ava|allison/i.test(voice.name)) {
+    score -= 120;
+  }
+  if (/whisper|soft|cute|light|high/.test(name)) score -= 50;
+
+  return score;
+};
+
+const waitForVoices = () =>
+  new Promise<SpeechSynthesisVoice[]>((resolve) => {
+    if (!hasSpeechSynthesisSupport()) {
+      resolve([]);
+      return;
+    }
+
+    const existing = window.speechSynthesis.getVoices();
+    if (existing.length) {
+      resolve(existing);
+      return;
+    }
+
+    const handleVoicesChanged = () => {
+      const nextVoices = window.speechSynthesis.getVoices();
+      if (!nextVoices.length) return;
+      window.speechSynthesis.removeEventListener("voiceschanged", handleVoicesChanged);
+      resolve(nextVoices);
+    };
+
+    window.speechSynthesis.addEventListener("voiceschanged", handleVoicesChanged);
+
+    window.setTimeout(() => {
+      window.speechSynthesis.removeEventListener("voiceschanged", handleVoicesChanged);
+      resolve(window.speechSynthesis.getVoices());
+    }, 1200);
+  });
+
+const pickPreferredVoice = async () => {
+  const voices = await waitForVoices();
+  if (!voices.length) return null;
+  return [...voices].sort((a, b) => scoreVoice(b) - scoreVoice(a))[0] || null;
+};
 
 export const createTextToSpeechSession = ({
   onSpeakingChange,
   onError,
 }: TextToSpeechCallbacks): TextToSpeechSession => {
-  let activeAudio: HTMLAudioElement | null = null;
   let activeMessageId: string | null = null;
 
   const reset = () => {
-    if (activeAudio) {
-      activeAudio.pause();
-      activeAudio.src = "";
-      activeAudio = null;
-    }
-
     activeMessageId = null;
     onSpeakingChange(null);
   };
 
   return {
-    isSupported: () => typeof Audio !== "undefined",
+    isSupported: () => hasSpeechSynthesisSupport(),
     speak: async (messageId, text) => {
-      if (typeof Audio === "undefined") {
-        throw new Error("Audio playback is not available on this device.");
+      if (!hasSpeechSynthesisSupport()) {
+        throw new Error("Text-to-speech is not available on this device.");
       }
 
       const normalizedText = normalizeText(text);
       if (!normalizedText) return;
 
+      window.speechSynthesis.cancel();
       reset();
 
-      const response = await apiFetch("/api/speak", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: normalizedText }),
-      });
+      const utterance = new SpeechSynthesisUtterance(normalizedText);
+      const preferredVoice = await pickPreferredVoice();
 
-      const data = (await response.json().catch(() => ({}))) as {
-        audio?: string;
-        error?: string;
+      if (preferredVoice) {
+        utterance.voice = preferredVoice;
+        utterance.lang = preferredVoice.lang;
+      } else {
+        utterance.lang = navigator.language || "en-US";
+      }
+
+      utterance.rate = 0.86;
+      utterance.pitch = 0.68;
+      utterance.volume = 1;
+
+      utterance.onstart = () => {
+        activeMessageId = messageId;
+        onSpeakingChange(messageId);
       };
 
-      if (!response.ok) {
-        throw new Error(data.error || `Voice generation failed (${response.status}).`);
-      }
-
-      if (!data.audio) {
-        throw new Error("Voice generation returned no audio.");
-      }
-
-      const audio = new Audio(data.audio);
-      activeAudio = audio;
-      activeMessageId = messageId;
-
-      audio.onended = () => {
+      utterance.onend = () => {
         if (activeMessageId === messageId) {
           reset();
         }
       };
 
-      audio.onerror = () => {
+      utterance.onerror = () => {
         if (activeMessageId === messageId) {
           reset();
         }
         onError("Voice playback could not start on this device.");
       };
 
-      onSpeakingChange(messageId);
-
-      try {
-        await audio.play();
-      } catch (error) {
-        reset();
-        throw error instanceof Error
-          ? error
-          : new Error("Voice playback could not start on this device.");
-      }
+      window.speechSynthesis.speak(utterance);
     },
     stop: () => {
+      if (!hasSpeechSynthesisSupport()) return;
+      window.speechSynthesis.cancel();
       reset();
     },
     destroy: () => {
+      if (!hasSpeechSynthesisSupport()) return;
+      window.speechSynthesis.cancel();
       reset();
     },
   };

@@ -9,7 +9,6 @@ export {
 export const hasModelsApiKey = () => Boolean(process.env.GROK_API_KEY?.trim());
 
 export const hasPrayerApiKey = () => Boolean(process.env.GEMINI_API_KEY?.trim());
-export const hasTtsApiKey = () => Boolean(process.env.GEMINI_API_KEY?.trim());
 
 export const hasSpeechApiKey = () => Boolean(process.env.GROQ_API_KEY?.trim());
 
@@ -18,11 +17,7 @@ export const getApiStatus = () => ({
   modelsReady: hasModelsApiKey(),
   prayerReady: hasPrayerApiKey(),
   speechReady: hasSpeechApiKey(),
-  ttsReady: hasTtsApiKey(),
 });
-
-const TTS_MODEL = "gemini-3.1-flash-tts-preview";
-const TTS_VOICE = "Gacrux";
 
 const parseBase64Audio = (audio: string) => {
   const match = audio.match(/^data:([^;]+);base64,(.+)$/);
@@ -100,77 +95,6 @@ export async function generatePrayer(prompt: string) {
   });
 
   return response.text;
-}
-
-const pcmToWav = (pcmBuffer: Buffer, sampleRate = 24000, channels = 1, bitsPerSample = 16) => {
-  const header = Buffer.alloc(44);
-  const byteRate = sampleRate * channels * (bitsPerSample / 8);
-  const blockAlign = channels * (bitsPerSample / 8);
-
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + pcmBuffer.length, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(channels, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(byteRate, 28);
-  header.writeUInt16LE(blockAlign, 32);
-  header.writeUInt16LE(bitsPerSample, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(pcmBuffer.length, 40);
-
-  return Buffer.concat([header, pcmBuffer]);
-};
-
-const buildVoicePrompt = (text: string) =>
-  [
-    "Read the following transcript exactly as written.",
-    "Voice direction: calm, deep, warm, fatherly, reassuring, grounded, mature, attractive, and never theatrical.",
-    "Use measured pacing and gentle authority.",
-    "",
-    "Transcript:",
-    text,
-  ].join("\n");
-
-export async function generateSpeechAudioDataUrl(text: string) {
-  const { GoogleGenAI } = await import("@google/genai");
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-
-  if (!apiKey) {
-    throw new Error("Voice playback requires GEMINI_API_KEY on the server.");
-  }
-
-  const cleanedText = text.trim();
-  if (!cleanedText) {
-    throw new Error("Text is required for voice playback.");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
-  const response = await ai.models.generateContent({
-    model: TTS_MODEL,
-    contents: [{ role: "user", parts: [{ text: buildVoicePrompt(cleanedText) }] }],
-    config: {
-      responseModalities: ["AUDIO"],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName: TTS_VOICE,
-          },
-        },
-      },
-    },
-  });
-
-  const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  if (!base64Audio) {
-    throw new Error("Voice generation returned no audio.");
-  }
-
-  const pcmBuffer = Buffer.from(base64Audio, "base64");
-  const wavBuffer = pcmToWav(pcmBuffer);
-  return `data:audio/wav;base64,${wavBuffer.toString("base64")}`;
 }
 
 export async function deleteSupabaseAccount(authorizationHeader?: string) {
