@@ -4,10 +4,14 @@ import App from './App.tsx';
 import './index.css';
 import { initializeNativeApp } from './lib/native/app';
 
+import { restoreWebStorageFromPreferences } from './lib/webStorage';
+
 void initializeNativeApp();
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+restoreWebStorageFromPreferences().finally(() => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+});

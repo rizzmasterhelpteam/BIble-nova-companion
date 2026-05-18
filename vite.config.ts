@@ -135,6 +135,22 @@ export default defineConfig(({mode}) => {
   applyLocalEnv(env);
 
   return {
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes("node_modules")) {
+              return;
+            }
+
+            if (id.includes("react-dom") || id.includes("react")) return "react-vendor";
+            if (id.includes("@capacitor") || id.includes("@capgo")) return "native-vendor";
+            if (id.includes("motion")) return "motion-vendor";
+            if (id.includes("@supabase")) return "supabase-vendor";
+          },
+        },
+      },
+    },
     define: {
       'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
     },

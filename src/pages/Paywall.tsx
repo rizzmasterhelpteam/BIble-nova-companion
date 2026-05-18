@@ -236,7 +236,7 @@ export default function Paywall() {
 
   return (
     <div
-      className="app-screen-scroll relative flex flex-col overflow-x-hidden"
+      className="app-screen-scroll w-full relative flex flex-col overflow-x-hidden"
       style={{
         paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "0.75rem" : "1rem"})`,
         paddingBottom: `max(env(safe-area-inset-bottom, 0px), ${isShortPhone ? "0.75rem" : "1rem"})`,
@@ -263,33 +263,22 @@ export default function Paywall() {
             isCompactPhone ? "p-5" : "p-6 sm:p-7",
           )}
         >
-          <div className={cn("flex justify-center", isShortPhone ? "mb-6" : "mb-8")}>
-            <div className="app-logo-badge overflow-hidden flex h-16 w-16 items-center justify-center rounded-full ring-1 ring-white/10">
+          <div className={cn("flex justify-center", isShortPhone ? "mb-4" : "mb-8")}>
+            <div className={cn("app-logo-badge flex items-center justify-center overflow-hidden rounded-full ring-1 ring-white/10", isShortPhone ? "h-12 w-12" : "h-16 w-16")}>
               <AppLogo className="h-full w-full object-cover" />
             </div>
           </div>
 
           <div className={cn("text-center", isShortPhone ? "mb-5" : "mb-6 sm:mb-8")}>
-            <span className="app-accent-badge inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-widest mb-4">
+            <span className={cn("app-accent-badge mb-4 inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-widest", isShortPhone && "mb-3")}>
               Your path is ready
             </span>
-            <h1 className={cn("app-heading mb-3 pb-1 font-serif leading-[1.24]", isCompactPhone ? "text-[2rem]" : "text-3xl")}>
+            <h1 className={cn("app-heading mb-3 pb-1 font-serif leading-[1.24]", isShortPhone ? "text-[1.85rem]" : isCompactPhone ? "text-[2rem]" : "text-3xl")}>
               Unlock your spiritual journey
             </h1>
-            <p className="app-muted px-2 font-light">
+            <p className={cn("app-muted px-2 font-light", isShortPhone && "text-[14px] leading-relaxed")}>
               Commit to your growth with full access to Bible Nova Companion.
             </p>
-          </div>
-
-          <div className={cn("space-y-3", isShortPhone ? "mb-5" : "mb-6 sm:mb-8")}>
-            {features.map((feature) => (
-              <div key={feature} className="flex items-center gap-3">
-                <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)" }}>
-                  <Check className="w-3 h-3 app-accent" strokeWidth={3} />
-                </div>
-                <span className="text-sm font-medium app-heading">{feature}</span>
-              </div>
-            ))}
           </div>
 
           <div role="radiogroup" aria-label="Subscription plan" className={cn("mb-4 grid grid-cols-2", isCompactPhone ? "gap-3" : "gap-4")}>
@@ -301,7 +290,7 @@ export default function Paywall() {
               tabIndex={selectedPlan === "monthly" ? 0 : -1}
               onClick={() => setSelectedPlan("monthly")}
               onKeyDown={handlePlanKey}
-              className="touch-target relative flex flex-col items-center justify-center rounded-card border p-4 text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              className={cn("touch-target relative flex flex-col items-center justify-center rounded-card border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-4")}
               style={{
                 background: selectedPlan === "monthly" ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                 borderColor:
@@ -333,7 +322,7 @@ export default function Paywall() {
               tabIndex={selectedPlan === "yearly" ? 0 : -1}
               onClick={() => setSelectedPlan("yearly")}
               onKeyDown={handlePlanKey}
-              className="touch-target relative flex flex-col items-center justify-center rounded-card border p-4 text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              className={cn("touch-target relative flex flex-col items-center justify-center rounded-card border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-4")}
               style={{
                 background: selectedPlan === "yearly" ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                 borderColor:
@@ -355,25 +344,31 @@ export default function Paywall() {
             </button>
           </div>
 
-          <div className="app-success-panel mb-6 flex items-start gap-3 rounded-card px-4 py-3">
-            <ShieldCheck className="w-4 h-4 mt-0.5 text-emerald-500" />
-            <div>
-              <p className="text-sm app-heading">{planSummary}</p>
-              <p className="app-muted mt-1 text-[11px]">
-                You can change plans later in a real billing setup.
-              </p>
-            </div>
-          </div>
-
           {error && (
-            <div role="alert" className="flex items-start gap-2 mb-4 px-4 py-3 rounded-card bg-rose-500/10 border border-rose-500/30 text-rose-500 dark:text-rose-300 text-sm">
-              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <div
+              role="alert"
+              className="mb-4 flex items-start gap-2 rounded-card px-4 py-3 text-sm"
+              style={{
+                background: "var(--app-danger-soft)",
+                border: "1px solid color-mix(in srgb, var(--app-danger) 28%, transparent)",
+                color: "var(--app-danger)",
+              }}
+            >
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {nativeStoreAvailable && iapLoadError && (
-            <div role="alert" className="mb-4 flex items-start gap-2 rounded-card border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-200">
+            <div
+              role="alert"
+              className="mb-4 flex items-start gap-2 rounded-card px-4 py-3 text-sm"
+              style={{
+                background: "color-mix(in srgb, var(--app-accent-soft) 78%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--app-accent) 26%, transparent)",
+                color: "var(--app-accent-strong)",
+              }}
+            >
               <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
               <span>{iapLoadError}</span>
             </div>
@@ -383,7 +378,7 @@ export default function Paywall() {
             onClick={handleSubscribe}
             disabled={!canSubscribe}
             aria-busy={isLoading}
-            className="touch-target app-primary-button mb-4 flex w-full items-center justify-center gap-2 rounded-pill py-4 font-medium text-white transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            className={cn("touch-target app-primary-button mb-4 flex w-full items-center justify-center gap-2 rounded-pill font-medium text-white transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "py-3.5" : "py-4")}
           >
             {isLoading ? (
               <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -395,6 +390,16 @@ export default function Paywall() {
               `Continue with ${selectedPlanLabel}`
             )}
           </button>
+
+          <div className={cn("app-success-panel flex items-start gap-3 rounded-card px-4 py-3", isShortPhone ? "mb-4" : "mb-6")}>
+            <ShieldCheck className="mt-0.5 h-4 w-4" style={{ color: "var(--app-success)" }} />
+            <div>
+              <p className="text-sm app-heading">{planSummary}</p>
+              <p className="app-muted mt-1 text-[11px]">
+                You can change plans later in a real billing setup.
+              </p>
+            </div>
+          </div>
 
           {nativeStoreAvailable && (
             <div className="mb-4 grid grid-cols-1 gap-2">
@@ -417,6 +422,17 @@ export default function Paywall() {
               </p>
             </div>
           )}
+
+          <div className={cn("space-y-3", isShortPhone ? "mb-5" : "mb-6 sm:mb-8")}>
+            {features.map((feature) => (
+              <div key={feature} className="flex items-center gap-3">
+                <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)" }}>
+                  <Check className="w-3 h-3 app-accent" strokeWidth={3} />
+                </div>
+                <span className="text-sm font-medium app-heading">{feature}</span>
+              </div>
+            ))}
+          </div>
 
           <p className="app-muted px-4 text-center text-[11px] leading-relaxed">
             By subscribing, you agree to the Terms of Service and Privacy Policy. Subscriptions automatically renew unless canceled.

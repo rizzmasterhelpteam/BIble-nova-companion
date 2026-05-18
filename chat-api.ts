@@ -4,9 +4,29 @@ export type ChatMessage = {
 };
 
 export const DEFAULT_GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const MAX_CONTEXT_MESSAGES = 12;
+const MAX_MESSAGE_CHARS = 2_000;
 
 export const hasChatApiKey = () =>
   Boolean((process.env.GROQ_API_KEY || process.env.GROK_API_KEY)?.trim());
+
+const normalizeChatMessage = (message: unknown) => {
+  if (!message || typeof message !== "object") return null;
+
+  const role = "role" in message && typeof message.role === "string" ? message.role : "";
+  const content =
+    "content" in message && typeof message.content === "string" ? message.content.trim() : "";
+
+  if (!content) {
+    return null;
+  }
+
+  if (role === "assistant" || role === "ai" || role === "model") {
+    return { role: "assistant" as const, content };
+  }
+
+  return { role: "user" as const, content };
+};
 
 const getChatProvider = () => {
   const groqApiKey = process.env.GROQ_API_KEY?.trim();
@@ -29,6 +49,26 @@ const getChatProvider = () => {
 
   return null;
 };
+
+const trimContent = (content: string) => {
+  if (content.length <= MAX_MESSAGE_CHARS) {
+    return content;
+  }
+
+  return `${content.slice(0, MAX_MESSAGE_CHARS).trimEnd()}\n\n[Message truncated for context length]`;
+};
+
+const buildModelMessages = (messages: ChatMessage[]) =>
+  messages
+    .map((message) => normalizeChatMessage(message))
+    .filter((message): message is { role: "user" | "assistant"; content: string } =>
+      Boolean(message),
+    )
+    .slice(-MAX_CONTEXT_MESSAGES)
+    .map((message) => ({
+      ...message,
+      content: trimContent(message.content),
+    }));
 
 export async function createChatCompletion(messages: ChatMessage[]) {
   const provider = getChatProvider();
@@ -65,10 +105,10 @@ Safety:
 If the user mentions self-harm, suicide, abuse, immediate danger, or being unable to stay safe, respond with urgency and care: ask them to contact local emergency services now, reach a trusted person immediately, and stay with someone safe. Keep the spiritual tone supportive, not dismissive.
 `.trim();
 
-  const formattedMessages = messages.map((message) => ({
-    role: message.role === "ai" || message.role === "model" ? "assistant" : message.role,
-    content: message.content,
-  }));
+  const formattedMessages: Array<{
+    role: "system" | "user" | "assistant";
+    content: string;
+  }> = buildModelMessages(messages);
 
   formattedMessages.unshift({ role: "system", content: systemPrompt });
 

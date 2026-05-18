@@ -89,7 +89,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const { hapticsEnabled, setHapticsEnabled } = useHaptics();
-  const { isCompactPhone, isKeyboardOpen } = useMobileViewport();
+  const { isCompactPhone, isKeyboardOpen, isShortPhone } = useMobileViewport();
   const {
     user,
     isGuest,
@@ -118,7 +118,7 @@ export default function Layout() {
   const accountInitial = displayName.trim().charAt(0).toUpperCase() || "?";
   const isAccountBusy = isDeletingAccount || isSavingProfile || isProcessingAvatar;
   const nativeControlsAvailable = isNativePlatform();
-  const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "1.1.1";
+  const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "1.1.2";
 
   useEffect(() => {
     if (!nativeControlsAvailable) return;
@@ -313,7 +313,11 @@ export default function Layout() {
         <nav
           className={cn(
             "z-50 overflow-hidden px-4 transition-all duration-200 sm:px-6",
-            isKeyboardOpen ? "max-h-0 pb-0 pt-0 opacity-0" : "max-h-28 pb-safe pt-2 opacity-100",
+            isKeyboardOpen
+              ? "max-h-0 pb-0 pt-0 opacity-0"
+              : isShortPhone
+                ? "max-h-24 pb-safe-tight pt-1 opacity-100"
+                : "max-h-28 pb-safe pt-2 opacity-100",
           )}
         >
           <div className="app-nav-shell flex w-full max-w-xl items-center justify-between gap-1 rounded-shell p-1">
@@ -333,7 +337,7 @@ export default function Layout() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
                 onClick={() => setSettingsOpen(false)}
-                className="app-overlay absolute inset-0 z-[60] backdrop-blur-sm"
+                className="app-overlay fixed inset-0 z-[60] backdrop-blur-sm"
               />
 
               <motion.div
@@ -341,8 +345,9 @@ export default function Layout() {
                 animate={{ y: 0 }}
                 exit={{ y: "100%" }}
                 transition={{ type: "spring", stiffness: 380, damping: 40 }}
-                className="app-panel-strong absolute bottom-0 left-0 right-0 z-[70] max-h-[92dvh] overflow-y-auto rounded-t-[2rem] border-t scrollbar-hide"
+                className="app-panel-strong fixed inset-x-0 bottom-0 z-[70] mx-auto max-h-[92dvh] w-full overflow-y-auto rounded-t-[2rem] border-t scrollbar-hide sm:max-w-lg sm:px-0 xl:max-w-xl"
                 style={{
+                  bottom: "var(--app-bottom-offset)",
                   borderColor: "var(--app-card-border)",
                   maxHeight:
                     "calc(var(--app-visible-height) - max(env(safe-area-inset-top, 0px), 0.75rem))",
@@ -753,7 +758,7 @@ function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label
   return (
     <NavLink
       to={to}
-      className="touch-target relative flex flex-1 flex-col items-center justify-center gap-1 rounded-pill py-1.5 transition-all duration-300"
+      className="touch-target relative flex flex-1 flex-col items-center justify-center gap-1 rounded-pill py-1.5 transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
       style={{ color: "var(--app-text-muted)" }}
     >
       {({ isActive }) => (

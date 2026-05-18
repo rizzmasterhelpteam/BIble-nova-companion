@@ -55,18 +55,29 @@ const waitForVoices = () =>
       return;
     }
 
+    let resolved = false;
+    let timeoutId = 0;
+
+    const resolveOnce = (voices: SpeechSynthesisVoice[]) => {
+      if (resolved) return;
+      resolved = true;
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+      window.speechSynthesis.removeEventListener("voiceschanged", handleVoicesChanged);
+      resolve(voices);
+    };
+
     const handleVoicesChanged = () => {
       const nextVoices = window.speechSynthesis.getVoices();
       if (!nextVoices.length) return;
-      window.speechSynthesis.removeEventListener("voiceschanged", handleVoicesChanged);
-      resolve(nextVoices);
+      resolveOnce(nextVoices);
     };
 
     window.speechSynthesis.addEventListener("voiceschanged", handleVoicesChanged);
 
-    window.setTimeout(() => {
-      window.speechSynthesis.removeEventListener("voiceschanged", handleVoicesChanged);
-      resolve(window.speechSynthesis.getVoices());
+    timeoutId = window.setTimeout(() => {
+      resolveOnce(window.speechSynthesis.getVoices());
     }, 1200);
   });
 
@@ -122,17 +133,34 @@ export const createTextToSpeechSession = ({
       utterance.volume = 1;
 
       utterance.onstart = () => {
+        if (requestId !== playbackRequestId) {
+          return;
+        }
         activeMessageId = messageId;
         onSpeakingChange(messageId);
       };
 
       utterance.onend = () => {
+        if (requestId !== playbackRequestId) {
+          return;
+        }
         if (activeMessageId === messageId) {
           reset();
         }
       };
 
-      utterance.onerror = () => {
+      utterance.onerror = (event) => {
+        if (requestId !== playbackRequestId) {
+          return;
+        }
+
+        if (event.error === "interrupted" || event.error === "canceled") {
+          if (activeMessageId === messageId) {
+            reset();
+          }
+          return;
+        }
+
         if (activeMessageId === messageId) {
           reset();
         }

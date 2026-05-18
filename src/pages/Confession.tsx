@@ -7,7 +7,8 @@ import { useMobileViewport } from "../context/MobileViewportContext";
 
 export default function Confession() {
   useDocumentTitle("Confess | Bible Nova Companion");
-  const { isCompactPhone, isShortPhone } = useMobileViewport();
+  const { isCompactPhone, isShortPhone, visibleHeight } = useMobileViewport();
+  const isCrampedPhone = visibleHeight > 0 && visibleHeight <= 620;
   const [confession, setConfession] = useState("");
   const [isReleasing, setIsReleasing] = useState(false);
   const [timeLeft, setTimeLeft] = useState(10);
@@ -61,7 +62,11 @@ export default function Confession() {
   };
 
   const hasContent = confession.trim().length > 0;
-  const panelHeight = isShortPhone ? "min(38vh, 15rem)" : "min(46vh, 18rem)";
+  const panelHeight = isCrampedPhone
+    ? "min(31vh, 11rem)"
+    : isShortPhone
+      ? "min(38vh, 15rem)"
+      : "min(46vh, 18rem)";
 
   return (
     <div
@@ -74,7 +79,7 @@ export default function Confession() {
         eyebrow="Unburden"
         title="Let it go"
         description="Write down what feels heavy. When you are ready, release it and let it disappear."
-        className={cn("relative z-40", isShortPhone ? "mb-5" : "mb-6 sm:mb-10")}
+        className={cn("relative z-40", isCrampedPhone ? "mb-3" : isShortPhone ? "mb-5" : "mb-6 sm:mb-10")}
       />
 
       <AnimatePresence mode="wait">
@@ -85,11 +90,11 @@ export default function Confession() {
             animate={{ opacity: 1, scale: 1 }}
             exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9, filter: "blur(10px)" }}
             transition={{ duration: prefersReducedMotion ? 0.15 : 0.5 }}
-            className="flex flex-col gap-6 relative flex-1"
+            className={cn("relative flex flex-1 flex-col", isCrampedPhone ? "gap-4" : "gap-6")}
           >
             <motion.div
               className="app-panel group relative w-full overflow-hidden rounded-[2rem] border shadow-2xl transition-colors"
-              style={{ height: panelHeight, minHeight: isShortPhone ? "13rem" : "15rem" }}
+              style={{ height: panelHeight, minHeight: isCrampedPhone ? "10.5rem" : isShortPhone ? "13rem" : "15rem" }}
               animate={
                 isReleasing && !prefersReducedMotion
                   ? {
@@ -131,7 +136,7 @@ export default function Confession() {
                 enterKeyHint="done"
                 className={cn(
                   "app-heading relative z-10 h-full w-full resize-none bg-transparent p-5 font-serif italic leading-[1.8] outline-none transition-opacity focus-visible:outline-none",
-                  isCompactPhone ? "text-[16px] sm:p-6" : "text-[17px] sm:p-8",
+                  isCrampedPhone ? "p-4 text-[16px]" : isCompactPhone ? "text-[16px] sm:p-6" : "text-[17px] sm:p-8",
                   isReleasing && "pointer-events-none opacity-80",
                 )}
               />
@@ -193,7 +198,7 @@ export default function Confession() {
               aria-busy={isReleasing}
               className={cn(
                 "touch-target z-30 mt-auto flex w-full flex-col items-center justify-center gap-2 rounded-card font-medium shadow-lg transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]",
-                isCompactPhone ? "py-4" : "py-5",
+                isCrampedPhone ? "py-3.5" : isCompactPhone ? "py-4" : "py-5",
                 isReleasing
                   ? "app-secondary-button"
                   : "app-primary-button text-white disabled:opacity-40",

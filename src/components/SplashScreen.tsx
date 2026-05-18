@@ -1,12 +1,15 @@
 import React from "react";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 
 export function SplashScreen() {
+  const prefersReducedMotion = useReducedMotion();
+
   return (
     <motion.div 
-      className="app-screen fixed inset-0 z-[100] flex w-full flex-col items-center justify-center overflow-hidden bg-[color:var(--app-bg)]"
-      exit={{ opacity: 0, scale: 1.05 }}
-      transition={{ duration: 0.8, ease: "easeInOut" }}
+      className="app-screen fixed inset-0 z-[100] flex w-full flex-col items-center justify-center overflow-hidden"
+      style={{ background: "var(--app-page-bg)", willChange: "opacity, transform" }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: prefersReducedMotion ? 0.15 : 0.3, ease: "easeOut" }}
     >
       {/* Standard App Background */}
       <div className="app-atmosphere absolute inset-0 z-0">
@@ -24,12 +27,13 @@ export function SplashScreen() {
           {/* Ethereal breathing backdrop */}
           <motion.div
             className="absolute inset-0 rounded-full bg-[color:var(--app-accent)] opacity-20 blur-2xl"
-            animate={{
+            style={{ willChange: "transform, opacity", transform: "translateZ(0)" }}
+            animate={prefersReducedMotion ? undefined : {
               scale: [1, 1.5, 1],
               opacity: [0.2, 0.5, 0.2],
             }}
             transition={{
-              duration: 4,
+              duration: 3,
               repeat: Infinity,
               ease: "easeInOut",
             }}
@@ -38,7 +42,8 @@ export function SplashScreen() {
           {/* Central Elegant Cross */}
           <motion.svg
             viewBox="0 0 100 100"
-            className="absolute h-16 w-16 text-[color:var(--app-accent)] drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]"
+            className="absolute h-16 w-16 text-[color:var(--app-accent)]"
+            style={{ willChange: "transform, opacity" }}
             initial="hidden"
             animate="visible"
           >
@@ -54,7 +59,7 @@ export function SplashScreen() {
                 visible: {
                   pathLength: 1,
                   opacity: 1,
-                  transition: { duration: 1.8, ease: "easeInOut" }
+                  transition: { duration: prefersReducedMotion ? 0 : 0.6, ease: "easeInOut" }
                 }
               }}
             />
@@ -68,7 +73,7 @@ export function SplashScreen() {
                 visible: {
                   opacity: 0.9,
                   scale: 1,
-                  transition: { delay: 1.0, duration: 1.5, ease: [0.22, 1, 0.36, 1] }
+                  transition: { delay: prefersReducedMotion ? 0 : 0.25, duration: prefersReducedMotion ? 0 : 0.4, ease: [0.22, 1, 0.36, 1] }
                 }
               }}
               style={{ originX: "50px", originY: "50px" }}
@@ -78,23 +83,24 @@ export function SplashScreen() {
           {/* Orbiting particle 1 */}
           <motion.div
             className="absolute h-1.5 w-1.5 rounded-full bg-[color:var(--app-accent)] shadow-[0_0_10px_currentColor]"
-            animate={{
+            style={{ willChange: "transform" }}
+            animate={prefersReducedMotion ? undefined : {
               rotate: [0, 360],
-              x: [0, 35, 0, -35, 0],
-              y: [-35, 0, 35, 0, -35],
-              scale: [1, 1.5, 1, 1.5, 1],
+              x: [0, 25, 0, -25, 0],
+              y: [-25, 0, 25, 0, -25],
+              scale: [1, 1.2, 1, 1.2, 1],
             }}
-            transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+            transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
           />
         </div>
 
         {/* Minimal Typography Entrance */}
         <div className="overflow-hidden">
           <motion.h1
-            initial={{ y: "100%" }}
+            initial={prefersReducedMotion ? false : { y: "100%" }}
             animate={{ y: 0 }}
-            transition={{ duration: 0.8, delay: 1.2, ease: [0.22, 1, 0.36, 1] }}
-            className="app-heading font-serif text-[2.5rem] font-normal tracking-wide text-white"
+            transition={{ duration: prefersReducedMotion ? 0 : 0.4, delay: prefersReducedMotion ? 0 : 0.3, ease: [0.22, 1, 0.36, 1] }}
+            className="app-heading font-serif text-[2.5rem] font-normal tracking-wide"
           >
             Bible Nova
           </motion.h1>
@@ -102,9 +108,9 @@ export function SplashScreen() {
 
         <div className="overflow-hidden mt-1">
           <motion.p
-            initial={{ y: "-100%", opacity: 0 }}
+            initial={prefersReducedMotion ? false : { y: "-100%", opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.8, delay: 1.5, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.3, delay: prefersReducedMotion ? 0 : 0.45, ease: [0.22, 1, 0.36, 1] }}
             className="app-muted text-xs tracking-[0.3em] uppercase text-[color:var(--app-accent)]"
           >
             Companion

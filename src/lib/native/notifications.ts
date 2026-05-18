@@ -59,17 +59,65 @@ export async function registerForPushNotifications(onToken?: (token: string) => 
   if (permission.receive !== "granted") return false;
 
   await removePushNotificationListeners();
-  pushListenerHandles = await Promise.all([
-    PushNotifications.addListener("registration", (token) => {
-      onToken?.(token.value);
-    }),
-    PushNotifications.addListener("registrationError", (error) => {
-      console.warn("Push registration failed:", error);
-    }),
-  ]);
+  return new Promise<boolean>((resolve, reject) => {
+    let settled = false;
+    let timeoutId: number | null = null;
 
-  await PushNotifications.register();
-  return true;
+    const finalize = async (result: boolean, error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+
+      if (!result) {
+        await removePushNotificationListeners();
+      }
+
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve(result);
+    };
+
+    void (async () => {
+      try {
+        pushListenerHandles = await Promise.all([
+          PushNotifications.addListener("registration", (token) => {
+            onToken?.(token.value);
+            void finalize(true);
+          }),
+          PushNotifications.addListener("registrationError", (error) => {
+            console.warn("Push registration failed:", error);
+            void finalize(
+              false,
+              new Error(
+                typeof error.error === "string"
+                  ? error.error
+                  : "Push registration failed.",
+              ),
+            );
+          }),
+        ]);
+
+        await PushNotifications.register();
+        if (settled) {
+          return;
+        }
+
+        timeoutId = window.setTimeout(() => {
+          void finalize(false, new Error("Push registration timed out."));
+        }, 10000);
+      } catch (error) {
+        await finalize(
+          false,
+          error instanceof Error ? error : new Error("Push registration failed."),
+        );
+      }
+    })();
+  });
 }
 
 export async function unregisterFromPushNotifications() {

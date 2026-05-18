@@ -12,19 +12,8 @@
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>com.biblenovacompanion.app.auth</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.biblenovacompanion.app</string>
-			</array>
-		</dict>
-	</array>
+	<!-- GOOGLE_SIGN_IN_URL_TYPES_START -->
+	<!-- GOOGLE_SIGN_IN_URL_TYPES_END -->
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

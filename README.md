@@ -45,4 +45,10 @@ This app is configured with Capacitor for Android and iOS.
 - Open Xcode: `npm run ios:open` (requires macOS)
 
 For mobile builds, set `VITE_API_BASE_URL` to the deployed Vercel URL so native requests call `/api/*` on Vercel instead of the local WebView origin.
-For Supabase OAuth on native mobile, add `com.biblenovacompanion.app://auth/callback` to Supabase Auth redirect URLs and the Google provider configuration that fronts your Supabase project.
+For native Google sign-in on mobile:
+
+- Set `VITE_GOOGLE_WEB_CLIENT_ID` for Android.
+- Set `VITE_GOOGLE_IOS_CLIENT_ID` for iOS.
+- `npm run cap:sync` now derives the iOS reversed client ID URL scheme from `VITE_GOOGLE_IOS_CLIENT_ID` and writes it into `ios/App/App/Info.plist`.
+- In Supabase Auth -> Google provider, add the client IDs for every platform you support. This app still uses Supabase OAuth on the web, so keep the normal web Google OAuth configuration for browser builds.
+- For Android, make sure the installed build's SHA-1 matches the Android OAuth client in Google Cloud or Firebase, or native Google sign-in will fail even though the code path is correct.

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Mic,
@@ -69,7 +69,7 @@ export default function Chat() {
   const location = useLocation();
   const navigate = useNavigate();
   const { identityKey, isGuest } = useAuth();
-  const { isCompactPhone, isKeyboardOpen, isShortPhone } = useMobileViewport();
+  const { isCompactPhone, isKeyboardOpen, isShortPhone, width } = useMobileViewport();
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -83,33 +83,50 @@ export default function Chat() {
   const [voiceSupported, setVoiceSupported] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const initialized = useRef(false);
   const messagesRef = useRef(messages);
   const requestControllerRef = useRef<AbortController | null>(null);
   const speechSessionRef = useRef<SpeechRecognitionSession | null>(null);
   const ttsSessionRef = useRef<TextToSpeechSession | null>(null);
+  const handledRouteActionRef = useRef<string | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
+  const showQuickPrompts = messages.length === 1 && !isTyping;
+  const chatUnavailable = apiStatus?.chatReady === false;
+  const shouldAutoFocusInput = !isNativePlatform() && width >= 768;
+  const shouldAutoFocusInputRef = useRef(shouldAutoFocusInput);
 
-  const resizeTextarea = () => {
+  useEffect(() => {
+    shouldAutoFocusInputRef.current = shouldAutoFocusInput;
+  }, [shouldAutoFocusInput]);
+
+  const resizeTextarea = useCallback(() => {
     if (!textareaRef.current) return;
     textareaRef.current.style.height = "auto";
     textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
-  };
+  }, []);
 
-  const updateInputValue = (value: string) => {
+  const updateInputValue = useCallback((value: string) => {
     setInput(value);
-    window.requestAnimationFrame(() => {
+    if (resizeFrameRef.current) {
+      window.cancelAnimationFrame(resizeFrameRef.current);
+    }
+    resizeFrameRef.current = window.requestAnimationFrame(() => {
+      resizeFrameRef.current = null;
       resizeTextarea();
     });
-  };
+  }, [resizeTextarea]);
 
-  if (!speechSessionRef.current) {
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
     speechSessionRef.current = createSpeechRecognitionSession({
       onTranscript: (text) => {
         updateInputValue(text);
       },
       onListeningChange: (listening) => {
         setIsRecording(listening);
-        if (!listening) {
+        if (!listening && shouldAutoFocusInputRef.current) {
           textareaRef.current?.focus();
         }
       },
@@ -122,10 +139,8 @@ export default function Chat() {
         setIsTranscribingSpeech(false);
       },
     });
-  }
 
-  if (!ttsSessionRef.current) {
-    ttsSessionRef.current = createTextToSpeechSession({
+    const ttsSession = createTextToSpeechSession({
       onSpeakingChange: (messageId) => {
         setSpeakingMessageId(messageId);
       },
@@ -133,19 +148,23 @@ export default function Chat() {
         setTtsError(message);
       },
     });
-  }
 
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+    ttsSessionRef.current = ttsSession;
+    setVoiceSupported(ttsSession.isSupported());
 
-  useEffect(() => {
-    setVoiceSupported(Boolean(ttsSessionRef.current?.isSupported()));
-  }, []);
+    return () => {
+      const speechSession = speechSessionRef.current;
+      speechSessionRef.current = null;
+      ttsSessionRef.current = null;
+      void speechSession?.destroy();
+      ttsSession.destroy();
+    };
+  }, [updateInputValue]);
 
   useEffect(() => {
     const storageKey = getMessageStorageKey(identityKey);
     if (!storageKey) {
+      messagesRef.current = [WELCOME_MESSAGE];
       setMessages([WELCOME_MESSAGE]);
       setHasLoadedMessages(true);
       return;
@@ -153,8 +172,11 @@ export default function Chat() {
 
     try {
       const parsed = storageGetJson<Message[]>(storageKey, [WELCOME_MESSAGE]);
-      setMessages(parsed.length ? parsed : [WELCOME_MESSAGE]);
+      const nextMessages = parsed.length ? parsed : [WELCOME_MESSAGE];
+      messagesRef.current = nextMessages;
+      setMessages(nextMessages);
     } catch {
+      messagesRef.current = [WELCOME_MESSAGE];
       setMessages([WELCOME_MESSAGE]);
     }
 
@@ -170,8 +192,9 @@ export default function Chat() {
   useEffect(() => {
     return () => {
       requestControllerRef.current?.abort();
-      void speechSessionRef.current?.destroy();
-      ttsSessionRef.current?.destroy();
+      if (resizeFrameRef.current) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+      }
     };
   }, []);
 
@@ -196,84 +219,7 @@ export default function Chat() {
     };
   }, []);
 
-  useEffect(() => {
-    if (initialized.current) return;
-
-    if (location.state?.initialPrompt) {
-      initialized.current = true;
-      handleSend(location.state.initialPrompt);
-      navigate(location.pathname, { replace: true, state: {} });
-    } else if (location.state?.startVoice) {
-      initialized.current = true;
-      setSpeechError(null);
-      void speechSessionRef.current
-        ?.start(input)
-        .catch((error) => {
-          setSpeechError(
-            error instanceof Error ? error.message : "Speech recognition could not start.",
-          );
-        });
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-  }, [location.pathname, location.state, navigate]);
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const frame = window.requestAnimationFrame(() => {
-      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-    });
-
-    return () => window.cancelAnimationFrame(frame);
-  }, [isKeyboardOpen, messages, isTyping]);
-
-  useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
-
-  const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setSpeechError(null);
-    setInput(event.target.value);
-    resizeTextarea();
-  };
-
-  const startSpeechRecognition = async () => {
-    if (isTyping || chatUnavailable || isTranscribingSpeech) return;
-
-    setSpeechError(null);
-
-    const usesNativeDeviceSpeech = isNativePlatform() && getNativePlatform() === "android";
-    if (!usesNativeDeviceSpeech && apiStatus?.speechReady === false) {
-      setSpeechError("Voice input needs GROQ_API_KEY configured on the server.");
-      return;
-    }
-
-    try {
-      await speechSessionRef.current?.start(input);
-    } catch (error) {
-      setSpeechError(
-        error instanceof Error ? error.message : "Speech recognition could not start.",
-      );
-      setIsRecording(false);
-      setIsTranscribingSpeech(false);
-    }
-  };
-
-  const stopSpeechRecognition = async () => {
-    setSpeechError(null);
-
-    try {
-      await speechSessionRef.current?.stop();
-    } catch (error) {
-      setSpeechError(
-        error instanceof Error ? error.message : "Speech recognition could not stop cleanly.",
-      );
-      setIsTranscribingSpeech(false);
-    }
-  };
-
-  const appendAiMessage = (content: string, tone: "default" | "error" = "default") => {
+  const appendAiMessage = useCallback((content: string, tone: "default" | "error" = "default") => {
     const nextMessage: Message = {
       id: crypto.randomUUID(),
       role: "ai",
@@ -282,35 +228,14 @@ export default function Chat() {
       tone,
     };
 
-    setMessages((prev) => [...prev, nextMessage]);
-  };
+    setMessages((prev) => {
+      const nextMessages = [...prev, nextMessage];
+      messagesRef.current = nextMessages;
+      return nextMessages;
+    });
+  }, []);
 
-  const handleSpeakMessage = async (message: Message) => {
-    if (
-      message.role !== "ai" ||
-      message.tone === "error" ||
-      !voiceSupported
-    ) {
-      return;
-    }
-
-    setTtsError(null);
-
-    if (speakingMessageId === message.id) {
-      ttsSessionRef.current?.stop();
-      return;
-    }
-
-    try {
-      await ttsSessionRef.current?.speak(message.id, message.content);
-    } catch (error) {
-      setTtsError(
-        error instanceof Error ? error.message : "Voice playback could not start on this device.",
-      );
-    }
-  };
-
-  const handleSend = async (text: string) => {
+  const handleSend = useCallback(async (text: string) => {
     if (isTyping || apiStatus?.chatReady === false) return;
 
     const trimmedText = text.trim();
@@ -395,7 +320,142 @@ export default function Chat() {
     } finally {
       setIsTyping(false);
       requestControllerRef.current = null;
-      textareaRef.current?.focus();
+      if (shouldAutoFocusInputRef.current) {
+        textareaRef.current?.focus();
+      }
+    }
+  }, [apiStatus?.chatReady, appendAiMessage, isRecording, isTyping]);
+
+  useEffect(() => {
+    if (!hasLoadedMessages) {
+      return;
+    }
+
+    const routeState = location.state as { initialPrompt?: string; startVoice?: boolean } | null;
+    const actionKey = routeState?.initialPrompt
+      ? `prompt:${routeState.initialPrompt}`
+      : routeState?.startVoice
+        ? "voice"
+        : null;
+
+    if (!actionKey) {
+      handledRouteActionRef.current = null;
+      return;
+    }
+
+    if (handledRouteActionRef.current === actionKey) {
+      return;
+    }
+
+    handledRouteActionRef.current = actionKey;
+
+    if (routeState.initialPrompt) {
+      void handleSend(routeState.initialPrompt);
+      navigate(location.pathname, { replace: true, state: {} });
+      return;
+    }
+
+    setSpeechError(null);
+    const session = speechSessionRef.current;
+    if (!session) {
+      navigate(location.pathname, { replace: true, state: {} });
+      return;
+    }
+
+    void session.start(input)
+      .catch((error) => {
+        setSpeechError(
+          error instanceof Error ? error.message : "Speech recognition could not start.",
+        );
+      })
+      .finally(() => {
+        navigate(location.pathname, { replace: true, state: {} });
+      });
+  }, [handleSend, hasLoadedMessages, input, location.pathname, location.state, navigate]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      if (showQuickPrompts && !isKeyboardOpen) {
+        container.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+
+      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isKeyboardOpen, messages, isTyping, showQuickPrompts]);
+
+  useEffect(() => {
+    if (!shouldAutoFocusInput) return;
+    textareaRef.current?.focus();
+  }, [shouldAutoFocusInput]);
+
+  const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setSpeechError(null);
+    updateInputValue(event.target.value);
+  };
+
+  const startSpeechRecognition = async () => {
+    if (isTyping || chatUnavailable || isTranscribingSpeech) return;
+
+    setSpeechError(null);
+
+    const usesNativeDeviceSpeech = isNativePlatform() && getNativePlatform() === "android";
+    if (!usesNativeDeviceSpeech && apiStatus?.speechReady === false) {
+      setSpeechError("Voice input needs GROQ_API_KEY configured on the server.");
+      return;
+    }
+
+    try {
+      await speechSessionRef.current?.start(input);
+    } catch (error) {
+      setSpeechError(
+        error instanceof Error ? error.message : "Speech recognition could not start.",
+      );
+      setIsRecording(false);
+      setIsTranscribingSpeech(false);
+    }
+  };
+
+  const stopSpeechRecognition = async () => {
+    setSpeechError(null);
+
+    try {
+      await speechSessionRef.current?.stop();
+    } catch (error) {
+      setSpeechError(
+        error instanceof Error ? error.message : "Speech recognition could not stop cleanly.",
+      );
+      setIsTranscribingSpeech(false);
+    }
+  };
+
+  const handleSpeakMessage = async (message: Message) => {
+    if (
+      message.role !== "ai" ||
+      message.tone === "error" ||
+      !voiceSupported
+    ) {
+      return;
+    }
+
+    setTtsError(null);
+
+    if (speakingMessageId === message.id) {
+      ttsSessionRef.current?.stop();
+      return;
+    }
+
+    try {
+      await ttsSessionRef.current?.speak(message.id, message.content);
+    } catch (error) {
+      setTtsError(
+        error instanceof Error ? error.message : "Voice playback could not start on this device.",
+      );
     }
   };
 
@@ -407,9 +467,6 @@ export default function Chat() {
 
     await startSpeechRecognition();
   };
-
-  const showQuickPrompts = messages.length === 1 && !isTyping;
-  const chatUnavailable = apiStatus?.chatReady === false;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent">
@@ -424,7 +481,7 @@ export default function Chat() {
       >
         <div className={cn("flex items-center", isCompactPhone ? "gap-3" : "gap-4")}>
           <div className="relative">
-            <div className="app-logo-badge overflow-hidden flex h-[42px] w-[42px] items-center justify-center rounded-full">
+            <div className={cn("app-logo-badge flex items-center justify-center overflow-hidden rounded-full", isCompactPhone ? "h-[38px] w-[38px]" : "h-[42px] w-[42px]")}>
               <AppLogo alt="" className="h-full w-full object-cover" />
             </div>
             <div
@@ -432,12 +489,12 @@ export default function Chat() {
               style={{ background: "var(--app-success)", borderColor: "var(--app-shell-bg)" }}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className={cn("app-heading font-medium tracking-wide", isCompactPhone ? "text-[14px]" : "text-[15px]")}>
               Bible Nova Companion
             </h3>
-            <p className="app-kicker mt-1 text-[10px]">
-              Private reflection space
+            <p className="app-kicker mt-1 truncate text-[10px]">
+              {isCompactPhone ? "Private space" : "Private reflection space"}
             </p>
           </div>
         </div>
@@ -457,7 +514,7 @@ export default function Chat() {
             animate={{ opacity: 1, y: 0 }}
             className={cn(
               "app-panel relative overflow-hidden shadow-xl backdrop-blur-2xl",
-              isCompactPhone ? "rounded-[2rem] p-5" : "rounded-[2.5rem] p-6",
+              isShortPhone ? "rounded-[1.75rem] p-4" : isCompactPhone ? "rounded-[2rem] p-5" : "rounded-[2.5rem] p-6",
             )}
             style={{
               background: "color-mix(in srgb, var(--app-card-bg) 75%, transparent)",
@@ -472,7 +529,7 @@ export default function Chat() {
                   Start gently
                 </p>
               </div>
-              <p className="app-muted mb-5 max-w-[96%] text-[14px] leading-relaxed">
+              <p className={cn("app-muted max-w-[96%] text-[14px] leading-relaxed", isShortPhone ? "mb-3" : "mb-5")}>
                 {isGuest
                   ? "Your guidance stays on this device while you explore in guest mode."
                   : "Pick a prompt to start, or write your own reflection below."}
@@ -482,7 +539,10 @@ export default function Chat() {
                   <button
                     key={prompt}
                     onClick={() => handleSend(prompt)}
-                    className="app-secondary-button rounded-[1.25rem] px-4 py-3.5 text-left text-[14px] font-medium leading-[1.4] transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--app-accent)_50%,transparent)] shadow-sm"
+                    className={cn(
+                      "app-secondary-button rounded-[1.25rem] px-4 text-left text-[14px] font-medium leading-[1.4] shadow-sm transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--app-accent)_50%,transparent)]",
+                      isShortPhone ? "py-2.5" : "py-3.5",
+                    )}
                   >
                     {prompt}
                   </button>
@@ -530,7 +590,7 @@ export default function Chat() {
                 )}
               >
                 {message.role === "ai" && (
-                  <div className="flex w-full max-w-full items-start gap-3">
+                  <div className="flex w-full max-w-full min-w-0 items-start gap-3">
                     <div
                       className={cn(
                         "w-[30px] h-[30px] mt-0.5 flex-shrink-0 rounded-full border flex items-center justify-center",
@@ -556,7 +616,7 @@ export default function Chat() {
                       )}
                     </div>
 
-                    <div className="flex flex-col gap-2 relative">
+                    <div className="relative flex min-w-0 flex-1 flex-col gap-2">
                       {!isError && voiceSupported && (
                         <button
                           type="button"
@@ -594,7 +654,7 @@ export default function Chat() {
                       )}
                       <div
                         className={cn(
-                          "break-words text-[16px] leading-[1.8] font-serif font-light",
+                          "break-words whitespace-pre-wrap text-[16px] leading-[1.8] font-serif font-light",
                           isError ? "rounded-[1.5rem] border px-4 py-3" : "",
                         )}
                         style={
@@ -648,7 +708,7 @@ export default function Chat() {
                 {message.role === "user" && (
                   <div
                     className={cn(
-                      "break-words rounded-[1.5rem] rounded-tr-[0.5rem] border text-[15px] font-light leading-relaxed backdrop-blur-xl transition-all",
+                      "break-words whitespace-pre-wrap rounded-[1.5rem] rounded-tr-[0.5rem] border text-[15px] font-light leading-relaxed backdrop-blur-xl transition-all",
                       isCompactPhone ? "max-w-[90%] px-5 py-3.5" : "max-w-[85%] px-6 py-4",
                     )}
                     style={{
@@ -758,6 +818,7 @@ export default function Chat() {
               }}
               placeholder={chatUnavailable ? "Add an API key to enable chat..." : "Share your thoughts..."}
               enterKeyHint="send"
+              aria-label="Message Bible Nova Companion"
               className={cn(
                 "scrollbar-hide w-full resize-none bg-transparent py-3 font-sans font-light leading-[1.6] outline-none",
                 isShortPhone ? "min-h-[44px] max-h-28 text-[14px]" : "min-h-[44px] max-h-32 text-[15px]",

@@ -6,7 +6,7 @@ import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/su
 import { useAuth } from "../context/AuthContext";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
-import { openGoogleNativeAuth } from "../lib/native/auth";
+import { signInWithGoogleNative } from "../lib/native/auth";
 import { isNativePlatform } from "../lib/native/platform";
 
 type LegalView = "terms" | "privacy";
@@ -105,7 +105,12 @@ export default function Login() {
 
   const handleEmailAuth = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (isLoading || isAuthLoading) return;
     if (!email || !password) return;
+    if (!isSupabaseConfigured) {
+      setError(supabaseConfigMessage);
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
@@ -140,11 +145,17 @@ export default function Login() {
   };
 
   const handleGoogleAuth = async () => {
+    if (isLoading || isAuthLoading) return;
+    if (!isSupabaseConfigured) {
+      setError(supabaseConfigMessage);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
       if (isNativePlatform()) {
-        await openGoogleNativeAuth();
+        await signInWithGoogleNative();
       } else {
         const { error } = await supabase.auth.signInWithOAuth({
           provider: "google",
@@ -171,7 +182,7 @@ export default function Login() {
 
   return (
     <div
-      className="app-screen-scroll relative flex flex-col"
+      className="app-screen-scroll w-full relative flex flex-col"
       style={{
         paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "1rem" : "1.5rem"})`,
         paddingBottom: `max(env(safe-area-inset-bottom, 0px), ${isShortPhone ? "1rem" : "1.5rem"})`,

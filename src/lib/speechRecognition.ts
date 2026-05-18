@@ -87,11 +87,37 @@ export const createSpeechRecognitionSession = ({
   onError,
 }: SpeechRecognitionCallbacks): SpeechRecognitionSession => {
   let baseText = "";
+  let isDestroyed = false;
   let mediaRecorder: MediaRecorder | null = null;
   let mediaStream: MediaStream | null = null;
   let mediaChunks: Blob[] = [];
+  let stopWebRecordingPromise: Promise<void> | null = null;
   let nativePartialResultsListener: PluginListenerHandle | null = null;
   let nativeListeningStateListener: PluginListenerHandle | null = null;
+
+  const emitTranscript = (text: string) => {
+    if (!isDestroyed) {
+      onTranscript(text);
+    }
+  };
+
+  const emitListeningChange = (isListening: boolean) => {
+    if (!isDestroyed) {
+      onListeningChange(isListening);
+    }
+  };
+
+  const emitProcessingChange = (isProcessing: boolean) => {
+    if (!isDestroyed) {
+      onProcessingChange(isProcessing);
+    }
+  };
+
+  const emitError = (message: string) => {
+    if (!isDestroyed) {
+      onError(message);
+    }
+  };
 
   const stopNativeRecognition = async () => {
     await NativeSpeechRecognition.stop().catch(() => undefined);
@@ -106,13 +132,39 @@ export const createSpeechRecognitionSession = ({
     mediaStream = null;
   };
 
+  const discardWebRecording = () => {
+    const currentRecorder = mediaRecorder;
+    mediaRecorder = null;
+    stopWebRecordingPromise = null;
+
+    if (currentRecorder) {
+      currentRecorder.ondataavailable = null;
+      currentRecorder.onerror = null;
+      currentRecorder.onstart = null;
+      currentRecorder.onstop = null;
+
+      if (currentRecorder.state !== "inactive") {
+        currentRecorder.stop();
+      }
+    }
+
+    mediaChunks = [];
+    releaseMediaStream();
+    emitListeningChange(false);
+    emitProcessingChange(false);
+  };
+
   const stopWebRecording = async () => {
+    if (stopWebRecordingPromise) {
+      return stopWebRecordingPromise;
+    }
+
     if (!mediaRecorder) return;
 
     const currentRecorder = mediaRecorder;
     mediaRecorder = null;
 
-    await new Promise<void>((resolve) => {
+    stopWebRecordingPromise = new Promise<void>((resolve) => {
       const finalize = async () => {
         currentRecorder.ondataavailable = null;
         currentRecorder.onerror = null;
@@ -125,14 +177,14 @@ export const createSpeechRecognitionSession = ({
         mediaChunks = [];
 
         if (!audioBlob.size) {
-          onListeningChange(false);
-          onError("No speech was captured.");
+          emitListeningChange(false);
+          emitError("No speech was captured.");
           resolve();
           return;
         }
 
-        onListeningChange(false);
-        onProcessingChange(true);
+        emitListeningChange(false);
+        emitProcessingChange(true);
 
         try {
           const audio = await readBlobAsDataUrl(audioBlob);
@@ -150,11 +202,11 @@ export const createSpeechRecognitionSession = ({
             throw new Error(data.error || "Speech transcription failed.");
           }
 
-          onTranscript(mergeTranscript(baseText, data.text || ""));
+          emitTranscript(mergeTranscript(baseText, data.text || ""));
         } catch (error) {
-          onError(error instanceof Error ? error.message : "Speech transcription failed.");
+          emitError(error instanceof Error ? error.message : "Speech transcription failed.");
         } finally {
-          onProcessingChange(false);
+          emitProcessingChange(false);
           resolve();
         }
       };
@@ -169,7 +221,11 @@ export const createSpeechRecognitionSession = ({
       }
 
       currentRecorder.stop();
+    }).finally(() => {
+      stopWebRecordingPromise = null;
     });
+
+    await stopWebRecordingPromise;
   };
 
   return {
@@ -204,7 +260,7 @@ export const createSpeechRecognitionSession = ({
         nativePartialResultsListener = await NativeSpeechRecognition.addListener(
           "partialResults",
           ({ matches }) => {
-            onTranscript(mergeTranscript(baseText, matches?.[0] || ""));
+            emitTranscript(mergeTranscript(baseText, matches?.[0] || ""));
           },
         );
 
@@ -212,18 +268,24 @@ export const createSpeechRecognitionSession = ({
           "listeningState",
           ({ status }) => {
             const listening = status === "started";
-            onListeningChange(listening);
+            emitListeningChange(listening);
           },
         );
 
-        await NativeSpeechRecognition.start({
-          language: navigator.language || "en-US",
-          maxResults: 1,
-          partialResults: true,
-          popup: false,
-        });
+        try {
+          await NativeSpeechRecognition.start({
+            language: navigator.language || "en-US",
+            maxResults: 1,
+            partialResults: true,
+            popup: false,
+          });
+        } catch (error) {
+          await stopNativeRecognition();
+          emitListeningChange(false);
+          throw error;
+        }
 
-        onListeningChange(true);
+        emitListeningChange(true);
         return;
       }
 
@@ -251,12 +313,12 @@ export const createSpeechRecognitionSession = ({
         releaseMediaStream();
         mediaRecorder = null;
         mediaChunks = [];
-        onListeningChange(false);
-        onError("Microphone recording failed.");
+        emitListeningChange(false);
+        emitError("Microphone recording failed.");
       };
 
       recorder.onstart = () => {
-        onListeningChange(true);
+        emitListeningChange(true);
       };
 
       recorder.start();
@@ -264,16 +326,27 @@ export const createSpeechRecognitionSession = ({
     stop: async () => {
       if (shouldUseNativeSpeechRecognition()) {
         await stopNativeRecognition();
-        onListeningChange(false);
+        emitListeningChange(false);
+        return;
+      }
+
+      if (!mediaRecorder) {
+        emitListeningChange(false);
         return;
       }
 
       await stopWebRecording();
-      onListeningChange(false);
     },
     destroy: async () => {
+      isDestroyed = true;
+
       if (shouldUseNativeSpeechRecognition()) {
         await stopNativeRecognition();
+        return;
+      }
+
+      if (mediaRecorder) {
+        discardWebRecording();
         return;
       }
 

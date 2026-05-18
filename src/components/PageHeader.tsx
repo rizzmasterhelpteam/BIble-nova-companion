@@ -29,8 +29,9 @@ export default function PageHeader({
   return (
     <header
       className={cn(
-        "pt-safe pr-16",
+        "pt-safe",
         shouldCompact ? "pt-3" : "pt-4",
+        action || !isCentered ? "pr-16" : "",
         isCentered && (shouldCompact ? "px-5 text-center sm:px-10" : "px-8 text-center sm:px-12"),
         className,
       )}
@@ -40,16 +41,21 @@ export default function PageHeader({
           {eyebrow}
         </p>
       )}
-      <div className={cn("flex items-start gap-3 overflow-visible", isCentered && "justify-center")}>
+      <div
+        className={cn(
+          "flex min-w-0 items-start gap-3 overflow-visible",
+          isCentered && (action ? "justify-between text-left" : "justify-center"),
+        )}
+      >
         <h1
           className={cn(
-            "app-heading pb-2 font-serif font-normal leading-[1.22]",
+            "app-heading min-w-0 pb-2 font-serif font-normal leading-[1.22]",
             shouldCompact ? "text-[2rem] sm:text-[2.35rem]" : "text-3xl sm:text-4xl",
           )}
         >
           {title}
         </h1>
-        {action && <div className="ml-auto">{action}</div>}
+        {action && <div className={cn("shrink-0", !isCentered && "ml-auto")}>{action}</div>}
       </div>
       {description && (
         <p

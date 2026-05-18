@@ -1,9 +1,8 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { User, Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { apiFetch } from "../lib/apiClient";
-import { completeNativeAuthFromUrl } from "../lib/native/auth";
 import { hasActiveSubscription } from "../lib/native/purchases";
 import { isNativePlatform } from "../lib/native/platform";
 import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
@@ -95,7 +94,6 @@ const setStoredSubscriptionState = (id: string, value: boolean) => {
 };
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const lastHandledNativeAuthUrlRef = useRef<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -107,6 +105,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isSubscribed, setIsSubscribed] = useState(false);
 
   useEffect(() => {
+    let isDisposed = false;
     const storedGuest = storageGet("is_guest") === "true";
     if (storedGuest) {
       setIsGuest(true);
@@ -116,19 +115,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const checkOnboardingAndSub = (userId: string | null) => {
       const id = getActiveIdentityId(userId);
       if (!id) {
-        setHasCompletedOnboarding(false);
-        setIsSubscribed(false);
+        if (!isDisposed) {
+          setHasCompletedOnboarding(false);
+          setIsSubscribed(false);
+        }
         return;
       }
 
-      setHasCompletedOnboarding(storageGet(`onboardingComplete_${id}`) === "true");
-      setIsSubscribed(storageGet(`isSubscribed_${id}`) === "true");
+      if (!isDisposed) {
+        setHasCompletedOnboarding(storageGet(`onboardingComplete_${id}`) === "true");
+        setIsSubscribed(storageGet(`isSubscribed_${id}`) === "true");
+      }
     };
 
     const syncProfileName = (id: string | null, currentUser: User | null, guest: boolean) => {
       const activeId = getActiveIdentityId(id);
-      setProfileName(activeId ? getStoredProfileName(activeId, currentUser, guest) : null);
-      setProfileAvatarUrl(activeId ? getStoredProfileAvatarUrl(activeId, currentUser) : null);
+      if (!isDisposed) {
+        setProfileName(activeId ? getStoredProfileName(activeId, currentUser, guest) : null);
+        setProfileAvatarUrl(activeId ? getStoredProfileAvatarUrl(activeId, currentUser) : null);
+      }
     };
 
     const syncNativeSubscriptionState = async (userId: string | null) => {
@@ -137,6 +142,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       try {
         const hasEntitlement = await hasActiveSubscription();
+        if (isDisposed) return;
         setStoredSubscriptionState(id, hasEntitlement);
         setIsSubscribed(hasEntitlement);
       } catch (error) {
@@ -144,41 +150,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const handleNativeAuthCallback = async (url?: string | null) => {
-      if (!url || lastHandledNativeAuthUrlRef.current === url) {
-        return false;
-      }
-
-      lastHandledNativeAuthUrlRef.current = url;
-
-      try {
-        return await completeNativeAuthFromUrl(url);
-      } catch (error) {
-        console.warn("Could not complete native auth redirect:", error);
-        return false;
-      }
-    };
-
     if (!isSupabaseConfigured) {
       checkOnboardingAndSub(storedGuest ? "guest" : null);
       syncProfileName(storedGuest ? "guest" : null, null, storedGuest);
       void syncNativeSubscriptionState(storedGuest ? "guest" : null).finally(() => {
-        setIsLoading(false);
+        if (!isDisposed) {
+          setIsLoading(false);
+        }
       });
       return;
     }
 
     const initializeAuth = async () => {
       try {
-        if (isNativePlatform()) {
-          const launchUrl = await CapacitorApp.getLaunchUrl().catch(() => undefined);
-          await handleNativeAuthCallback(launchUrl?.url);
-        }
-
         const {
           data: { session },
           error,
         } = await supabase.auth.getSession();
+        if (isDisposed) return;
 
         if (error) {
           console.warn("Supabase getSession error:", error.message);
@@ -203,9 +192,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         );
         await syncNativeSubscriptionState(currentUser?.id || (storedGuest ? "guest" : null));
       } catch (err) {
-        console.error("Failed to get session:", err);
+        if (!isDisposed) {
+          console.error("Failed to get session:", err);
+        }
       } finally {
-        setIsLoading(false);
+        if (!isDisposed) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -231,21 +224,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       checkOnboardingAndSub(currentUser?.id || (guestMode ? "guest" : null));
       syncProfileName(currentUser?.id || (guestMode ? "guest" : null), currentUser, guestMode && !currentUser);
       void syncNativeSubscriptionState(currentUser?.id || (guestMode ? "guest" : null)).finally(() => {
-        setIsLoading(false);
+        if (!isDisposed) {
+          setIsLoading(false);
+        }
       });
     });
 
     let removeAppStateListener: (() => void) | undefined;
-    let removeAppUrlOpenListener: (() => void) | undefined;
     if (isNativePlatform()) {
-      void CapacitorApp.addListener("appUrlOpen", ({ url }) => {
-        void handleNativeAuthCallback(url);
-      }).then((listener) => {
-        removeAppUrlOpenListener = () => {
-          void listener.remove();
-        };
-      });
-
       void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
         if (!isActive) return;
 
@@ -263,6 +249,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             console.warn("Could not refresh session while syncing subscriptions:", error);
           });
       }).then((listener) => {
+        if (isDisposed) {
+          void listener.remove();
+          return;
+        }
+
         removeAppStateListener = () => {
           void listener.remove();
         };
@@ -270,23 +261,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     return () => {
+      isDisposed = true;
       subscription.unsubscribe();
       removeAppStateListener?.();
-      removeAppUrlOpenListener?.();
     };
   }, []);
 
-  const loginAsGuest = () => {
+  const loginAsGuest = useCallback(() => {
     storageSet("is_guest", "true");
+    setUser(null);
+    setSession(null);
     setIsGuest(true);
     setIdentityKey("guest");
     setProfileName(getStoredProfileName("guest", null, true));
     setProfileAvatarUrl(getStoredProfileAvatarUrl("guest", null));
     setHasCompletedOnboarding(storageGet(`onboardingComplete_guest`) === "true");
     setIsSubscribed(storageGet(`isSubscribed_guest`) === "true");
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     storageRemove("is_guest");
     setIsGuest(false);
     setIdentityKey(null);
@@ -297,9 +290,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (isSupabaseConfigured) {
       await supabase.auth.signOut();
     }
-  };
+  }, []);
 
-  const deleteAccount = async () => {
+  const deleteAccount = useCallback(async () => {
     const id = user?.id || (isGuest ? "guest" : null);
 
     if (user && isSupabaseConfigured) {
@@ -338,9 +331,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (isSupabaseConfigured) {
       await supabase.auth.signOut().catch(() => undefined);
     }
-  };
+  }, [isGuest, session?.access_token, user?.id]);
 
-  const updateProfileName = async (name: string) => {
+  const updateProfileName = useCallback(async (name: string) => {
     const trimmed = name.trim().replace(/\s+/g, " ");
     const id = user?.id || (isGuest ? "guest" : null);
 
@@ -370,9 +363,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     storageSet(`bible-nova-companion-profile-name-${id}`, trimmed);
     setProfileName(trimmed);
-  };
+  }, [isGuest, user]);
 
-  const updateProfileAvatarUrl = async (avatarUrl: string | null) => {
+  const updateProfileAvatarUrl = useCallback(async (avatarUrl: string | null) => {
     const id = user?.id || (isGuest ? "guest" : null);
 
     if (!id) {
@@ -385,30 +378,65 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     storageSet(`bible-nova-companion-profile-avatar-${id}`, avatarUrl || AVATAR_NONE);
     setProfileAvatarUrl(avatarUrl);
-  };
+  }, [isGuest, user?.id]);
 
-  const completeOnboarding = () => {
+  const completeOnboarding = useCallback(() => {
     const id = user?.id || (isGuest ? "guest" : null);
     if (id) {
       storageSet(`onboardingComplete_${id}`, "true");
       setHasCompletedOnboarding(true);
     }
-  };
+  }, [isGuest, user?.id]);
 
-  const subscribe = () => {
+  const subscribe = useCallback(() => {
     const id = user?.id || (isGuest ? "guest" : null);
     if (id) {
       setStoredSubscriptionState(id, true);
       setIsSubscribed(true);
     }
-  };
+  }, [isGuest, user?.id]);
+
+  const value = useMemo(
+    () => ({
+      user,
+      session,
+      isLoading,
+      isGuest,
+      identityKey,
+      profileName,
+      profileAvatarUrl,
+      hasCompletedOnboarding,
+      isSubscribed,
+      loginAsGuest,
+      logout,
+      deleteAccount,
+      updateProfileName,
+      updateProfileAvatarUrl,
+      completeOnboarding,
+      subscribe,
+    }),
+    [
+      completeOnboarding,
+      deleteAccount,
+      hasCompletedOnboarding,
+      identityKey,
+      isGuest,
+      isLoading,
+      isSubscribed,
+      loginAsGuest,
+      logout,
+      profileAvatarUrl,
+      profileName,
+      session,
+      subscribe,
+      updateProfileAvatarUrl,
+      updateProfileName,
+      user,
+    ],
+  );
 
   return (
-    <AuthContext.Provider value={{ 
-      user, session, isLoading, isGuest, identityKey,
-      profileName, profileAvatarUrl, hasCompletedOnboarding, isSubscribed,
-      loginAsGuest, logout, deleteAccount, updateProfileName, updateProfileAvatarUrl, completeOnboarding, subscribe 
-    }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

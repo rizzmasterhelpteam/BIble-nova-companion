@@ -18,6 +18,12 @@
 }
 
 @layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
   :root {
     --bg-base: #f6efe3;
     --text-base: #251c14;
@@ -317,6 +323,7 @@
   }
 
   body {
+    margin: 0;
     height: var(--app-visible-height);
     min-height: var(--app-visible-height);
     background: var(--app-page-bg);
@@ -334,6 +341,29 @@
   body,
   #root {
     width: 100%;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  @media (max-width: 640px) {
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
   }
 
   #root {
@@ -432,6 +462,9 @@
     position: absolute;
     border-radius: 999px;
     filter: blur(110px);
+    will-change: transform, opacity;
+    transform: translateZ(0);
+    pointer-events: none;
   }
 
   .app-orb-a {
@@ -640,12 +673,20 @@
     padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.75rem);
   }
 
+  .pb-safe-tight {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.5rem);
+  }
+
   .pt-safe {
     padding-top: max(env(safe-area-inset-top, 0px), 0.5rem);
   }
 
   .h-safe-bottom {
     height: env(safe-area-inset-bottom, 0px);
+  }
+
+  .keyboard-fixed-bottom {
+    bottom: var(--app-bottom-offset);
   }
 
   .keyboard-open .app-orb {

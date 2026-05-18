@@ -1,7 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "1.1.1",
+  "version": "1.1.2",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -12,8 +12,9 @@
     "lint": "tsc --noEmit",
     "assets:native": "powershell -ExecutionPolicy Bypass -File scripts/generate-native-assets.ps1",
     "fix:ios-spm": "node scripts/fix-capacitor-ios-spm.mjs",
-    "cap:sync": "npm run build && cap sync && npm run fix:ios-spm",
-    "cap:copy": "npm run build && cap copy && npm run fix:ios-spm",
+    "sync:native-google-auth": "node scripts/sync-native-google-auth.mjs",
+    "cap:sync": "npm run build && cap sync && npm run fix:ios-spm && npm run sync:native-google-auth",
+    "cap:copy": "npm run build && cap copy && npm run fix:ios-spm && npm run sync:native-google-auth",
     "android:open": "npm run cap:sync && cap open android",
     "ios:open": "npm run cap:sync && cap open ios"
   },
@@ -21,7 +22,6 @@
     "@capacitor-community/speech-recognition": "^7.0.1",
     "@capacitor/android": "^8.3.4",
     "@capacitor/app": "^8.1.0",
-    "@capacitor/browser": "^8.0.3",
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
     "@capacitor/haptics": "^8.0.2",
@@ -33,6 +33,7 @@
     "@capacitor/push-notifications": "^8.0.4",
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
+    "@capgo/capacitor-social-login": "^8.3.22",
     "@capgo/native-purchases": "^8.3.10",
     "@google/genai": "^1.29.0",
     "@supabase/supabase-js": "^2.104.1",

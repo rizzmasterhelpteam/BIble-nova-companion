@@ -6,6 +6,24 @@ type ChatMessage = {
 const DEFAULT_GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const API_BUILD_ID = "2026-05-10-no-relative-imports";
 
+const normalizeChatMessage = (message: unknown) => {
+  if (!message || typeof message !== "object") return null;
+
+  const role = "role" in message && typeof message.role === "string" ? message.role : "";
+  const content =
+    "content" in message && typeof message.content === "string" ? message.content.trim() : "";
+
+  if (!content) {
+    return null;
+  }
+
+  if (role === "assistant" || role === "ai" || role === "model") {
+    return { role: "assistant" as const, content };
+  }
+
+  return { role: "user" as const, content };
+};
+
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
   res.setHeader?.("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -91,10 +109,14 @@ Safety:
 If the user mentions self-harm, suicide, abuse, immediate danger, or being unable to stay safe, respond with urgency and care: ask them to contact local emergency services now, reach a trusted person immediately, and stay with someone safe. Keep the spiritual tone supportive, not dismissive.
 `.trim();
 
-  const formattedMessages = messages.map((message) => ({
-    role: message.role === "ai" || message.role === "model" ? "assistant" : message.role,
-    content: message.content,
-  }));
+  const formattedMessages: Array<{
+    role: "system" | "user" | "assistant";
+    content: string;
+  }> = messages
+    .map((message) => normalizeChatMessage(message))
+    .filter((message): message is { role: "user" | "assistant"; content: string } =>
+      Boolean(message),
+    );
 
   formattedMessages.unshift({ role: "system", content: systemPrompt });
 

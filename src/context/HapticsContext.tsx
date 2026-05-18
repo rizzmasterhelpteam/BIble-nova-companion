@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
 import { isNativePlatform } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
@@ -30,7 +30,7 @@ const getStoredHapticsPreference = () => {
 export function HapticsProvider({ children }: { children: React.ReactNode }) {
   const [hapticsEnabled, setHapticsEnabledState] = useState(getStoredHapticsPreference);
 
-  const triggerHaptic = (pattern: number | number[] = 10) => {
+  const triggerHaptic = useCallback((pattern: number | number[] = 10) => {
     if (!hapticsEnabled) return;
 
     if (isNativePlatform()) {
@@ -39,9 +39,9 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (canVibrate()) navigator.vibrate(pattern);
-  };
+  }, [hapticsEnabled]);
 
-  const setHapticsEnabled = (enabled: boolean) => {
+  const setHapticsEnabled = useCallback((enabled: boolean) => {
     storageSet(STORAGE_KEY, String(enabled));
     void nativeStorage.set(STORAGE_KEY, String(enabled)).catch(() => undefined);
     setHapticsEnabledState(enabled);
@@ -52,7 +52,7 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
         navigator.vibrate(12);
       }
     }
-  };
+  }, []);
 
   useEffect(() => {
     nativeStorage
@@ -84,8 +84,13 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("click", handleClick, { capture: true });
   }, [hapticsEnabled]);
 
+  const value = useMemo(
+    () => ({ hapticsEnabled, setHapticsEnabled, triggerHaptic }),
+    [hapticsEnabled, setHapticsEnabled, triggerHaptic],
+  );
+
   return (
-    <HapticsContext.Provider value={{ hapticsEnabled, setHapticsEnabled, triggerHaptic }}>
+    <HapticsContext.Provider value={value}>
       {children}
     </HapticsContext.Provider>
   );

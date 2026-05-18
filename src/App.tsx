@@ -12,6 +12,7 @@ import { MobileViewportProvider } from "./context/MobileViewportContext";
 import { SplashScreen } from "./components/SplashScreen";
 import { AnimatePresence } from "motion/react";
 import { hideNativeSplashScreen } from "./lib/native/app";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const Layout = lazy(() => import("./components/Layout"));
 const Chat = lazy(() => import("./pages/Chat"));
@@ -57,10 +58,15 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    // Keep the custom splash visible long enough for its entrance animation.
+    const prefersReducedMotion =
+      typeof window !== "undefined" && window.matchMedia
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      : false;
+
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 3500);
+    }, prefersReducedMotion ? 250 : 800);
+
     return () => clearTimeout(timer);
   }, []);
 
@@ -85,25 +91,27 @@ export default function App() {
       <MobileViewportProvider>
         <HapticsProvider>
           <AuthProvider>
-            <BrowserRouter>
-              <Suspense fallback={<FullScreenLoader />}>
-                <Routes>
-                  <Route path="/login" element={<Login />} />
+            <ErrorBoundary>
+              <BrowserRouter>
+                <Suspense fallback={<FullScreenLoader />}>
+                  <Routes>
+                    <Route path="/login" element={<Login />} />
 
-                  {/* Guarded App Routes */}
-                  <Route path="/onboarding" element={<AuthGuard><Onboarding /></AuthGuard>} />
-                  <Route path="/paywall" element={<AuthGuard><Paywall /></AuthGuard>} />
+                    {/* Guarded App Routes */}
+                    <Route path="/onboarding" element={<AuthGuard><Onboarding /></AuthGuard>} />
+                    <Route path="/paywall" element={<AuthGuard><Paywall /></AuthGuard>} />
 
-                  <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
-                    <Route index element={<Chat />} />
-                    <Route path="breathe" element={<Breathe />} />
-                    <Route path="intentions" element={<Intentions />} />
-                    <Route path="confess" element={<Confession />} />
-                  </Route>
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </Suspense>
-            </BrowserRouter>
+                    <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
+                      <Route index element={<Chat />} />
+                      <Route path="breathe" element={<Breathe />} />
+                      <Route path="intentions" element={<Intentions />} />
+                      <Route path="confess" element={<Confession />} />
+                    </Route>
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </Suspense>
+              </BrowserRouter>
+            </ErrorBoundary>
           </AuthProvider>
         </HapticsProvider>
 

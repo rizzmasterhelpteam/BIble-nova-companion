@@ -137,7 +137,7 @@ export default function Onboarding() {
     return (
       <div
         className={cn(
-          "app-screen-scroll relative flex flex-col items-center px-4 py-4 scrollbar-hide",
+          "app-screen-scroll w-full relative flex flex-col items-center px-4 py-4 scrollbar-hide",
           shouldTopAlign ? "justify-start" : "justify-center",
         )}
       >
@@ -217,7 +217,7 @@ export default function Onboarding() {
 
   return (
     <div
-      className="app-screen-scroll relative flex flex-col overflow-x-hidden px-4"
+      className="app-screen-scroll w-full relative flex flex-col overflow-x-hidden px-4"
       style={{
         paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "1.25rem" : "2rem"})`,
         paddingBottom: `max(env(safe-area-inset-bottom, 0px), ${isShortPhone ? "1.5rem" : "2.25rem"})`,

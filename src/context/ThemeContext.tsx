@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { storageGet, storageSet } from "../lib/webStorage";
 
 type Theme = 'dark' | 'light' | 'system';
@@ -33,12 +33,12 @@ export function ThemeProvider({
 
   useEffect(() => {
     const root = window.document.documentElement;
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const mediaQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
     const applyTheme = (nextTheme: Theme) => {
       root.classList.remove('light', 'dark');
       const resolvedTheme =
-        nextTheme === 'system' ? (mediaQuery.matches ? 'dark' : 'light') : nextTheme;
+        nextTheme === 'system' ? (mediaQuery?.matches ? 'dark' : 'light') : nextTheme;
 
       root.classList.add(resolvedTheme);
       root.style.colorScheme = resolvedTheme;
@@ -47,7 +47,7 @@ export function ThemeProvider({
     applyTheme(theme);
     root.dataset.design = 'nocturne';
 
-    if (theme !== 'system') {
+    if (theme !== 'system' || !mediaQuery) {
       return;
     }
 
@@ -57,17 +57,24 @@ export function ThemeProvider({
       return () => mediaQuery.removeEventListener('change', handleChange);
     }
 
-    mediaQuery.addListener(handleChange);
-    return () => mediaQuery.removeListener(handleChange);
+    mediaQuery.addListener && mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener && mediaQuery.removeListener(handleChange);
   }, [theme]);
 
-  const value = {
-    theme,
-    setTheme: (theme: Theme) => {
+  const setThemeValue = useCallback((theme: Theme) => {
       storageSet(storageKey, theme);
       setTheme(theme);
     },
-  };
+    [storageKey],
+  );
+
+  const value = useMemo(
+    () => ({
+      theme,
+      setTheme: setThemeValue,
+    }),
+    [setThemeValue, theme],
+  );
 
   return (
     <ThemeProviderContext.Provider {...props} value={value}>
