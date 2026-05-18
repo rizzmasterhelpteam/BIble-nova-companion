@@ -6,6 +6,8 @@ import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/su
 import { useAuth } from "../context/AuthContext";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
+import { openGoogleNativeAuth } from "../lib/native/auth";
+import { isNativePlatform } from "../lib/native/platform";
 
 type LegalView = "terms" | "privacy";
 
@@ -141,13 +143,17 @@ export default function Login() {
     setIsLoading(true);
     setError(null);
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: window.location.origin,
-        },
-      });
-      if (error) throw error;
+      if (isNativePlatform()) {
+        await openGoogleNativeAuth();
+      } else {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: window.location.origin,
+          },
+        });
+        if (error) throw error;
+      }
     } catch (err: unknown) {
       if (err instanceof Error && err.message === "Failed to fetch") {
         setError(
@@ -158,6 +164,7 @@ export default function Login() {
       } else {
         setError("An error occurred with Google sign-in.");
       }
+    } finally {
       setIsLoading(false);
     }
   };

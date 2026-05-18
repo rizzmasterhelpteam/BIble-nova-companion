@@ -45,3 +45,4 @@ This app is configured with Capacitor for Android and iOS.
 - Open Xcode: `npm run ios:open` (requires macOS)
 
 For mobile builds, set `VITE_API_BASE_URL` to the deployed Vercel URL so native requests call `/api/*` on Vercel instead of the local WebView origin.
+For Supabase OAuth on native mobile, add `com.biblenovacompanion.app://auth/callback` to Supabase Auth redirect URLs and the Google provider configuration that fronts your Supabase project.

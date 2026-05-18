@@ -1,8 +1,9 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
 import { User, Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { apiFetch } from "../lib/apiClient";
+import { completeNativeAuthFromUrl } from "../lib/native/auth";
 import { hasActiveSubscription } from "../lib/native/purchases";
 import { isNativePlatform } from "../lib/native/platform";
 import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
@@ -94,6 +95,7 @@ const setStoredSubscriptionState = (id: string, value: boolean) => {
 };
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const lastHandledNativeAuthUrlRef = useRef<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -142,6 +144,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
+    const handleNativeAuthCallback = async (url?: string | null) => {
+      if (!url || lastHandledNativeAuthUrlRef.current === url) {
+        return false;
+      }
+
+      lastHandledNativeAuthUrlRef.current = url;
+
+      try {
+        return await completeNativeAuthFromUrl(url);
+      } catch (error) {
+        console.warn("Could not complete native auth redirect:", error);
+        return false;
+      }
+    };
+
     if (!isSupabaseConfigured) {
       checkOnboardingAndSub(storedGuest ? "guest" : null);
       syncProfileName(storedGuest ? "guest" : null, null, storedGuest);
@@ -151,31 +168,48 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-         console.warn("Supabase getSession error:", error.message);
-      }
-      setSession(session);
-      const currentUser = session?.user || null;
-      setUser(currentUser);
-      if (currentUser) {
-         setIsGuest(false);
-         setIdentityKey(currentUser.id);
-         storageRemove("is_guest");
-      } else if (storedGuest) {
-         setIdentityKey("guest");
-      }
-      
-      checkOnboardingAndSub(currentUser?.id || (storedGuest ? "guest" : null));
-      syncProfileName(currentUser?.id || (storedGuest ? "guest" : null), currentUser, storedGuest && !currentUser);
-      void syncNativeSubscriptionState(currentUser?.id || (storedGuest ? "guest" : null)).finally(() => {
+    const initializeAuth = async () => {
+      try {
+        if (isNativePlatform()) {
+          const launchUrl = await CapacitorApp.getLaunchUrl().catch(() => undefined);
+          await handleNativeAuthCallback(launchUrl?.url);
+        }
+
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
+
+        if (error) {
+          console.warn("Supabase getSession error:", error.message);
+        }
+
+        setSession(session);
+        const currentUser = session?.user || null;
+        setUser(currentUser);
+        if (currentUser) {
+          setIsGuest(false);
+          setIdentityKey(currentUser.id);
+          storageRemove("is_guest");
+        } else if (storedGuest) {
+          setIdentityKey("guest");
+        }
+
+        checkOnboardingAndSub(currentUser?.id || (storedGuest ? "guest" : null));
+        syncProfileName(
+          currentUser?.id || (storedGuest ? "guest" : null),
+          currentUser,
+          storedGuest && !currentUser,
+        );
+        await syncNativeSubscriptionState(currentUser?.id || (storedGuest ? "guest" : null));
+      } catch (err) {
+        console.error("Failed to get session:", err);
+      } finally {
         setIsLoading(false);
-      });
-    }).catch(err => {
-      console.error("Failed to get session:", err);
-      setIsLoading(false);
-    });
+      }
+    };
+
+    void initializeAuth();
 
     // Listen to auth changes
     const {
@@ -202,7 +236,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     let removeAppStateListener: (() => void) | undefined;
+    let removeAppUrlOpenListener: (() => void) | undefined;
     if (isNativePlatform()) {
+      void CapacitorApp.addListener("appUrlOpen", ({ url }) => {
+        void handleNativeAuthCallback(url);
+      }).then((listener) => {
+        removeAppUrlOpenListener = () => {
+          void listener.remove();
+        };
+      });
+
       void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
         if (!isActive) return;
 
@@ -229,6 +272,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => {
       subscription.unsubscribe();
       removeAppStateListener?.();
+      removeAppUrlOpenListener?.();
     };
   }, []);
 
