@@ -7,9 +7,11 @@ import {defineConfig, loadEnv} from 'vite';
 import {
   createChatCompletion,
   deleteSupabaseAccount,
+  fetchAvailableModels,
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
+  redeemPromoCode,
   transcribeAudio,
 } from './server-api';
 
@@ -109,6 +111,23 @@ const localApiPlugin = () => ({
         return;
       }
 
+      if (pathname === '/api/promo-redeem') {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'Method not allowed.' });
+          return;
+        }
+
+        try {
+          const { code } = await readJsonBody(req);
+          const result = await redeemPromoCode(req.headers.authorization, code || '');
+          sendJson(res, 200, result);
+        } catch (error) {
+          console.error('Vite local API promo redemption error:', error);
+          sendJson(res, 400, { error: getClientErrorMessage(error) });
+        }
+        return;
+      }
+
       if (pathname === '/api/account') {
         if (req.method !== 'DELETE') {
           sendJson(res, 405, { error: 'Method not allowed.' });
@@ -120,6 +139,22 @@ const localApiPlugin = () => ({
           sendJson(res, 200, { deleted: true });
         } catch (error) {
           console.error('Vite local API account deletion error:', error);
+          sendJson(res, 500, { error: getClientErrorMessage(error) });
+        }
+        return;
+      }
+
+      if (pathname === '/api/models') {
+        if (req.method !== 'GET') {
+          sendJson(res, 405, { error: 'Method not allowed.' });
+          return;
+        }
+
+        try {
+          const data = await fetchAvailableModels();
+          sendJson(res, 200, data);
+        } catch (error) {
+          console.error('Vite local API models error:', error);
           sendJson(res, 500, { error: getClientErrorMessage(error) });
         }
         return;

@@ -4,7 +4,7 @@
  */
 
 import React, { Suspense, lazy, useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { HapticsProvider } from "./context/HapticsContext";
@@ -13,6 +13,7 @@ import { SplashScreen } from "./components/SplashScreen";
 import { AnimatePresence } from "motion/react";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { isNativePlatform } from "./lib/native/platform";
 
 const Layout = lazy(() => import("./components/Layout"));
 const Chat = lazy(() => import("./pages/Chat"));
@@ -26,14 +27,14 @@ const Paywall = lazy(() => import("./pages/Paywall"));
 const FullScreenLoader = () => <SplashScreen />;
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
-  const { user, isLoading, isGuest, hasCompletedOnboarding, isSubscribed } = useAuth();
+  const { user, isLoading, hasCompletedOnboarding, isSubscribed } = useAuth();
   const location = useLocation();
   
   if (isLoading) {
     return <FullScreenLoader />;
   }
 
-  if (!user && !isGuest) {
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
 
@@ -47,7 +48,7 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   }
   
   // Prevent users from going back to paywall or onboarding if already in the app properly
-  if (isSubscribed && (location.pathname === "/onboarding" || location.pathname === "/paywall")) {
+  if (hasCompletedOnboarding && isSubscribed && (location.pathname === "/onboarding" || location.pathname === "/paywall")) {
      return <Navigate to="/" replace />;
   }
 
@@ -56,6 +57,7 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const Router = isNativePlatform() ? HashRouter : BrowserRouter;
 
   useEffect(() => {
     const prefersReducedMotion =
@@ -92,7 +94,7 @@ export default function App() {
         <HapticsProvider>
           <AuthProvider>
             <ErrorBoundary>
-              <BrowserRouter>
+              <Router>
                 <Suspense fallback={<FullScreenLoader />}>
                   <Routes>
                     <Route path="/login" element={<Login />} />
@@ -110,7 +112,7 @@ export default function App() {
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </Suspense>
-              </BrowserRouter>
+              </Router>
             </ErrorBoundary>
           </AuthProvider>
         </HapticsProvider>

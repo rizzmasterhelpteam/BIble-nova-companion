@@ -806,6 +806,8 @@ export default function Chat() {
             }}
           >
             <textarea
+              id="chat-message"
+              name="message"
               ref={textareaRef}
               value={input}
               onChange={handleInput}

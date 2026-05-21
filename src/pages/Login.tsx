@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Mail, Lock, ArrowRight, ShieldCheck, Sparkles, Heart, X } from "lucide-react";
+import { Mail, Lock, ArrowRight, ShieldCheck, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -9,24 +9,6 @@ import { signInWithGoogleNative } from "../lib/native/auth";
 import { isNativePlatform } from "../lib/native/platform";
 
 type LegalView = "terms" | "privacy";
-
-const loginHighlights = [
-  {
-    title: "Personalized guidance",
-    description: "Reflections adapt to your emotional needs, spiritual goals, and preferred style of support.",
-    icon: Sparkles,
-  },
-  {
-    title: "Grounded encouragement",
-    description: "Prayerful responses stay rooted in scripture, moral clarity, and calm practical wisdom.",
-    icon: Heart,
-  },
-  {
-    title: "Private continuity",
-    description: "Keep your reflection history together across devices when you sign in to your account.",
-    icon: ShieldCheck,
-  },
-] as const;
 
 const legalDocuments: Record<LegalView, { title: string; updatedAt: string; sections: { heading: string; body: string }[] }> = {
   terms: {
@@ -43,7 +25,7 @@ const legalDocuments: Record<LegalView, { title: string; updatedAt: string; sect
       },
       {
         heading: "Accounts and access",
-        body: "You are responsible for keeping your account secure. Guest data is stored on this device and may be lost if local storage is cleared.",
+        body: "You are responsible for keeping your account secure and for maintaining access to the email or identity provider attached to your account.",
       },
       {
         heading: "Acceptable use",
@@ -73,7 +55,7 @@ const legalDocuments: Record<LegalView, { title: string; updatedAt: string; sect
       },
       {
         heading: "Local and account storage",
-        body: "Guest reflections are stored locally on your device. Signed-in features may use configured authentication and server providers. You can clear local profile data from the app settings.",
+        body: "Signed-in features may use configured authentication and server providers. You can clear local profile data from the app settings.",
       },
       {
         heading: "Sharing",
@@ -93,17 +75,17 @@ export default function Login() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [legalView, setLegalView] = useState<LegalView | null>(null);
   const navigate = useNavigate();
-  const { user, isGuest, isLoading: isAuthLoading, hasCompletedOnboarding, isSubscribed, loginAsGuest } = useAuth();
+  const { user, isLoading: isAuthLoading, hasCompletedOnboarding, isSubscribed } = useAuth();
   const shouldTopAlign = isShortPhone || isKeyboardOpen;
-  const authTitle = mode === "login" ? "Access your reflection space" : "Create your reflection account";
+  const authTitle = mode === "login" ? "Sign in" : "Create account";
   const authSubtitle = mode === "login"
-    ? "Sign in to continue your saved reflections, prayer prompts, and support history."
-    : "Create an account to save your reflections, sync across devices, and keep your progress secure.";
+    ? "Continue your saved reflections and account access."
+    : "Save your reflections and continue across devices.";
 
   useEffect(() => {
     if (isAuthLoading) return;
 
-    if (user || isGuest) {
+    if (user) {
       const destination = !hasCompletedOnboarding
         ? "/onboarding"
         : !isSubscribed
@@ -111,7 +93,7 @@ export default function Login() {
           : "/";
       navigate(destination, { replace: true });
     }
-  }, [hasCompletedOnboarding, isAuthLoading, isGuest, isSubscribed, navigate, user]);
+  }, [hasCompletedOnboarding, isAuthLoading, isSubscribed, navigate, user]);
 
   useEffect(() => {
     if (!legalView) return;
@@ -215,238 +197,157 @@ export default function Login() {
         <div className="app-orb app-orb-b bottom-[-16%] right-[-8%] h-[26rem] w-[26rem]" />
       </div>
 
-      <div className={cn("relative z-10 mx-auto flex w-full max-w-5xl flex-1 px-4 py-4 sm:px-8", shouldTopAlign ? "items-start" : "items-center")}>
-        <div className="grid w-full gap-5 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
-          <section
-            className={cn(
-              "rounded-[2rem] border px-5 py-6 sm:px-8 sm:py-8",
-              isShortPhone ? "order-2" : "order-1",
-            )}
+      <div className={cn("relative z-10 mx-auto flex w-full max-w-md flex-1 px-4 py-4 sm:px-6", shouldTopAlign ? "items-start" : "items-center")}>
+        <section
+          className="app-panel w-full rounded-[2rem] border px-5 py-6 shadow-[0_24px_56px_rgba(0,0,0,0.12)] sm:px-6 sm:py-7"
+          style={{ borderColor: "var(--app-card-border)" }}
+        >
+          <div className="mb-5">
+            <p className="app-kicker mb-2">Bible Nova Companion</p>
+            <h1 className={cn("app-heading leading-tight", isCompactPhone ? "text-[1.85rem]" : "text-[2rem]")}>{authTitle}</h1>
+            <p className="app-muted mt-2 text-sm leading-relaxed">{authSubtitle}</p>
+          </div>
+
+          <div
+            className="mb-5 flex items-start gap-3 rounded-card border px-4 py-3 text-sm"
             style={{
               borderColor: "var(--app-card-border)",
-              background:
-                "linear-gradient(180deg, color-mix(in srgb, var(--app-card-strong) 94%, transparent), color-mix(in srgb, var(--app-card-bg) 88%, transparent)), linear-gradient(135deg, color-mix(in srgb, var(--app-accent-soft) 38%, transparent), transparent 62%)",
-              boxShadow: "0 26px 60px rgba(0, 0, 0, 0.10)",
+              background: "var(--app-card-soft)",
             }}
           >
-            <div
-              className="mb-5 inline-flex items-center gap-2 rounded-pill px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em]"
-              style={{
-                background: "color-mix(in srgb, var(--app-accent-soft) 70%, transparent)",
-                color: "var(--app-accent)",
-                border: "1px solid color-mix(in srgb, var(--app-accent) 18%, transparent)",
-              }}
-            >
-              <ShieldCheck className="h-4 w-4" />
-              Faith-guided reflection
-            </div>
-
-            <div className={cn("max-w-2xl", isShortPhone ? "mb-6" : "mb-8")}>
-              <p className="app-kicker mb-3">Bible Nova Companion</p>
-              <h1 className={cn("app-heading mb-4 pb-1 font-serif font-normal leading-[1.15]", isCompactPhone ? "text-[2rem]" : "text-4xl sm:text-[3.25rem]")}>
-                {mode === "login" ? "Return to a steadier reflection practice." : "Build a calmer spiritual rhythm."}
-              </h1>
-              <p className="app-muted max-w-xl text-[15px] leading-relaxed sm:text-base">
-                {mode === "login"
-                  ? "Continue with scripture-grounded reflections, prayerful encouragement, and practical next steps shaped around what you are carrying."
-                  : "Start a private reflection practice with personalized spiritual guidance, practical support, and continuity across every device you use."}
-              </p>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              {loginHighlights.map(({ title, description, icon: Icon }) => (
-                <div
-                  key={title}
-                  className="rounded-card border p-4"
-                  style={{
-                    borderColor: "var(--app-card-border)",
-                    background: "color-mix(in srgb, var(--app-card-bg) 82%, transparent)",
-                  }}
-                >
-                  <div
-                    className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full"
-                    style={{
-                      background: "color-mix(in srgb, var(--app-accent-soft) 72%, transparent)",
-                      color: "var(--app-accent)",
-                    }}
-                  >
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <p className="app-heading mb-2 text-sm font-semibold">{title}</p>
-                  <p className="app-muted text-sm leading-relaxed">{description}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section
-            className={cn(
-              "app-panel w-full rounded-[2rem] border px-5 py-6 shadow-[0_24px_56px_rgba(0,0,0,0.12)] sm:px-6 sm:py-7",
-              isShortPhone ? "order-1" : "order-2",
-            )}
-            style={{ borderColor: "var(--app-card-border)" }}
-          >
-            <div className="mb-5">
-              <p className="app-kicker mb-2">{mode === "login" ? "Account Access" : "Create Account"}</p>
-              <h2 className="app-heading text-[1.65rem] font-semibold leading-tight">{authTitle}</h2>
-              <p className="app-muted mt-2 text-sm leading-relaxed">{authSubtitle}</p>
-            </div>
-
-            <div
-              className="mb-5 flex items-start gap-3 rounded-card border px-4 py-3 text-sm"
-              style={{
-                borderColor: "var(--app-card-border)",
-                background: "var(--app-card-soft)",
-              }}
-            >
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 app-accent" />
-              <p className="app-muted leading-relaxed">
-                Google and email sign-in save your reflection journey. Guest mode stays on this device.
-              </p>
-            </div>
-
-            <div className={cn("w-full", isShortPhone ? "space-y-4" : "space-y-5")}>
-          {!isSupabaseConfigured && (
-            <div className="app-panel rounded-card px-4 py-4 text-center text-sm leading-relaxed" style={{ color: "var(--app-accent)" }}>
-              {supabaseConfigMessage} You can still continue as guest.
-            </div>
-          )}
-
-          {error && (
-            <div className="app-danger-panel rounded-card px-4 py-4 text-center text-sm">
-              {error}
-            </div>
-          )}
-
-          <button
-            onClick={handleGoogleAuth}
-            disabled={isLoading || !isSupabaseConfigured}
-            className="touch-target app-secondary-button flex w-full items-center justify-center gap-3 rounded-card px-4 py-3.5 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-          >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
-              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-            </svg>
-            <span className="font-medium">Continue with Google</span>
-          </button>
-
-          <div className="relative flex items-center">
-            <div className="flex-grow app-divider border-t" />
-            <span className="mx-4 flex-shrink-0 text-xs font-medium uppercase tracking-[0.18em] app-soft">
-              Or email
-            </span>
-            <div className="flex-grow app-divider border-t" />
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 app-accent" />
+            <p className="app-muted leading-relaxed">
+              Sign in securely with Google or email.
+            </p>
           </div>
 
-          <form onSubmit={handleEmailAuth} className="space-y-4">
-            <div className="space-y-4">
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 app-soft">
-                  <Mail className="h-5 w-5" />
-                </div>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="Email address"
-                  autoComplete="email"
-                  enterKeyHint="next"
-                  aria-label="Email address"
-                  className="app-input w-full rounded-card py-3.5 pl-12 pr-4 text-[15px] transition-all"
-                  required
-                />
-              </div>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 app-soft">
-                  <Lock className="h-5 w-5" />
-                </div>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Password"
-                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                  enterKeyHint="go"
-                  aria-label="Password"
-                  minLength={mode === "signup" ? 6 : undefined}
-                  className="app-input w-full rounded-card py-3.5 pl-12 pr-4 text-[15px] transition-all"
-                  required
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading || !isSupabaseConfigured}
-              aria-busy={isLoading}
-              className="touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-medium text-white transition-all active:scale-[0.98] disabled:grayscale"
-            >
-              {isLoading ? (
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              ) : (
-                <>
-                  {mode === "login" ? "Sign in" : "Create account"}
-                  <ArrowRight className="h-5 w-5" />
-                </>
-              )}
-            </button>
-          </form>
-
-          <p className="app-muted pt-2 text-center text-sm">
-            {mode === "login" ? "Need an account?" : "Already have an account?"}
-            <button
-              onClick={(event) => {
-                event.preventDefault();
-                setMode(mode === "login" ? "signup" : "login");
-              }}
-              className="ml-2 font-medium app-accent transition-colors hover:opacity-80"
-            >
-              {mode === "login" ? "Sign up" : "Sign in"}
-            </button>
-          </p>
-
-          <div className="relative flex items-center pt-1">
-            <div className="flex-grow app-divider border-t" />
-            <span className="mx-4 flex-shrink-0 text-xs font-medium uppercase tracking-[0.18em] app-soft">
-              Or
-            </span>
-            <div className="flex-grow app-divider border-t" />
+          <div className={cn("w-full", isShortPhone ? "space-y-4" : "space-y-5")}>
+        {!isSupabaseConfigured && (
+          <div className="app-panel rounded-card px-4 py-4 text-center text-sm leading-relaxed" style={{ color: "var(--app-accent)" }}>
+            {supabaseConfigMessage}
           </div>
+        )}
 
-          <button
-            onClick={() => {
-              loginAsGuest();
-              navigate("/");
-            }}
-            className="touch-target app-secondary-button w-full rounded-card py-3.5 text-[15px] font-medium transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-          >
-            Continue as guest
-          </button>
+        {error && (
+          <div className="app-danger-panel rounded-card px-4 py-4 text-center text-sm">
+            {error}
+          </div>
+        )}
 
-          <p className="app-muted px-2 text-center text-[11px] leading-relaxed">
-            By signing in, creating an account, or continuing as guest, you agree to our{" "}
-            <button
-              type="button"
-              onClick={() => setLegalView("terms")}
-              className="app-accent font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-            >
-              Terms & Conditions
-            </button>{" "}
-            and{" "}
-            <button
-              type="button"
-              onClick={() => setLegalView("privacy")}
-              className="app-accent font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-            >
-              Privacy Policy
-            </button>
-            .
-          </p>
-            </div>
-          </section>
+        <button
+          onClick={handleGoogleAuth}
+          disabled={isLoading || !isSupabaseConfigured}
+          className="touch-target app-secondary-button flex w-full items-center justify-center gap-3 rounded-card px-4 py-3.5 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+        >
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+          </svg>
+          <span className="font-medium">Continue with Google</span>
+        </button>
+
+        <div className="relative flex items-center">
+          <div className="flex-grow app-divider border-t" />
+          <span className="mx-4 flex-shrink-0 text-xs font-medium uppercase tracking-[0.18em] app-soft">
+            Or email
+          </span>
+          <div className="flex-grow app-divider border-t" />
         </div>
+
+        <form onSubmit={handleEmailAuth} className="space-y-4">
+          <div className="space-y-4">
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 app-soft">
+                <Mail className="h-5 w-5" />
+              </div>
+              <input
+                id="login-email"
+                name="email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="Email address"
+                autoComplete="email"
+                enterKeyHint="next"
+                aria-label="Email address"
+                className="app-input w-full rounded-card py-3.5 pl-12 pr-4 text-[15px] transition-all"
+                required
+              />
+            </div>
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 app-soft">
+                <Lock className="h-5 w-5" />
+              </div>
+              <input
+                id="login-password"
+                name="password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Password"
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                enterKeyHint="go"
+                aria-label="Password"
+                minLength={mode === "signup" ? 6 : undefined}
+                className="app-input w-full rounded-card py-3.5 pl-12 pr-4 text-[15px] transition-all"
+                required
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isLoading || !isSupabaseConfigured}
+            aria-busy={isLoading}
+            className="touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-medium text-white transition-all active:scale-[0.98] disabled:grayscale"
+          >
+            {isLoading ? (
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            ) : (
+              <>
+                {mode === "login" ? "Sign in" : "Create account"}
+                <ArrowRight className="h-5 w-5" />
+              </>
+            )}
+          </button>
+        </form>
+
+        <p className="app-muted pt-2 text-center text-sm">
+          {mode === "login" ? "Need an account?" : "Already have an account?"}
+          <button
+            onClick={(event) => {
+              event.preventDefault();
+              setMode(mode === "login" ? "signup" : "login");
+            }}
+            className="ml-2 font-medium app-accent transition-colors hover:opacity-80"
+          >
+            {mode === "login" ? "Sign up" : "Sign in"}
+          </button>
+        </p>
+
+        <p className="app-muted px-2 text-center text-[11px] leading-relaxed">
+          By signing in or creating an account, you agree to our{" "}
+          <button
+            type="button"
+            onClick={() => setLegalView("terms")}
+            className="app-accent font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+          >
+            Terms & Conditions
+          </button>{" "}
+          and{" "}
+          <button
+            type="button"
+            onClick={() => setLegalView("privacy")}
+            className="app-accent font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+          >
+            Privacy Policy
+          </button>
+          .
+        </p>
+          </div>
+        </section>
       </div>
 
       {legalView && (

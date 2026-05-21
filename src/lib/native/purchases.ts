@@ -26,6 +26,31 @@ export type SubscriptionOffering = {
 
 let billingChecked = false;
 let billingSupported = false;
+const BILLING_STARTUP_TIMEOUT_MS = 3000;
+
+const withTimeout = <T,>(promise: Promise<T>, fallback: T, timeoutMs = BILLING_STARTUP_TIMEOUT_MS) =>
+  new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(fallback);
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
 
 const normalizeConfigValue = (value?: string) => {
   const trimmed = value?.trim();
@@ -121,7 +146,10 @@ export async function initializePurchases() {
   if (billingChecked) return billingSupported;
 
   try {
-    const result = await NativePurchases.isBillingSupported();
+    const result = await withTimeout(
+      NativePurchases.isBillingSupported(),
+      { isBillingSupported: false },
+    );
     billingSupported = Boolean(result.isBillingSupported);
   } catch {
     billingSupported = false;
@@ -139,10 +167,13 @@ export async function getCurrentOffering(): Promise<SubscriptionOffering | null>
   const productIdentifiers = getProductIds(configs);
   if (!productIdentifiers.length) return null;
 
-  const { products } = await NativePurchases.getProducts({
-    productIdentifiers,
-    productType: PURCHASE_TYPE.SUBS,
-  });
+  const { products } = await withTimeout(
+    NativePurchases.getProducts({
+      productIdentifiers,
+      productType: PURCHASE_TYPE.SUBS,
+    }),
+    { products: [] as Product[] },
+  );
 
   const isAndroid = getNativePlatform() === "android";
   const monthlyProduct = selectProductForConfig(products, configs.monthly, isAndroid);
@@ -230,10 +261,13 @@ export async function hasActiveSubscription() {
   const activeProductIds = getConfiguredProductIds();
   if (!activeProductIds.length) return false;
 
-  const { purchases } = await NativePurchases.getPurchases({
-    productType: PURCHASE_TYPE.SUBS,
-    onlyCurrentEntitlements: true,
-  });
+  const { purchases } = await withTimeout(
+    NativePurchases.getPurchases({
+      productType: PURCHASE_TYPE.SUBS,
+      onlyCurrentEntitlements: true,
+    }),
+    { purchases: [] as Transaction[] },
+  );
 
   return purchases.some(
     (purchase) =>

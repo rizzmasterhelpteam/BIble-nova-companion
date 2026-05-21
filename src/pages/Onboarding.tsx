@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Sunrise } from "lucide-react";
+import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Sunrise, CheckCircle2 } from "lucide-react";
 import { ChristianCross } from "../components/ChristianCross";
-import { AppLogo } from "../components/AppLogo";
 import { motion, AnimatePresence } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
@@ -188,6 +187,18 @@ export default function Onboarding() {
 
   if (showAnalysis) {
     const analysis = getAnalysisSummary(answers);
+    const profileRows = [
+      { label: "What brings you here", value: getSelectedLabel(answers, "reason") },
+      { label: "Current rhythm", value: getSelectedLabel(answers, "frequency") },
+      { label: "Primary goal", value: getSelectedLabel(answers, "goal") },
+      { label: "Best support style", value: getSelectedLabel(answers, "support") },
+      { label: "When support matters most", value: getSelectedLabel(answers, "rhythm") },
+    ];
+    const planSections = [
+      { label: "What you told us", value: analysis.userAnswer },
+      { label: "How the app will help", value: analysis.appResponse },
+      { label: "What happens first", value: analysis.firstSession },
+    ];
 
     return (
       <div
@@ -220,50 +231,54 @@ export default function Onboarding() {
             Back
           </button>
 
-          <div className={cn("flex justify-center", isShortPhone ? "mb-5" : "mb-7")}>
-            <div className={cn("app-logo-badge overflow-hidden flex items-center justify-center rounded-full ring-1 ring-white/10", isCompactPhone ? "h-16 w-16" : "h-20 w-20")}>
-              <AppLogo className="h-full w-full object-cover" />
-            </div>
-          </div>
-
-          <div className="text-center">
+          <div className="mb-6 text-center">
             <p className="app-kicker mb-3">Your Support Plan</p>
             <h2 className={cn("app-heading mb-4 pb-1 font-serif leading-[1.24]", isCompactPhone ? "text-[2rem]" : "text-3xl")}>
-              Here&apos;s what we learned from your answers.
+              Your guidance experience is now tailored to you.
             </h2>
             <p className="app-muted mx-auto mb-6 max-w-sm text-[15px] leading-relaxed">
               {analysis.overview}
             </p>
           </div>
 
-          <div className={cn("space-y-3", isShortPhone ? "mb-5" : "mb-7")}>
+          <div className={cn("space-y-4", isShortPhone ? "mb-5" : "mb-7")}>
             <div
-              className="rounded-card border p-4"
-              style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}
+              className="rounded-card border px-4 py-4"
+              style={{ borderColor: "var(--app-card-border)", background: "color-mix(in srgb, var(--app-card-strong) 92%, transparent)" }}
             >
-              <p className="app-kicker mb-2 text-[10px]">What you told us</p>
-              <p className="app-heading text-sm leading-relaxed">
-                {analysis.userAnswer}
-              </p>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="app-kicker text-[10px]">Reflection profile</p>
+                <span className="rounded-pill px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ background: "var(--app-accent-soft)", color: "var(--app-accent)" }}>
+                  Setup complete
+                </span>
+              </div>
+              <div className="space-y-3">
+                {profileRows.map((row) => (
+                  <div key={row.label} className="flex items-start justify-between gap-3 border-b pb-3 last:border-b-0 last:pb-0" style={{ borderColor: "var(--app-card-border)" }}>
+                    <p className="app-soft text-[11px] uppercase tracking-[0.16em]">{row.label}</p>
+                    <p className="app-heading max-w-[60%] text-right text-sm leading-relaxed">{row.value}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div
-              className="rounded-card border p-4"
-              style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}
-            >
-              <p className="app-kicker mb-2 text-[10px]">How the app will help</p>
-              <p className="app-heading text-sm leading-relaxed">
-                {analysis.appResponse}
-              </p>
-            </div>
-            <div
-              className="rounded-card border p-4"
-              style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}
-            >
-              <p className="app-kicker mb-2 text-[10px]">What happens first</p>
-              <p className="app-heading text-sm leading-relaxed">
-                {analysis.firstSession}
-              </p>
-            </div>
+
+            {planSections.map((section, index) => (
+              <div
+                key={section.label}
+                className="rounded-card border p-4"
+                style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}
+              >
+                <div className="mb-3 flex items-center gap-3">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--app-accent) 16%, transparent)", color: "var(--app-accent)" }}>
+                    0{index + 1}
+                  </span>
+                  <p className="app-kicker text-[10px]">{section.label}</p>
+                </div>
+                <p className="app-heading text-sm leading-relaxed">
+                  {section.value}
+                </p>
+              </div>
+            ))}
           </div>
 
           <button
@@ -294,7 +309,7 @@ export default function Onboarding() {
       </div>
 
       <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col">
-        <div className={cn("flex items-center justify-between", isShortPhone ? "mb-6" : "mb-8 sm:mb-12")}>
+        <div className={cn("flex items-center justify-between", isShortPhone ? "mb-6" : "mb-8")}>
           <button
             onClick={handleBack}
             disabled={currentStep === 0}
@@ -308,19 +323,35 @@ export default function Onboarding() {
           </span>
         </div>
 
-        <div className={cn("h-1 w-full overflow-hidden rounded-full", isShortPhone ? "mb-6" : "mb-8")} style={{ background: "var(--app-divider)" }}>
-          <motion.div
-            className="h-full"
-            style={{ background: "var(--app-accent-gradient)" }}
-            initial={{ width: 0 }}
-            animate={{ width: `${((currentStep + 1) / questions.length) * 100}%` }}
-            transition={{ duration: 0.3 }}
-          />
-        </div>
+        <div className={cn("rounded-[2rem] border px-5 py-5 shadow-[0_22px_52px_rgba(0,0,0,0.10)]", isShortPhone ? "mb-5" : "mb-6")} style={{ borderColor: "var(--app-card-border)", background: "linear-gradient(180deg, color-mix(in srgb, var(--app-card-strong) 96%, transparent), color-mix(in srgb, var(--app-card-bg) 90%, transparent))" }}>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <p className="app-kicker mb-1 text-[10px]">Personalize your guidance</p>
+              <p className="app-heading text-base font-semibold">A short setup to shape your first sessions</p>
+            </div>
+            <div className="rounded-card px-3 py-2 text-right" style={{ background: "var(--app-card-soft)" }}>
+              <p className="app-soft text-[10px] uppercase tracking-[0.16em]">Progress</p>
+              <p className="app-heading text-sm font-semibold">{Math.round(((currentStep + 1) / questions.length) * 100)}%</p>
+            </div>
+          </div>
 
-        <span className={cn("app-kicker text-xs font-semibold", isShortPhone ? "mb-3" : "mb-4")}>
-          Question {currentStep + 1} of {questions.length}
-        </span>
+          <div className={cn("h-1 w-full overflow-hidden rounded-full", isShortPhone ? "mb-4" : "mb-5")} style={{ background: "var(--app-divider)" }}>
+            <motion.div
+              className="h-full"
+              style={{ background: "var(--app-accent-gradient)" }}
+              initial={{ width: 0 }}
+              animate={{ width: `${((currentStep + 1) / questions.length) * 100}%` }}
+              transition={{ duration: 0.3 }}
+            />
+          </div>
+
+          <div className="flex items-start gap-3 rounded-card border px-4 py-3" style={{ borderColor: "var(--app-card-border)", background: "color-mix(in srgb, var(--app-card-bg) 75%, transparent)" }}>
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 app-accent" />
+            <p className="app-muted text-sm leading-relaxed">
+              These answers set the tone, pacing, and first practical guidance you receive. You can refine them later from settings.
+            </p>
+          </div>
+        </div>
 
         <AnimatePresence mode="wait">
           <motion.div
@@ -329,8 +360,12 @@ export default function Onboarding() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.3 }}
-            className="flex-1"
+            className="flex-1 rounded-[2rem] border px-5 py-6 shadow-[0_22px_52px_rgba(0,0,0,0.10)] sm:px-6 sm:py-7"
+            style={{ borderColor: "var(--app-card-border)", background: "color-mix(in srgb, var(--app-card-strong) 96%, transparent)" }}
           >
+            <span className={cn("app-kicker text-xs font-semibold", isShortPhone ? "mb-3 inline-flex" : "mb-4 inline-flex")}>
+              Question {currentStep + 1} of {questions.length}
+            </span>
             <h1 className={cn("app-heading mb-4 pb-1 font-serif leading-[1.24]", isCompactPhone ? "text-[2rem]" : "text-3xl sm:text-4xl")}>
               {question.title}
             </h1>
@@ -379,6 +414,15 @@ export default function Onboarding() {
                         {option.label}
                       </span>
                     </div>
+                    <span
+                      className="rounded-pill px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]"
+                      style={{
+                        background: isSelected ? "color-mix(in srgb, var(--app-accent) 16%, transparent)" : "var(--app-card-soft)",
+                        color: isSelected ? "var(--app-accent)" : "var(--app-text-muted)",
+                      }}
+                    >
+                      {isSelected ? "Selected" : "Choose"}
+                    </span>
                   </button>
                 );
               })}
