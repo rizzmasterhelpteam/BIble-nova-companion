@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Mail, Lock, ArrowRight, X } from "lucide-react";
-import { AppLogo } from "../components/AppLogo";
+import { Mail, Lock, ArrowRight, ShieldCheck, Sparkles, Heart, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -10,6 +9,24 @@ import { signInWithGoogleNative } from "../lib/native/auth";
 import { isNativePlatform } from "../lib/native/platform";
 
 type LegalView = "terms" | "privacy";
+
+const loginHighlights = [
+  {
+    title: "Personalized guidance",
+    description: "Reflections adapt to your emotional needs, spiritual goals, and preferred style of support.",
+    icon: Sparkles,
+  },
+  {
+    title: "Grounded encouragement",
+    description: "Prayerful responses stay rooted in scripture, moral clarity, and calm practical wisdom.",
+    icon: Heart,
+  },
+  {
+    title: "Private continuity",
+    description: "Keep your reflection history together across devices when you sign in to your account.",
+    icon: ShieldCheck,
+  },
+] as const;
 
 const legalDocuments: Record<LegalView, { title: string; updatedAt: string; sections: { heading: string; body: string }[] }> = {
   terms: {
@@ -78,6 +95,10 @@ export default function Login() {
   const navigate = useNavigate();
   const { user, isGuest, isLoading: isAuthLoading, hasCompletedOnboarding, isSubscribed, loginAsGuest } = useAuth();
   const shouldTopAlign = isShortPhone || isKeyboardOpen;
+  const authTitle = mode === "login" ? "Access your reflection space" : "Create your reflection account";
+  const authSubtitle = mode === "login"
+    ? "Sign in to continue your saved reflections, prayer prompts, and support history."
+    : "Create an account to save your reflections, sync across devices, and keep your progress secure.";
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -194,29 +215,97 @@ export default function Login() {
         <div className="app-orb app-orb-b bottom-[-16%] right-[-8%] h-[26rem] w-[26rem]" />
       </div>
 
-      <div
-        className={cn(
-          "relative z-10 flex min-h-full w-full flex-col items-center px-4 py-4 sm:px-8",
-          shouldTopAlign ? "justify-start" : "justify-center",
-        )}
-      >
-        <div className={cn("app-logo-badge overflow-hidden flex items-center justify-center rounded-full ring-1 ring-white/10", isShortPhone ? "mb-5 h-20 w-20" : "mb-6 h-24 w-24 sm:mb-10")}>
-          <AppLogo className="h-full w-full object-cover" />
-        </div>
+      <div className={cn("relative z-10 mx-auto flex w-full max-w-5xl flex-1 px-4 py-4 sm:px-8", shouldTopAlign ? "items-start" : "items-center")}>
+        <div className="grid w-full gap-5 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
+          <section
+            className={cn(
+              "rounded-[2rem] border px-5 py-6 sm:px-8 sm:py-8",
+              isShortPhone ? "order-2" : "order-1",
+            )}
+            style={{
+              borderColor: "var(--app-card-border)",
+              background:
+                "linear-gradient(180deg, color-mix(in srgb, var(--app-card-strong) 94%, transparent), color-mix(in srgb, var(--app-card-bg) 88%, transparent)), linear-gradient(135deg, color-mix(in srgb, var(--app-accent-soft) 38%, transparent), transparent 62%)",
+              boxShadow: "0 26px 60px rgba(0, 0, 0, 0.10)",
+            }}
+          >
+            <div
+              className="mb-5 inline-flex items-center gap-2 rounded-pill px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em]"
+              style={{
+                background: "color-mix(in srgb, var(--app-accent-soft) 70%, transparent)",
+                color: "var(--app-accent)",
+                border: "1px solid color-mix(in srgb, var(--app-accent) 18%, transparent)",
+              }}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Faith-guided reflection
+            </div>
 
-        <div className={cn("max-w-md text-center", isShortPhone ? "mb-6" : "mb-8 sm:mb-10")}>
-          <p className="app-kicker mb-3">Premium Sanctuary</p>
-          <h1 className={cn("app-heading mb-3 pb-1 font-serif font-normal leading-[1.24]", isCompactPhone ? "text-[2rem]" : "text-4xl")}>
-            {mode === "login" ? "Welcome back" : "Find your peace"}
-          </h1>
-          <p className="app-muted px-2 text-[15px] leading-relaxed">
-            {mode === "login"
-              ? "A calmer, more premium Bible Nova Companion experience is ready."
-              : "Create an account to keep your reflections across devices."}
-          </p>
-        </div>
+            <div className={cn("max-w-2xl", isShortPhone ? "mb-6" : "mb-8")}>
+              <p className="app-kicker mb-3">Bible Nova Companion</p>
+              <h1 className={cn("app-heading mb-4 pb-1 font-serif font-normal leading-[1.15]", isCompactPhone ? "text-[2rem]" : "text-4xl sm:text-[3.25rem]")}>
+                {mode === "login" ? "Return to a steadier reflection practice." : "Build a calmer spiritual rhythm."}
+              </h1>
+              <p className="app-muted max-w-xl text-[15px] leading-relaxed sm:text-base">
+                {mode === "login"
+                  ? "Continue with scripture-grounded reflections, prayerful encouragement, and practical next steps shaped around what you are carrying."
+                  : "Start a private reflection practice with personalized spiritual guidance, practical support, and continuity across every device you use."}
+              </p>
+            </div>
 
-        <div className={cn("w-full max-w-md", isShortPhone ? "space-y-4" : "space-y-5")}>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {loginHighlights.map(({ title, description, icon: Icon }) => (
+                <div
+                  key={title}
+                  className="rounded-card border p-4"
+                  style={{
+                    borderColor: "var(--app-card-border)",
+                    background: "color-mix(in srgb, var(--app-card-bg) 82%, transparent)",
+                  }}
+                >
+                  <div
+                    className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full"
+                    style={{
+                      background: "color-mix(in srgb, var(--app-accent-soft) 72%, transparent)",
+                      color: "var(--app-accent)",
+                    }}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <p className="app-heading mb-2 text-sm font-semibold">{title}</p>
+                  <p className="app-muted text-sm leading-relaxed">{description}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section
+            className={cn(
+              "app-panel w-full rounded-[2rem] border px-5 py-6 shadow-[0_24px_56px_rgba(0,0,0,0.12)] sm:px-6 sm:py-7",
+              isShortPhone ? "order-1" : "order-2",
+            )}
+            style={{ borderColor: "var(--app-card-border)" }}
+          >
+            <div className="mb-5">
+              <p className="app-kicker mb-2">{mode === "login" ? "Account Access" : "Create Account"}</p>
+              <h2 className="app-heading text-[1.65rem] font-semibold leading-tight">{authTitle}</h2>
+              <p className="app-muted mt-2 text-sm leading-relaxed">{authSubtitle}</p>
+            </div>
+
+            <div
+              className="mb-5 flex items-start gap-3 rounded-card border px-4 py-3 text-sm"
+              style={{
+                borderColor: "var(--app-card-border)",
+                background: "var(--app-card-soft)",
+              }}
+            >
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 app-accent" />
+              <p className="app-muted leading-relaxed">
+                Google and email sign-in save your reflection journey. Guest mode stays on this device.
+              </p>
+            </div>
+
+            <div className={cn("w-full", isShortPhone ? "space-y-4" : "space-y-5")}>
           {!isSupabaseConfigured && (
             <div className="app-panel rounded-card px-4 py-4 text-center text-sm leading-relaxed" style={{ color: "var(--app-accent)" }}>
               {supabaseConfigMessage} You can still continue as guest.
@@ -306,7 +395,7 @@ export default function Login() {
           </form>
 
           <p className="app-muted pt-2 text-center text-sm">
-            {mode === "login" ? "Do not have an account?" : "Already have an account?"}
+            {mode === "login" ? "Need an account?" : "Already have an account?"}
             <button
               onClick={(event) => {
                 event.preventDefault();
@@ -355,6 +444,8 @@ export default function Login() {
             </button>
             .
           </p>
+            </div>
+          </section>
         </div>
       </div>
 

@@ -70,6 +70,64 @@ const getSelectedLabel = (answers: Record<string, string>, questionId: string) =
   return selected?.label || "Personal reflection";
 };
 
+const getAnalysisSummary = (answers: Record<string, string>) => {
+  const reasonById = {
+    stress: "stress and anxiety feel heavy right now",
+    purpose: "you are looking for clearer purpose and direction",
+    healing: "emotional healing is a priority for you",
+    faith: "reconnecting with your faith matters to you",
+  } as const;
+
+  const goalById = {
+    peace: "find more inner peace",
+    strength: "build stronger resilience",
+    forgiveness: "move toward forgiveness",
+    understanding: "understand yourself more honestly",
+  } as const;
+
+  const supportById = {
+    gentle: "gentle comfort",
+    honest: "honest moral clarity",
+    prayer: "prayer and scripture",
+    practical: "simple practical steps",
+  } as const;
+
+  const supportActionById = {
+    gentle: "a calm and reassuring tone",
+    honest: "clear moral guidance rooted in scripture",
+    prayer: "prayerful guidance and scripture-based reflection",
+    practical: "clear next steps you can act on right away",
+  } as const;
+
+  const rhythmById = {
+    morning: "at the start of the day",
+    evening: "before sleep",
+    stressful: "during stressful moments",
+    uncertain: "when you feel uncertain",
+  } as const;
+
+  const frequencyById = {
+    daily: "You already have a daily rhythm.",
+    weekly: "You already check in from time to time.",
+    rarely: "You want help becoming more consistent.",
+    never: "You are starting from scratch, which is completely fine.",
+  } as const;
+
+  const reason = reasonById[answers.reason as keyof typeof reasonById] ?? "you are looking for thoughtful spiritual support";
+  const goal = goalById[answers.goal as keyof typeof goalById] ?? "feel more grounded";
+  const support = supportById[answers.support as keyof typeof supportById] ?? "steady spiritual guidance";
+  const supportAction = supportActionById[answers.support as keyof typeof supportActionById] ?? "steady spiritual guidance with practical next steps";
+  const rhythm = rhythmById[answers.rhythm as keyof typeof rhythmById] ?? "when life feels heavy";
+  const frequency = frequencyById[answers.frequency as keyof typeof frequencyById] ?? "You are shaping a reflection rhythm that works for you.";
+
+  return {
+    overview: `You shared that ${reason}. You want to ${goal}, prefer ${support}, and usually need support ${rhythm}.`,
+    userAnswer: `${frequency} Right now, ${reason}, and your focus is to ${goal}.`,
+    appResponse: `Bible Nova Companion will answer with ${supportAction}, short scripture-based reflections, and one clear next step that fits ${rhythm}.`,
+    firstSession: `Your first session will begin with a short check-in, a grounded reflection, and a practical action to help you ${goal}.`,
+  };
+};
+
 export default function Onboarding() {
   useDocumentTitle("Welcome | Bible Nova Companion");
   const { isCompactPhone, isShortPhone } = useMobileViewport();
@@ -129,10 +187,7 @@ export default function Onboarding() {
   };
 
   if (showAnalysis) {
-    const reason = getSelectedLabel(answers, "reason").toLowerCase();
-    const goal = getSelectedLabel(answers, "goal").toLowerCase();
-    const support = getSelectedLabel(answers, "support").toLowerCase();
-    const rhythm = getSelectedLabel(answers, "rhythm").toLowerCase();
+    const analysis = getAnalysisSummary(answers);
 
     return (
       <div
@@ -172,12 +227,12 @@ export default function Onboarding() {
           </div>
 
           <div className="text-center">
-            <p className="app-kicker mb-3">Your Reflection Analysis</p>
+            <p className="app-kicker mb-3">Your Support Plan</p>
             <h2 className={cn("app-heading mb-4 pb-1 font-serif leading-[1.24]", isCompactPhone ? "text-[2rem]" : "text-3xl")}>
-              Your path is taking shape.
+              Here&apos;s what we learned from your answers.
             </h2>
             <p className="app-muted mx-auto mb-6 max-w-sm text-[15px] leading-relaxed">
-              Bible Nova Companion will focus on {reason}, help you move toward {goal}, and respond with {support} when you need it most.
+              {analysis.overview}
             </p>
           </div>
 
@@ -186,18 +241,27 @@ export default function Onboarding() {
               className="rounded-card border p-4"
               style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}
             >
-              <p className="app-kicker mb-2 text-[10px]">Guidance Style</p>
+              <p className="app-kicker mb-2 text-[10px]">What you told us</p>
               <p className="app-heading text-sm leading-relaxed">
-                A calm companion for {support}, especially {rhythm}.
+                {analysis.userAnswer}
               </p>
             </div>
             <div
               className="rounded-card border p-4"
               style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}
             >
-              <p className="app-kicker mb-2 text-[10px]">Starting Point</p>
+              <p className="app-kicker mb-2 text-[10px]">How the app will help</p>
               <p className="app-heading text-sm leading-relaxed">
-                Your first experience will be centered around practical spiritual support, prayerful reflection, and simple next steps.
+                {analysis.appResponse}
+              </p>
+            </div>
+            <div
+              className="rounded-card border p-4"
+              style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}
+            >
+              <p className="app-kicker mb-2 text-[10px]">What happens first</p>
+              <p className="app-heading text-sm leading-relaxed">
+                {analysis.firstSession}
               </p>
             </div>
           </div>
@@ -240,7 +304,7 @@ export default function Onboarding() {
             Back
           </button>
           <span className="app-soft text-xs">
-            {Object.keys(answers).length} answered
+            {Object.keys(answers).length} of {questions.length} responses
           </span>
         </div>
 
@@ -271,7 +335,7 @@ export default function Onboarding() {
               {question.title}
             </h1>
             <p className={cn("app-muted max-w-sm", isShortPhone ? "mb-7" : "mb-10")}>
-              A few quick choices will help the app adapt its tone and first suggestions.
+              These answers shape the tone, pacing, and first guidance you will see in the app.
             </p>
 
             <div className={cn(isCompactPhone ? "space-y-3" : "space-y-4")}>

@@ -5,7 +5,7 @@ import { Check, Star, AlertCircle, ShieldCheck } from "lucide-react";
 import { AppLogo } from "../components/AppLogo";
 import { motion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
-import { isNativePlatform } from "../lib/native/platform";
+import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import {
   getCurrentOffering,
@@ -22,9 +22,11 @@ export default function Paywall() {
   const { isCompactPhone, isShortPhone } = useMobileViewport();
   const shouldTopAlign = isShortPhone;
   const nativeStoreAvailable = isNativePlatform();
+  const isAndroidNative = nativeStoreAvailable && getNativePlatform() === "android";
   const [selectedPlan, setSelectedPlan] = useState<Plan>("yearly");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [promoHelpOpen, setPromoHelpOpen] = useState(false);
   const [iapPackages, setIapPackages] = useState<Partial<Record<Plan, SubscriptionPackage>>>({});
   const [iapReady, setIapReady] = useState(false);
   const [isLoadingOffering, setIsLoadingOffering] = useState(nativeStoreAvailable);
@@ -178,6 +180,11 @@ export default function Paywall() {
       setError("Something held this up. Please try again.");
       setIsLoading(false);
     }, 6000);
+  };
+
+  const handlePromoCodePurchase = async () => {
+    setPromoHelpOpen(false);
+    await handleSubscribe();
   };
 
   const handleRestorePurchases = async () => {
@@ -403,6 +410,15 @@ export default function Paywall() {
 
           {nativeStoreAvailable && (
             <div className="mb-4 grid grid-cols-1 gap-2">
+              {isAndroidNative && (
+                <button
+                  onClick={() => setPromoHelpOpen(true)}
+                  disabled={!canSubscribe}
+                  className="touch-target app-ghost-button w-full rounded-pill py-3 text-sm font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+                >
+                  Have a promo code?
+                </button>
+              )}
               <button
                 onClick={handleRestorePurchases}
                 disabled={isLoading}
@@ -439,6 +455,59 @@ export default function Paywall() {
           </p>
         </motion.div>
       </div>
+
+      {promoHelpOpen && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center px-4 pb-4 pt-safe sm:items-center sm:p-6">
+          <button
+            type="button"
+            aria-label="Close promo code help"
+            onClick={() => setPromoHelpOpen(false)}
+            className="app-overlay absolute inset-0 backdrop-blur-sm"
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="promo-code-dialog-title"
+            className="app-panel-strong relative z-10 w-full max-w-md rounded-[2rem] border p-5 shadow-2xl sm:p-6"
+          >
+            <div className="mb-4">
+              <p className="app-kicker mb-2">Promo code</p>
+              <h2 id="promo-code-dialog-title" className="app-heading text-xl font-semibold">
+                Redeem in Google Play
+              </h2>
+            </div>
+
+            <div className="space-y-3">
+              <p className="app-muted text-sm leading-relaxed">
+                We will open the Google Play purchase screen for the selected plan. On that
+                screen, tap the payment method area, choose <span className="app-heading font-medium">Redeem code</span>,
+                and enter your promo code.
+              </p>
+              <p className="app-muted text-sm leading-relaxed">
+                Your selected plan is <span className="app-heading font-medium">{selectedPlanLabel}</span>. Google Play may still require a valid payment method for renewal after the promo period ends.
+              </p>
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPromoHelpOpen(false)}
+                className="touch-target app-secondary-button flex-1 rounded-pill px-3 py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handlePromoCodePurchase}
+                disabled={!canSubscribe}
+                className="touch-target app-primary-button flex-1 rounded-pill px-3 py-3 text-sm font-medium text-white transition-all disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              >
+                Open Google Play
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
