@@ -9,7 +9,7 @@ import {
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
-  redeemPromoCode,
+  syncNativeSubscription,
   transcribeAudio,
 } from "./server-api";
 
@@ -46,12 +46,12 @@ app.delete("/api/account", async (req, res) => {
   }
 });
 
-app.post("/api/promo-redeem", async (req, res) => {
+app.post("/api/subscription/native-sync", async (req, res) => {
   try {
-    const result = await redeemPromoCode(req.headers.authorization, req.body?.code || "");
-    res.json(result);
+    const subscription = await syncNativeSubscription(req.headers.authorization, req.body || {});
+    res.json({ subscription });
   } catch (error) {
-    console.error("Promo redemption error:", error);
+    console.error("Native subscription sync error:", error);
     res.status(400).json({ error: getClientErrorMessage(error) });
   }
 });

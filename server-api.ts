@@ -46,25 +46,25 @@ export const getApiStatus = () => ({
 type UserSubscriptionMetadata = {
   status?: string;
   source?: string;
-  promoCode?: string;
   trialEndsAt?: string;
-  redeemedAt?: string;
-  durationDays?: number;
+  productId?: string;
+  planId?: string;
+  orderId?: string;
+  linkedAt?: string;
+  platform?: "android" | "ios";
 };
 
-const getSafePositiveInteger = (value: string | undefined, fallback: number) => {
-  const parsed = Number.parseInt(value || "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+export type NativeSubscriptionSyncPayload = {
+  productId?: string;
+  planId?: string;
+  orderId?: string;
+  purchaseToken?: string;
+  platform?: "android" | "ios";
 };
 
-const PRIMARY_PROMO_CODE = (process.env.PROMO_CODE_PRIMARY || "GETNOW").trim().toUpperCase();
-const PRIMARY_PROMO_CODE_DAYS = getSafePositiveInteger(process.env.PROMO_CODE_PRIMARY_DAYS, 30);
-
-const isActiveSubscriptionMetadata = (subscription: UserSubscriptionMetadata | undefined) => {
-  if (!subscription || subscription.status !== "active") return false;
-  if (!subscription.trialEndsAt) return true;
-  const expiry = Date.parse(subscription.trialEndsAt);
-  return Number.isFinite(expiry) && expiry > Date.now();
+const normalizeOptionalString = (value: string | undefined) => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 };
 
 const parseBase64Audio = (audio: string) => {
@@ -106,7 +106,10 @@ export async function transcribeAudio(audio: string, language?: string) {
     body: formData,
   });
 
-  const data = (await response.json().catch(() => ({}))) as { text?: string; error?: { message?: string } };
+  const data = (await response.json().catch(() => ({}))) as {
+    text?: string;
+    error?: { message?: string };
+  };
   if (!response.ok) {
     throw new Error(data.error?.message || "Speech transcription failed.");
   }
@@ -184,31 +187,39 @@ export async function deleteSupabaseAccount(authorizationHeader?: string) {
   return data.user.id;
 }
 
-export async function redeemPromoCode(authorizationHeader: string | undefined, rawCode: string) {
+export async function syncNativeSubscription(
+  authorizationHeader: string | undefined,
+  payload: NativeSubscriptionSyncPayload,
+) {
   const accessToken = authorizationHeader?.replace(/^Bearer\s+/i, "").trim();
   if (!accessToken) {
-    throw new Error("Missing active session. Please sign in again before redeeming a promo code.");
+    throw new Error("Missing active session. Please sign in again before restoring premium.");
   }
 
-  const code = rawCode.trim().toUpperCase();
-  if (!code) {
-    throw new Error("Enter a promo code.");
+  const productId = normalizeOptionalString(payload.productId);
+  const planId = normalizeOptionalString(payload.planId);
+  const orderId = normalizeOptionalString(payload.orderId);
+  const purchaseToken = normalizeOptionalString(payload.purchaseToken);
+  const platform = payload.platform === "ios" ? "ios" : "android";
+
+  if (!productId) {
+    throw new Error("Native subscription sync requires a product ID.");
   }
 
-  if (code !== PRIMARY_PROMO_CODE) {
-    throw new Error("That promo code is invalid.");
+  if (platform === "android" && !purchaseToken && !orderId) {
+    throw new Error("Android subscription sync requires purchase details.");
   }
 
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  // Graceful fallback: if Supabase is not fully configured server-side, still
-  // return a valid trial response. The client will store the subscription locally.
   if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes("placeholder.supabase.co")) {
-    const now = new Date();
-    const trialEndsAt = new Date(now.getTime() + PRIMARY_PROMO_CODE_DAYS * 24 * 60 * 60 * 1000).toISOString();
-    return { code, durationDays: PRIMARY_PROMO_CODE_DAYS, trialEndsAt, alreadyRedeemed: false };
+    throw new Error("Supabase is not configured on the server.");
+  }
+
+  if (!serviceRoleKey) {
+    throw new Error("Native subscription linking requires SUPABASE_SERVICE_ROLE_KEY on the server.");
   }
 
   const authClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -220,36 +231,16 @@ export async function redeemPromoCode(authorizationHeader: string | undefined, r
     throw new Error("Could not verify the signed-in user. Please sign in again.");
   }
 
-  const existingSubscription = (data.user.app_metadata?.subscription || undefined) as UserSubscriptionMetadata | undefined;
-  if (
-    existingSubscription?.source === "promo_code" &&
-    existingSubscription?.promoCode === code &&
-    isActiveSubscriptionMetadata(existingSubscription)
-  ) {
-    return {
-      code,
-      durationDays: existingSubscription.durationDays || PRIMARY_PROMO_CODE_DAYS,
-      trialEndsAt: existingSubscription.trialEndsAt,
-      alreadyRedeemed: true,
-    };
-  }
-
-  const now = new Date();
-  const trialEndsAt = new Date(now.getTime() + PRIMARY_PROMO_CODE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const linkedAt = new Date().toISOString();
   const nextSubscription: UserSubscriptionMetadata = {
     status: "active",
-    source: "promo_code",
-    promoCode: code,
-    redeemedAt: now.toISOString(),
-    trialEndsAt,
-    durationDays: PRIMARY_PROMO_CODE_DAYS,
+    source: platform === "ios" ? "native_app_store" : "native_google_play",
+    productId,
+    planId,
+    orderId,
+    linkedAt,
+    platform,
   };
-
-  // If no service role key, skip the Supabase update but still return valid response
-  if (!serviceRoleKey) {
-    console.warn("SUPABASE_SERVICE_ROLE_KEY not set — promo applied locally only.");
-    return { code, durationDays: PRIMARY_PROMO_CODE_DAYS, trialEndsAt, alreadyRedeemed: false };
-  }
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -265,10 +256,5 @@ export async function redeemPromoCode(authorizationHeader: string | undefined, r
     throw new Error(updateError.message);
   }
 
-  return {
-    code,
-    durationDays: PRIMARY_PROMO_CODE_DAYS,
-    trialEndsAt,
-    alreadyRedeemed: false,
-  };
+  return nextSubscription;
 }

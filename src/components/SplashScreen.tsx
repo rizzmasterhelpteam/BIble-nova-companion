@@ -1,15 +1,18 @@
 import React from "react";
 import { motion, useReducedMotion } from "motion/react";
+import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 
 export function SplashScreen() {
   const prefersReducedMotion = useReducedMotion();
+  const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
+  const reduceMotion = prefersReducedMotion || isAndroidApp;
 
   return (
     <motion.div
       className="app-screen fixed inset-0 z-[100] flex w-full flex-col items-center justify-center overflow-hidden"
       style={{ background: "var(--app-page-bg)", willChange: "opacity, transform" }}
       exit={{ opacity: 0, scale: 0.97 }}
-      transition={{ duration: prefersReducedMotion ? 0.15 : 0.4, ease: "easeOut" }}
+      transition={{ duration: reduceMotion ? 0.12 : 0.4, ease: "easeOut" }}
     >
       {/* Standard App Background */}
       <div className="app-atmosphere absolute inset-0 z-0">
@@ -34,7 +37,7 @@ export function SplashScreen() {
               willChange: "transform, opacity",
               transform: "translateZ(0)",
             }}
-            animate={prefersReducedMotion ? undefined : {
+            animate={reduceMotion ? undefined : {
               scale: [1, 1.35, 1],
               opacity: [0.6, 1, 0.6],
             }}
@@ -50,7 +53,7 @@ export function SplashScreen() {
               borderColor: "color-mix(in srgb, var(--app-accent) 30%, transparent)",
               willChange: "transform, opacity",
             }}
-            animate={prefersReducedMotion ? undefined : {
+            animate={reduceMotion ? undefined : {
               scale: [1, 1.12, 1],
               opacity: [0.5, 0.9, 0.5],
             }}
@@ -66,7 +69,7 @@ export function SplashScreen() {
               willChange: "transform, opacity",
               transform: "translateZ(0)",
             }}
-            animate={prefersReducedMotion ? undefined : {
+            animate={reduceMotion ? undefined : {
               scale: [1, 1.5, 1],
               opacity: [0.22, 0.5, 0.22],
             }}
@@ -93,7 +96,7 @@ export function SplashScreen() {
                 visible: {
                   pathLength: 1,
                   opacity: 1,
-                  transition: { duration: prefersReducedMotion ? 0 : 0.7, ease: "easeInOut" },
+                  transition: { duration: reduceMotion ? 0 : 0.7, ease: "easeInOut" },
                 },
               }}
             />
@@ -107,8 +110,8 @@ export function SplashScreen() {
                   opacity: 0.92,
                   scale: 1,
                   transition: {
-                    delay: prefersReducedMotion ? 0 : 0.3,
-                    duration: prefersReducedMotion ? 0 : 0.45,
+                    delay: reduceMotion ? 0 : 0.3,
+                    duration: reduceMotion ? 0 : 0.45,
                     ease: [0.22, 1, 0.36, 1],
                   },
                 },
@@ -125,7 +128,7 @@ export function SplashScreen() {
               boxShadow: "0 0 10px 2px color-mix(in srgb, var(--app-accent) 60%, transparent)",
               willChange: "transform",
             }}
-            animate={prefersReducedMotion ? undefined : {
+            animate={reduceMotion ? undefined : {
               rotate: [0, 360],
               x: [0, 30, 0, -30, 0],
               y: [-30, 0, 30, 0, -30],
@@ -142,7 +145,7 @@ export function SplashScreen() {
               boxShadow: "0 0 8px color-mix(in srgb, var(--app-accent) 50%, transparent)",
               willChange: "transform",
             }}
-            animate={prefersReducedMotion ? undefined : {
+            animate={reduceMotion ? undefined : {
               rotate: [360, 0],
               x: [0, -24, 0, 24, 0],
               y: [24, 0, -24, 0, 24],
@@ -154,11 +157,11 @@ export function SplashScreen() {
         {/* Brand Typography */}
         <div className="overflow-hidden">
           <motion.h1
-            initial={prefersReducedMotion ? false : { y: "100%", opacity: 0 }}
+            initial={reduceMotion ? false : { y: "100%", opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{
-              duration: prefersReducedMotion ? 0 : 0.48,
-              delay: prefersReducedMotion ? 0 : 0.32,
+              duration: reduceMotion ? 0 : 0.48,
+              delay: reduceMotion ? 0 : 0.32,
               ease: [0.22, 1, 0.36, 1],
             }}
             className="app-heading font-serif text-[2.6rem] font-normal tracking-wide"
@@ -169,11 +172,11 @@ export function SplashScreen() {
 
         <div className="mt-2 overflow-hidden">
           <motion.p
-            initial={prefersReducedMotion ? false : { y: "110%", opacity: 0 }}
+            initial={reduceMotion ? false : { y: "110%", opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{
-              duration: prefersReducedMotion ? 0 : 0.36,
-              delay: prefersReducedMotion ? 0 : 0.52,
+              duration: reduceMotion ? 0 : 0.36,
+              delay: reduceMotion ? 0 : 0.52,
               ease: [0.22, 1, 0.36, 1],
             }}
             className="text-xs font-semibold uppercase tracking-[0.38em]"

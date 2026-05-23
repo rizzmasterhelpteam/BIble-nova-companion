@@ -4,6 +4,7 @@ import { cn, useDocumentTitle } from "../lib/utils";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import PageHeader from "../components/PageHeader";
 import { useMobileViewport } from "../context/MobileViewportContext";
+import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 
 export default function Confession() {
   useDocumentTitle("Confess | Bible Nova Companion");
@@ -15,6 +16,7 @@ export default function Confession() {
   const [isDone, setIsDone] = useState(false);
   const timeoutsRef = useRef<number[]>([]);
   const prefersReducedMotion = useReducedMotion();
+  const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
 
   const addTimeout = (fn: () => void, ms: number) => {
     const id = window.setTimeout(fn, ms);
@@ -96,7 +98,7 @@ export default function Confession() {
               className="app-panel group relative w-full overflow-hidden rounded-[2rem] border shadow-2xl transition-colors"
               style={{ height: panelHeight, minHeight: isCrampedPhone ? "10.5rem" : isShortPhone ? "13rem" : "15rem" }}
               animate={
-                isReleasing && !prefersReducedMotion
+                isReleasing && !prefersReducedMotion && !isAndroidApp
                   ? {
                       scale: [1, 0.98, 0.95, 0.85],
                       rotate: [0, -0.5, 0.5, -1],
@@ -108,7 +110,7 @@ export default function Confession() {
                         "brightness(0) grayscale(100%)",
                       ],
                     }
-                  : isReleasing && prefersReducedMotion
+                  : isReleasing
                     ? { opacity: [1, 0] }
                     : hasContent
                       ? {
@@ -123,7 +125,7 @@ export default function Confession() {
               }
               transition={
                 isReleasing
-                  ? { duration: prefersReducedMotion ? 0.6 : 8, ease: "easeIn" }
+                  ? { duration: prefersReducedMotion || isAndroidApp ? 0.45 : 8, ease: "easeIn" }
                   : { duration: 2.5, repeat: Infinity, ease: "easeInOut" }
               }
             >
@@ -147,7 +149,7 @@ export default function Confession() {
                 </span>
               )}
 
-              {isReleasing && !prefersReducedMotion && (
+              {isReleasing && !prefersReducedMotion && !isAndroidApp && (
                 <>
                   <motion.div
                     initial={{ opacity: 0 }}
@@ -224,20 +226,20 @@ export default function Confession() {
         ) : (
           <motion.div
             key="success-message"
-            initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.8, filter: "blur(5px)" }}
-            animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-            transition={{ duration: prefersReducedMotion ? 0.15 : 1, delay: prefersReducedMotion ? 0 : 0.2 }}
+                initial={prefersReducedMotion || isAndroidApp ? false : { opacity: 0, scale: 0.8, filter: "blur(5px)" }}
+                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+            transition={{ duration: prefersReducedMotion || isAndroidApp ? 0.15 : 1, delay: prefersReducedMotion || isAndroidApp ? 0 : 0.2 }}
             className={cn("flex flex-1 flex-col items-center justify-center", isShortPhone ? "" : "-mt-16")}
           >
             <div className="relative mb-8">
               <motion.div
-                animate={prefersReducedMotion ? undefined : { scale: [1, 1.18, 1], opacity: [0.3, 0.1, 0.3] }}
+                animate={prefersReducedMotion || isAndroidApp ? undefined : { scale: [1, 1.18, 1], opacity: [0.3, 0.1, 0.3] }}
                 transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
                 className="absolute inset-0 rounded-full blur-md"
                 style={{ background: "var(--app-accent-soft)" }}
               />
               <motion.div
-                animate={prefersReducedMotion ? undefined : { y: [0, -10, 0] }}
+                animate={prefersReducedMotion || isAndroidApp ? undefined : { y: [0, -10, 0] }}
                 transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
                 className="glass relative flex h-24 w-24 items-center justify-center rounded-full border"
                 style={{

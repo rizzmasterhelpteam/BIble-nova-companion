@@ -420,8 +420,8 @@
   }
 
   .app-screen-scroll {
-    height: var(--app-visible-height);
     min-height: var(--app-visible-height);
+    height: auto;
     background: var(--app-page-bg);
     color: var(--app-text);
     min-width: 0;
@@ -496,9 +496,9 @@
   }
 
   .app-panel-strong {
-    background: var(--app-card-strong);
+    background: color-mix(in srgb, var(--bg-base) 14%, var(--app-card-strong) 86%);
     border: 1px solid var(--app-card-border);
-    box-shadow: 0 18px 42px rgba(12, 12, 18, 0.08);
+    box-shadow: 0 22px 52px rgba(12, 12, 18, 0.14);
   }
 
   .app-panel-soft {
@@ -645,7 +645,7 @@
   }
 
   .app-overlay {
-    background: var(--app-overlay);
+    background: color-mix(in srgb, var(--app-overlay) 72%, rgba(0, 0, 0, 0.78));
   }
 
   .design-option-card {
@@ -976,5 +976,55 @@
     .app-orb {
       filter: blur(96px);
     }
+  }
+
+  .native-android .app-atmosphere {
+    opacity: 0.45;
+  }
+
+  .native-android .app-orb,
+  .native-android .app-grid {
+    display: none !important;
+    filter: none !important;
+  }
+
+  .native-android .app-shell {
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.16);
+  }
+
+  .native-android .app-panel,
+  .native-android .app-panel-strong,
+  .native-android .app-nav-shell {
+    background: color-mix(in srgb, var(--bg-base) 22%, var(--app-card-strong) 78%);
+  }
+
+  .native-android .app-overlay {
+    background: rgba(12, 10, 8, 0.78);
+  }
+
+  .native-android .app-panel,
+  .native-android .app-panel-strong,
+  .native-android .app-nav-shell,
+  .native-android .app-primary-button {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+
+  .native-android .app-card-shimmer::after,
+  .native-android .app-status-dot::after,
+  .native-android .app-progress-glow::after,
+  .native-android .app-typing-dot,
+  .native-android .app-float,
+  .native-android .ash-particle,
+  .native-android .flame-particle {
+    animation: none !important;
+  }
+
+  .native-android .backdrop-blur-sm,
+  .native-android .backdrop-blur-md,
+  .native-android .backdrop-blur-xl,
+  .native-android .backdrop-blur-2xl,
+  .native-android .backdrop-blur-\[2px\] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
   }
 }

@@ -13,10 +13,23 @@ type MobileViewportState = {
   width: number;
 };
 
+const MIN_STARTUP_VIEWPORT_HEIGHT = 320;
+const MIN_STARTUP_VIEWPORT_WIDTH = 320;
+
 const DEFAULT_VIEWPORT_HEIGHT =
-  typeof window === "undefined" ? 0 : window.visualViewport?.height ?? window.innerHeight;
+  typeof window === "undefined"
+    ? MIN_STARTUP_VIEWPORT_HEIGHT
+    : Math.max(
+        MIN_STARTUP_VIEWPORT_HEIGHT,
+        window.visualViewport?.height || window.innerHeight || MIN_STARTUP_VIEWPORT_HEIGHT,
+      );
 const DEFAULT_VIEWPORT_WIDTH =
-  typeof window === "undefined" ? 0 : window.visualViewport?.width ?? window.innerWidth;
+  typeof window === "undefined"
+    ? MIN_STARTUP_VIEWPORT_WIDTH
+    : Math.max(
+        MIN_STARTUP_VIEWPORT_WIDTH,
+        window.visualViewport?.width || window.innerWidth || MIN_STARTUP_VIEWPORT_WIDTH,
+      );
 
 const initialState: MobileViewportState = {
   bottomInset: 0,
@@ -39,14 +52,20 @@ const quantize = (value: number) => Math.round(value / VIEWPORT_STATE_STEP) * VI
 
 const getViewportMetrics = () => {
   const viewport = window.visualViewport;
-  const layoutHeight = round(window.innerHeight);
-  const rawVisibleHeight = round(viewport?.height ?? layoutHeight);
+  const layoutHeight = Math.max(
+    MIN_VISIBLE_HEIGHT,
+    round(window.innerHeight || viewport?.height || DEFAULT_VIEWPORT_HEIGHT),
+  );
+  const rawVisibleHeight = Math.max(
+    MIN_VISIBLE_HEIGHT,
+    round(viewport?.height || layoutHeight),
+  );
 
   return {
     layoutHeight,
     offsetTop: round(viewport?.offsetTop ?? 0),
     rawVisibleHeight,
-    width: round(viewport?.width ?? window.innerWidth),
+    width: Math.max(1, round(viewport?.width || window.innerWidth || DEFAULT_VIEWPORT_WIDTH)),
   };
 };
 
@@ -157,7 +176,11 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
     let isDisposed = false;
     let keyboardHeight = 0;
     let keyboardOpen = false;
-    let stableHeight = Math.max(window.innerHeight, window.visualViewport?.height ?? 0);
+    let stableHeight = Math.max(
+      MIN_VISIBLE_HEIGHT,
+      window.innerHeight || 0,
+      window.visualViewport?.height || 0,
+    );
     let viewportFrame: number | null = null;
     let focusTimer: number | null = null;
     let appliedRootState: MobileViewportState | null = null;

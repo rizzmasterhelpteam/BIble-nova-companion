@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import PageHeader from "../components/PageHeader";
 import { useDocumentTitle, cn } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
+import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 
 type Phase = "Inhale" | "Hold" | "Exhale";
 type Timings = { inhale: number; hold: number; exhale: number };
@@ -23,6 +24,7 @@ const PHASE_ORDER: Phase[] = ["Inhale", "Hold", "Exhale"];
 export default function Breathe() {
   useDocumentTitle("Breathe | Bible Nova Companion");
   const { isCompactPhone, isShortPhone } = useMobileViewport();
+  const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
   const [phase, setPhase] = useState<Phase>("Inhale");
   const [circleScale, setCircleScale] = useState(1);
   const [showSettings, setShowSettings] = useState(false);
@@ -108,17 +110,19 @@ export default function Breathe() {
           style={{ maxWidth: visualSize }}
         >
           {/* Ambient outer halo */}
-          <div
-            className="absolute rounded-full"
-            style={{
-              background:
-                "radial-gradient(circle, color-mix(in srgb, var(--app-accent) 10%, transparent) 0%, transparent 72%)",
-              height: isShortPhone ? "13rem" : isCompactPhone ? "14rem" : "16.5rem",
-              width: isShortPhone ? "13rem" : isCompactPhone ? "14rem" : "16.5rem",
-              transform: `scale(${circleScale * 0.9 + 0.1})`,
-              transition: `transform ${phaseDuration * 1.2}ms ease-in-out`,
-            }}
-          />
+          {!isAndroidApp && (
+            <div
+              className="absolute rounded-full"
+              style={{
+                background:
+                  "radial-gradient(circle, color-mix(in srgb, var(--app-accent) 10%, transparent) 0%, transparent 72%)",
+                height: isShortPhone ? "13rem" : isCompactPhone ? "14rem" : "16.5rem",
+                width: isShortPhone ? "13rem" : isCompactPhone ? "14rem" : "16.5rem",
+                transform: `scale(${circleScale * 0.9 + 0.1})`,
+                transition: `transform ${phaseDuration * 1.2}ms ease-in-out`,
+              }}
+            />
+          )}
           <div
             className="absolute rounded-full"
             style={{
@@ -131,16 +135,18 @@ export default function Breathe() {
             }}
           />
           {/* Second outer ring — slightly slower */}
-          <div
-            className="absolute rounded-full border"
-            style={{
-              borderColor: "color-mix(in srgb, var(--app-accent) 10%, transparent)",
-              height: isShortPhone ? "10rem" : "12rem",
-              width: isShortPhone ? "10rem" : "12rem",
-              transform: `scale(${circleScale})`,
-              transition: `transform ${phaseDuration * 1.15}ms ease-in-out`,
-            }}
-          />
+          {!isAndroidApp && (
+            <div
+              className="absolute rounded-full border"
+              style={{
+                borderColor: "color-mix(in srgb, var(--app-accent) 10%, transparent)",
+                height: isShortPhone ? "10rem" : "12rem",
+                width: isShortPhone ? "10rem" : "12rem",
+                transform: `scale(${circleScale})`,
+                transition: `transform ${phaseDuration * 1.15}ms ease-in-out`,
+              }}
+            />
+          )}
           <div
             className="absolute rounded-full border"
             style={{

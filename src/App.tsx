@@ -13,7 +13,7 @@ import { SplashScreen } from "./components/SplashScreen";
 import { AnimatePresence, motion } from "motion/react";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { isNativePlatform } from "./lib/native/platform";
+import { getNativePlatform, isNativePlatform } from "./lib/native/platform";
 
 const Layout = lazy(() => import("./components/Layout"));
 const Chat = lazy(() => import("./pages/Chat"));
@@ -56,17 +56,21 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
 };
 
 // Page fade wrapper — opacity only (no layout thrash on Android)
-const PageFade = ({ children }: { children: React.ReactNode }) => (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    transition={{ duration: 0.18, ease: "linear" }}
-    style={{ display: "contents" }}
-  >
-    {children}
-  </motion.div>
-);
+const PageFade = ({ children }: { children: React.ReactNode }) => {
+  const isAndroid = isNativePlatform() && getNativePlatform() === "android";
+
+  return (
+    <motion.div
+      initial={isAndroid ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: isAndroid ? 0 : 0.18, ease: "linear" }}
+      style={{ display: "contents" }}
+    >
+      {children}
+    </motion.div>
+  );
+};
 
 const AnimatedRoutes = () => {
   const location = useLocation();
@@ -77,7 +81,8 @@ const AnimatedRoutes = () => {
 
   return (
     <AnimatePresence mode="wait" initial={false}>
-      <Routes location={location} key={topKey}>
+      <React.Fragment key={topKey}>
+      <Routes location={location}>
         <Route path="/login" element={<PageFade><Login /></PageFade>} />
         <Route path="/onboarding" element={<AuthGuard><PageFade><Onboarding /></PageFade></AuthGuard>} />
         <Route path="/paywall" element={<AuthGuard><PageFade><Paywall /></PageFade></AuthGuard>} />
@@ -89,13 +94,22 @@ const AnimatedRoutes = () => {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </React.Fragment>
     </AnimatePresence>
   );
 };
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const [hasRenderedAppFrame, setHasRenderedAppFrame] = useState(false);
   const Router = isNativePlatform() ? HashRouter : BrowserRouter;
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const isAndroid = isNativePlatform() && getNativePlatform() === "android";
+    root.classList.toggle("native-android", isAndroid);
+    return () => root.classList.remove("native-android");
+  }, []);
 
   useEffect(() => {
     const prefersReducedMotion =
@@ -103,9 +117,10 @@ export default function App() {
       ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
       : false;
 
+    const isAndroid = isNativePlatform() && getNativePlatform() === "android";
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, prefersReducedMotion ? 250 : 800);
+    }, prefersReducedMotion ? 250 : isAndroid ? 350 : 800);
 
     return () => clearTimeout(timer);
   }, []);
@@ -116,7 +131,7 @@ export default function App() {
 
     frameOne = window.requestAnimationFrame(() => {
       frameTwo = window.requestAnimationFrame(() => {
-        void hideNativeSplashScreen();
+        setHasRenderedAppFrame(true);
       });
     });
 
@@ -125,6 +140,11 @@ export default function App() {
       window.cancelAnimationFrame(frameTwo);
     };
   }, []);
+
+  useEffect(() => {
+    if (!hasRenderedAppFrame || showSplash) return;
+    void hideNativeSplashScreen();
+  }, [hasRenderedAppFrame, showSplash]);
 
   return (
     <ThemeProvider>

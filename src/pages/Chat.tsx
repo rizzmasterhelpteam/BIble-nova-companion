@@ -59,11 +59,19 @@ const QUICK_PROMPTS = [
   "I feel guilty and need honest guidance.",
 ];
 
+const MAX_STORED_MESSAGES = 80;
+
 const BIBLE_BOOKS =
   /\b(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|Samuel|Kings|Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|Corinthians|Galatians|Ephesians|Philippians|Colossians|Thessalonians|Timothy|Titus|Philemon|Hebrews|James|Peter|Jude|Revelation)\s+\d+:\d+\b/i;
 
 const getMessageStorageKey = (identityKey: string | null) =>
   identityKey ? `bible-nova-companion-chat-${identityKey}` : null;
+
+const trimStoredMessages = (messages: Message[]) => {
+  if (messages.length <= MAX_STORED_MESSAGES) return messages;
+  const withoutWelcome = messages.filter((message) => message.id !== WELCOME_MESSAGE.id);
+  return [WELCOME_MESSAGE, ...withoutWelcome.slice(-(MAX_STORED_MESSAGES - 1))];
+};
 
 const extractReference = (message: string) => {
   const match = message.match(BIBLE_BOOKS);
@@ -113,8 +121,10 @@ export default function Chat() {
   const ttsSessionRef = useRef<TextToSpeechSession | null>(null);
   const handledRouteActionRef = useRef<string | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
+  const storageWriteTimerRef = useRef<number | null>(null);
   const showQuickPrompts = messages.length === 1 && !isTyping;
   const chatUnavailable = apiStatus?.chatReady === false;
+  const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
   const shouldAutoFocusInput = !isNativePlatform() && width >= 768;
   const shouldAutoFocusInputRef = useRef(shouldAutoFocusInput);
 
@@ -196,7 +206,7 @@ export default function Chat() {
 
     try {
       const parsed = storageGetJson<Message[]>(storageKey, [WELCOME_MESSAGE]);
-      const nextMessages = parsed.length ? parsed : [WELCOME_MESSAGE];
+      const nextMessages = trimStoredMessages(parsed.length ? parsed : [WELCOME_MESSAGE]);
       messagesRef.current = nextMessages;
       setMessages(nextMessages);
     } catch {
@@ -210,14 +220,31 @@ export default function Chat() {
   useEffect(() => {
     const storageKey = getMessageStorageKey(identityKey);
     if (!storageKey || !hasLoadedMessages) return;
-    storageSet(storageKey, JSON.stringify(messages));
-  }, [hasLoadedMessages, identityKey, messages]);
+    if (storageWriteTimerRef.current !== null) {
+      window.clearTimeout(storageWriteTimerRef.current);
+    }
+
+    storageWriteTimerRef.current = window.setTimeout(() => {
+      storageWriteTimerRef.current = null;
+      storageSet(storageKey, JSON.stringify(trimStoredMessages(messages)));
+    }, isAndroidApp ? 450 : 180);
+
+    return () => {
+      if (storageWriteTimerRef.current !== null) {
+        window.clearTimeout(storageWriteTimerRef.current);
+        storageWriteTimerRef.current = null;
+      }
+    };
+  }, [hasLoadedMessages, identityKey, isAndroidApp, messages]);
 
   useEffect(() => {
     return () => {
       requestControllerRef.current?.abort();
       if (resizeFrameRef.current) {
         window.cancelAnimationFrame(resizeFrameRef.current);
+      }
+      if (storageWriteTimerRef.current !== null) {
+        window.clearTimeout(storageWriteTimerRef.current);
       }
     };
   }, []);
@@ -247,7 +274,7 @@ export default function Chat() {
     };
 
     setMessages((prev) => {
-      const nextMessages = [...prev, nextMessage];
+      const nextMessages = trimStoredMessages([...prev, nextMessage]);
       messagesRef.current = nextMessages;
       return nextMessages;
     });
@@ -281,7 +308,7 @@ export default function Chat() {
       content: trimmedText,
     };
 
-    const nextMessages = [...messagesRef.current, userMessage];
+    const nextMessages = trimStoredMessages([...messagesRef.current, userMessage]);
     messagesRef.current = nextMessages;
     setMessages(nextMessages);
     setInput("");
@@ -537,9 +564,9 @@ export default function Chat() {
         <div className={cn("mx-auto flex w-full max-w-xl flex-col", isCompactPhone ? "gap-4" : "gap-6")}>
         {showQuickPrompts && (
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={isAndroidApp ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.25, ease: "easeOut" }}
+            transition={{ duration: isAndroidApp ? 0 : 0.25, ease: "easeOut" }}
             className={cn(
               "app-panel app-card-shimmer relative overflow-hidden shadow-xl",
               isShortPhone ? "rounded-[1.75rem] p-4" : isCompactPhone ? "rounded-[2rem] p-5" : "rounded-[2.5rem] p-6",
@@ -568,9 +595,9 @@ export default function Chat() {
                 {QUICK_PROMPTS.map((prompt, i) => (
                   <motion.button
                     key={prompt}
-                    initial={{ opacity: 0 }}
+                    initial={isAndroidApp ? false : { opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    transition={{ delay: 0.05 * i, duration: 0.2 }}
+                    transition={{ delay: isAndroidApp ? 0 : 0.05 * i, duration: isAndroidApp ? 0 : 0.2 }}
                     onClick={() => handleSend(prompt)}
                     className={cn(
                       "app-secondary-button flex items-center justify-between rounded-[1.25rem] px-4 text-left text-[14px] font-medium leading-[1.4] shadow-sm active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--app-accent)_50%,transparent)]",
@@ -588,7 +615,7 @@ export default function Chat() {
 
         {chatUnavailable && (
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={isAndroidApp ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             className="rounded-[2rem] p-5 shadow-lg"
             style={{
@@ -615,9 +642,9 @@ export default function Chat() {
             return (
               <motion.div
                 key={message.id}
-                initial={{ opacity: 0 }}
+                initial={isAndroidApp ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
+                transition={{ duration: isAndroidApp ? 0 : 0.2, ease: "easeOut" }}
                 className={cn(
                   "flex flex-col w-full",
                   message.role === "user" ? "items-end" : "items-start",
@@ -706,9 +733,9 @@ export default function Chat() {
 
                       {message.reference && (
                         <motion.div
-                          initial={{ opacity: 0 }}
+                          initial={isAndroidApp ? false : { opacity: 0 }}
                           animate={{ opacity: 1 }}
-                          transition={{ delay: 0.15 }}
+                          transition={{ delay: isAndroidApp ? 0 : 0.15 }}
                           className="mt-1"
                         >
                           <div
@@ -766,7 +793,7 @@ export default function Chat() {
 
         {isTyping && (
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={isAndroidApp ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="flex max-w-[88%] items-center gap-3"

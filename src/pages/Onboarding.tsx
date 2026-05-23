@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Sunrise } from "lucide-react";
@@ -136,8 +136,17 @@ export default function Onboarding() {
     storageGetJson<Record<string, string>>(STORAGE_KEY, {}),
   );
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  const stepTimerRef = useRef<number | null>(null);
   const { completeOnboarding } = useAuth();
   const navigate = useNavigate();
+
+  const clearStepTimer = () => {
+    if (stepTimerRef.current !== null) {
+      window.clearTimeout(stepTimerRef.current);
+      stepTimerRef.current = null;
+    }
+  };
 
   useEffect(() => {
     const initialStep = questions.findIndex((question) => !answers[question.id]);
@@ -154,21 +163,33 @@ export default function Onboarding() {
     storageSet(STORAGE_KEY, JSON.stringify(answers));
   }, [answers]);
 
+  useEffect(() => () => clearStepTimer(), []);
+
   const handleSelect = (optionId: string) => {
+    if (isAdvancing) return;
     const question = questions[currentStep];
     const nextAnswers = { ...answers, [question.id]: optionId };
 
+    clearStepTimer();
     setAnswers(nextAnswers);
 
     if (currentStep < questions.length - 1) {
-      window.setTimeout(() => setCurrentStep((prev) => prev + 1), 220);
+      setIsAdvancing(true);
+      stepTimerRef.current = window.setTimeout(() => {
+        stepTimerRef.current = null;
+        setCurrentStep((prev) => Math.min(prev + 1, questions.length - 1));
+        setIsAdvancing(false);
+      }, 180);
       return;
     }
 
+    setIsAdvancing(false);
     setShowAnalysis(true);
   };
 
   const handleBack = () => {
+    clearStepTimer();
+    setIsAdvancing(false);
     if (showAnalysis) {
       setShowAnalysis(false);
       setCurrentStep(questions.length - 1);
@@ -182,7 +203,7 @@ export default function Onboarding() {
   const handleGetStarted = () => {
     storageRemove(STORAGE_KEY);
     completeOnboarding();
-    navigate("/paywall");
+    window.requestAnimationFrame(() => navigate("/paywall", { replace: true }));
   };
 
   if (showAnalysis) {
@@ -290,6 +311,7 @@ export default function Onboarding() {
   }
 
   const question = questions[currentStep];
+  const completedCount = questions.filter((item) => Boolean(answers[item.id])).length;
 
   return (
     <div
@@ -316,7 +338,7 @@ export default function Onboarding() {
             Back
           </button>
           <span className="app-soft text-xs">
-            {Object.keys(answers).length} of {questions.length} responses
+            {completedCount} of {questions.length} responses
           </span>
         </div>
 
@@ -347,6 +369,7 @@ export default function Onboarding() {
                   <button
                     key={option.id}
                     onClick={() => handleSelect(option.id)}
+                    disabled={isAdvancing}
                     className={`touch-target w-full rounded-card border text-left flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] ${isCompactPhone ? "p-4" : "p-5"}`}
                     style={{
                       background: isSelected ? "var(--app-accent-soft)" : "var(--app-card-bg)",
@@ -359,7 +382,7 @@ export default function Onboarding() {
                       transition: "background-color 150ms ease, border-color 150ms ease",
                     }}
                   >
-                    <div className="flex items-center gap-4">
+                    <div className="flex min-w-0 items-center gap-4">
                       {option.icon && (
                         <div
                           className="rounded-full p-2"
@@ -372,17 +395,17 @@ export default function Onboarding() {
                         </div>
                       )}
                       <span
-                        className={cn(isCompactPhone ? "text-[16px]" : "text-lg")}
+                        className={cn("min-w-0 leading-snug", isCompactPhone ? "text-[16px]" : "text-lg")}
                         style={{
                           color: isSelected ? "var(--app-accent)" : "var(--app-text)",
                           fontWeight: isSelected ? 600 : 500,
                         }}
                       >
-                        {option.label}
+                      {option.label}
                       </span>
                     </div>
                     <span
-                      className="rounded-pill px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] flex items-center gap-1.5"
+                      className="rounded-pill flex shrink-0 items-center gap-1.5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]"
                       style={{
                         background: isSelected ? "color-mix(in srgb, var(--app-accent) 16%, transparent)" : "var(--app-card-soft)",
                         color: isSelected ? "var(--app-accent)" : "var(--app-text-muted)",

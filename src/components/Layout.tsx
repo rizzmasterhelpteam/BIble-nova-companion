@@ -29,7 +29,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { useHaptics } from "../context/HapticsContext";
 import { useMobileViewport } from "../context/MobileViewportContext";
-import { isNativePlatform } from "../lib/native/platform";
+import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
 import { cn } from "../lib/utils";
 import {
@@ -118,6 +118,7 @@ export default function Layout() {
   const accountInitial = displayName.trim().charAt(0).toUpperCase() || "?";
   const isAccountBusy = isDeletingAccount || isSavingProfile || isProcessingAvatar;
   const nativeControlsAvailable = isNativePlatform();
+  const isAndroidApp = nativeControlsAvailable && getNativePlatform() === "android";
   const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "1.1.2";
 
   useEffect(() => {
@@ -309,10 +310,10 @@ export default function Layout() {
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
-              initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-              animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
-              transition={{ duration: prefersReducedMotion ? 0 : 0.3 }}
+              initial={prefersReducedMotion || isAndroidApp ? false : { opacity: 0, y: 8 }}
+              animate={prefersReducedMotion || isAndroidApp ? { opacity: 1 } : { opacity: 1, y: 0 }}
+              exit={prefersReducedMotion || isAndroidApp ? { opacity: 0 } : { opacity: 0, y: -8 }}
+              transition={{ duration: prefersReducedMotion || isAndroidApp ? 0 : 0.3 }}
               className="relative flex min-h-0 flex-1 flex-col"
             >
               <Outlet />
@@ -354,7 +355,7 @@ export default function Layout() {
                 initial={{ y: "100%" }}
                 animate={{ y: 0 }}
                 exit={{ y: "100%" }}
-                transition={{ type: "spring", stiffness: 380, damping: 40 }}
+                transition={isAndroidApp ? { duration: 0.18, ease: "easeOut" } : { type: "spring", stiffness: 380, damping: 40 }}
                 className="app-panel-strong fixed inset-x-0 bottom-0 z-[70] mx-auto max-h-[92dvh] w-full overflow-y-auto rounded-t-[2rem] border-t scrollbar-hide sm:max-w-lg sm:px-0 xl:max-w-xl"
                 style={{
                   bottom: "var(--app-bottom-offset)",

@@ -1,4 +1,4 @@
-import { getClientErrorMessage, redeemPromoCode } from "../server-api";
+import { getClientErrorMessage, syncNativeSubscription } from "../../server-api";
 
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
@@ -20,10 +20,10 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const result = await redeemPromoCode(req.headers.authorization, req.body?.code || "");
-    res.status(200).json(result);
+    const subscription = await syncNativeSubscription(req.headers.authorization, req.body || {});
+    res.status(200).json({ subscription });
   } catch (error) {
-    console.error("Vercel API promo redemption error:", error);
+    console.error("Vercel API native subscription sync error:", error);
     res.status(400).json({ error: getClientErrorMessage(error) });
   }
 }

@@ -2,8 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { App as CapacitorApp } from "@capacitor/app";
 import { User, Session } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
-import { apiFetch } from "../lib/apiClient";
 import { hasActiveSubscription } from "../lib/native/purchases";
+import { apiFetch } from "../lib/apiClient";
 import { isNativePlatform } from "../lib/native/platform";
 import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
 
@@ -23,16 +23,27 @@ type AuthContextType = {
   updateProfileName: (name: string) => Promise<void>;
   updateProfileAvatarUrl: (avatarUrl: string | null) => Promise<void>;
   completeOnboarding: () => void;
-  subscribe: (source?: "local" | "promo_server") => void;
+  subscribe: (source: SubscriptionSource) => void;
 };
+
+type SubscriptionSource =
+  | "native_google_play"
+  | "native_app_store";
+
+const isNativeSubscriptionSource = (
+  source: SubscriptionSource | null,
+): source is "native_google_play" | "native_app_store" =>
+  source === "native_google_play" || source === "native_app_store";
 
 type UserSubscriptionMetadata = {
   status?: string;
   source?: string;
-  promoCode?: string;
   trialEndsAt?: string;
-  redeemedAt?: string;
-  durationDays?: number;
+  productId?: string;
+  planId?: string;
+  orderId?: string;
+  linkedAt?: string;
+  platform?: "android" | "ios";
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -102,7 +113,7 @@ const setStoredSubscriptionState = (id: string, value: boolean) => {
   storageSet(`isSubscribed_${id}`, value ? "true" : "false");
 };
 
-const setStoredSubscriptionSource = (id: string, source: "local" | "promo_server") => {
+const setStoredSubscriptionSource = (id: string, source: SubscriptionSource) => {
   storageSet(`subscriptionSource_${id}`, source);
 };
 
@@ -111,7 +122,7 @@ const clearStoredSubscriptionSource = (id: string) => {
 };
 
 const getStoredSubscriptionSource = (id: string) =>
-  storageGet(`subscriptionSource_${id}`) as "local" | "promo_server" | null;
+  storageGet(`subscriptionSource_${id}`) as SubscriptionSource | null;
 
 const getUserSubscriptionMetadata = (currentUser: User | null) =>
   (currentUser?.app_metadata?.subscription || undefined) as UserSubscriptionMetadata | undefined;
@@ -240,18 +251,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const storedSubscriptionSource = getStoredSubscriptionSource(id);
       const serverSubscription = hasActiveServerSubscription(currentUser);
       const shouldTrustStoredSubscription =
-        storedSubscription &&
-        (!currentUser || (!isSupabaseConfigured && storedSubscriptionSource === "local"));
-      let hasEntitlement = serverSubscription || (shouldTrustStoredSubscription && storedSubscription);
+        storedSubscription && !currentUser;
+      let nativeSubscriptionActive = false;
 
-      if (isNativePlatform()) {
+      if (!serverSubscription && storedSubscription && isNativeSubscriptionSource(storedSubscriptionSource) && isNativePlatform()) {
         try {
-          const nativeEntitlement = await hasActiveSubscription();
-          hasEntitlement = hasEntitlement || nativeEntitlement;
+          nativeSubscriptionActive = await hasActiveSubscription();
         } catch (error) {
-          console.warn("Could not sync native subscription state:", error);
+          console.warn("Could not verify native subscription state:", error);
         }
       }
+
+      const hasEntitlement =
+        serverSubscription ||
+        nativeSubscriptionActive ||
+        (shouldTrustStoredSubscription && storedSubscription);
 
       if (isDisposed) return;
       setStoredSubscriptionState(id, hasEntitlement);
@@ -516,7 +530,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [isGuest, user?.id]);
 
-  const subscribe = useCallback((source: "local" | "promo_server" = "local") => {
+  const subscribe = useCallback((source: SubscriptionSource) => {
     const id = user?.id || (isGuest ? "guest" : null);
     if (id) {
       setStoredSubscriptionState(id, true);

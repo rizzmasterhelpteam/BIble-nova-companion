@@ -140,6 +140,12 @@ const getConfiguredProductIds = () => {
     .filter((value): value is string => Boolean(value));
 };
 
+export const getConfiguredPlanIdForProduct = (productId: string) => {
+  const configs = getSubscriptionConfigs();
+  const match = Object.values(configs).find((entry) => entry.productId === productId);
+  return match?.androidBasePlanId;
+};
+
 const assertValidSubscriptionPurchase = (
   purchase: Transaction,
   aPackage: SubscriptionPackage,

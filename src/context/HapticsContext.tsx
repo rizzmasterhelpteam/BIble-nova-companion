@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
 import { isNativePlatform } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
@@ -12,6 +12,7 @@ type HapticsContextType = {
 
 const STORAGE_KEY = "bible-nova-companion-haptics";
 const DEFAULT_HAPTICS_ENABLED = true;
+const HAPTIC_THROTTLE_MS = 90;
 
 const HapticsContext = createContext<HapticsContextType>({
   hapticsEnabled: DEFAULT_HAPTICS_ENABLED,
@@ -29,9 +30,14 @@ const getStoredHapticsPreference = () => {
 
 export function HapticsProvider({ children }: { children: React.ReactNode }) {
   const [hapticsEnabled, setHapticsEnabledState] = useState(getStoredHapticsPreference);
+  const lastHapticAtRef = useRef(0);
 
   const triggerHaptic = useCallback((pattern: number | number[] = 10) => {
     if (!hapticsEnabled) return;
+
+    const now = Date.now();
+    if (now - lastHapticAtRef.current < HAPTIC_THROTTLE_MS) return;
+    lastHapticAtRef.current = now;
 
     if (isNativePlatform()) {
       void Haptics.impact({ style: ImpactStyle.Light }).catch(() => undefined);
@@ -82,7 +88,7 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
 
     document.addEventListener("click", handleClick, { capture: true });
     return () => document.removeEventListener("click", handleClick, { capture: true });
-  }, [hapticsEnabled]);
+  }, [triggerHaptic]);
 
   const value = useMemo(
     () => ({ hapticsEnabled, setHapticsEnabled, triggerHaptic }),
