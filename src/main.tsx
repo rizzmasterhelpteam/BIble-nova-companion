@@ -8,10 +8,21 @@ import { restoreWebStorageFromPreferences } from './lib/webStorage';
 
 void initializeNativeApp();
 
-restoreWebStorageFromPreferences().finally(() => {
+const renderApp = () => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <App />
     </StrictMode>,
   );
-});
+};
+
+Promise.race([
+  restoreWebStorageFromPreferences(),
+  new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 400);
+  }),
+])
+  .catch((error) => {
+    console.warn("Continuing without restored native web storage:", error);
+  })
+  .finally(renderApp);

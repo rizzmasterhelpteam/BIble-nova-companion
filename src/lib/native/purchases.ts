@@ -1,9 +1,4 @@
-import {
-  NativePurchases,
-  PURCHASE_TYPE,
-  type Product,
-  type Transaction,
-} from "@capgo/native-purchases";
+import type { Product, Transaction } from "@capgo/native-purchases";
 import { getNativePlatform, isNativePlatform } from "./platform";
 
 type SubscriptionPlan = "monthly" | "yearly";
@@ -26,6 +21,47 @@ export type SubscriptionOffering = {
 
 let billingChecked = false;
 let billingSupported = false;
+let nativePurchasesModulePromise: Promise<typeof import("@capgo/native-purchases") | null> | null =
+  null;
+const BILLING_STARTUP_TIMEOUT_MS = 3000;
+
+const withTimeout = <T,>(promise: Promise<T>, fallback: T, timeoutMs = BILLING_STARTUP_TIMEOUT_MS) =>
+  new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(fallback);
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+
+const getNativePurchasesModule = async () => {
+  if (!isNativePlatform()) {
+    return null;
+  }
+
+  if (!nativePurchasesModulePromise) {
+    nativePurchasesModulePromise = import("@capgo/native-purchases")
+      .then((module) => module)
+      .catch(() => null);
+  }
+
+  return nativePurchasesModulePromise;
+};
 
 const normalizeConfigValue = (value?: string) => {
   const trimmed = value?.trim();
@@ -60,9 +96,10 @@ const selectProductForConfig = (
 
   const candidates = products.filter((product) => {
     if (isAndroid) {
-      return product.planIdentifier
-        ? product.planIdentifier === config.productId
-        : product.identifier === config.productId;
+      return (
+        product.planIdentifier === config.productId ||
+        product.identifier === config.productId
+      );
     }
 
     return product.identifier === config.productId;
@@ -85,7 +122,7 @@ const selectProductForConfig = (
 };
 
 const isActivePurchase = (purchase: Transaction) => {
-  if (getNativePlatform() === "android") {
+  if (getNativePlatform() === "android" && purchase.purchaseState) {
     return purchase.purchaseState === "1" || purchase.purchaseState === "PURCHASED";
   }
 
@@ -117,11 +154,15 @@ const assertValidSubscriptionPurchase = (
 };
 
 export async function initializePurchases() {
-  if (!isNativePlatform()) return false;
+  const nativePurchasesModule = await getNativePurchasesModule();
+  if (!nativePurchasesModule) return false;
   if (billingChecked) return billingSupported;
 
   try {
-    const result = await NativePurchases.isBillingSupported();
+    const result = await withTimeout(
+      nativePurchasesModule.NativePurchases.isBillingSupported(),
+      { isBillingSupported: false },
+    );
     billingSupported = Boolean(result.isBillingSupported);
   } catch {
     billingSupported = false;
@@ -133,16 +174,20 @@ export async function initializePurchases() {
 }
 
 export async function getCurrentOffering(): Promise<SubscriptionOffering | null> {
-  if (!(await initializePurchases())) return null;
+  const nativePurchasesModule = await getNativePurchasesModule();
+  if (!nativePurchasesModule || !(await initializePurchases())) return null;
 
   const configs = getSubscriptionConfigs();
   const productIdentifiers = getProductIds(configs);
   if (!productIdentifiers.length) return null;
 
-  const { products } = await NativePurchases.getProducts({
-    productIdentifiers,
-    productType: PURCHASE_TYPE.SUBS,
-  });
+  const { products } = await withTimeout(
+    nativePurchasesModule.NativePurchases.getProducts({
+      productIdentifiers,
+      productType: nativePurchasesModule.PURCHASE_TYPE.SUBS,
+    }),
+    { products: [] as Product[] },
+  );
 
   const isAndroid = getNativePlatform() === "android";
   const monthlyProduct = selectProductForConfig(products, configs.monthly, isAndroid);
@@ -171,7 +216,8 @@ export async function getCurrentOffering(): Promise<SubscriptionOffering | null>
 }
 
 export async function purchasePackage(aPackage: SubscriptionPackage) {
-  if (!(await initializePurchases())) {
+  const nativePurchasesModule = await getNativePurchasesModule();
+  if (!nativePurchasesModule || !(await initializePurchases())) {
     throw new Error("In-app purchases are not available on this device.");
   }
 
@@ -182,10 +228,10 @@ export async function purchasePackage(aPackage: SubscriptionPackage) {
     throw new Error("Android base plan ID is missing for this subscription.");
   }
 
-  const purchase = await NativePurchases.purchaseProduct({
+  const purchase = await nativePurchasesModule.NativePurchases.purchaseProduct({
     productIdentifier: aPackage.productId,
     planIdentifier,
-    productType: PURCHASE_TYPE.SUBS,
+    productType: nativePurchasesModule.PURCHASE_TYPE.SUBS,
     quantity: 1,
     autoAcknowledgePurchases: true,
   });
@@ -195,11 +241,12 @@ export async function purchasePackage(aPackage: SubscriptionPackage) {
 }
 
 export async function restorePurchases() {
-  if (!(await initializePurchases())) {
+  const nativePurchasesModule = await getNativePurchasesModule();
+  if (!nativePurchasesModule || !(await initializePurchases())) {
     throw new Error("In-app purchases are not available on this device.");
   }
 
-  await NativePurchases.restorePurchases();
+  await nativePurchasesModule.NativePurchases.restorePurchases();
 
   const activeProductIds = getConfiguredProductIds();
 
@@ -207,8 +254,8 @@ export async function restorePurchases() {
     throw new Error("IAP product IDs are not configured.");
   }
 
-  const { purchases } = await NativePurchases.getPurchases({
-    productType: PURCHASE_TYPE.SUBS,
+  const { purchases } = await nativePurchasesModule.NativePurchases.getPurchases({
+    productType: nativePurchasesModule.PURCHASE_TYPE.SUBS,
     onlyCurrentEntitlements: true,
   });
 
@@ -225,15 +272,19 @@ export async function restorePurchases() {
 }
 
 export async function hasActiveSubscription() {
-  if (!(await initializePurchases())) return false;
+  const nativePurchasesModule = await getNativePurchasesModule();
+  if (!nativePurchasesModule || !(await initializePurchases())) return false;
 
   const activeProductIds = getConfiguredProductIds();
   if (!activeProductIds.length) return false;
 
-  const { purchases } = await NativePurchases.getPurchases({
-    productType: PURCHASE_TYPE.SUBS,
-    onlyCurrentEntitlements: true,
-  });
+  const { purchases } = await withTimeout(
+    nativePurchasesModule.NativePurchases.getPurchases({
+      productType: nativePurchasesModule.PURCHASE_TYPE.SUBS,
+      onlyCurrentEntitlements: true,
+    }),
+    { purchases: [] as Transaction[] },
+  );
 
   return purchases.some(
     (purchase) =>
@@ -242,9 +293,10 @@ export async function hasActiveSubscription() {
 }
 
 export async function openSubscriptionManagement() {
-  if (!(await initializePurchases())) {
+  const nativePurchasesModule = await getNativePurchasesModule();
+  if (!nativePurchasesModule || !(await initializePurchases())) {
     throw new Error("In-app purchases are not available on this device.");
   }
 
-  await NativePurchases.manageSubscriptions();
+  await nativePurchasesModule.NativePurchases.manageSubscriptions();
 }

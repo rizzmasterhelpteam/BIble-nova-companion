@@ -32,8 +32,10 @@ const MobileViewportContext = createContext<MobileViewportState>(initialState);
 
 const KEYBOARD_OPEN_THRESHOLD = 120;
 const MIN_VISIBLE_HEIGHT = 280;
+const VIEWPORT_STATE_STEP = 8;
 
 const round = (value: number) => Math.round(Math.max(0, value));
+const quantize = (value: number) => Math.round(value / VIEWPORT_STATE_STEP) * VIEWPORT_STATE_STEP;
 
 const getViewportMetrics = () => {
   const viewport = window.visualViewport;
@@ -85,6 +87,30 @@ const applyRootViewportState = (state: MobileViewportState) => {
   root.classList.toggle("short-phone", state.isShortPhone);
 };
 
+const getPublishedViewportState = (state: MobileViewportState): MobileViewportState => ({
+  ...state,
+  bottomInset: quantize(state.bottomInset),
+  keyboardHeight: quantize(state.keyboardHeight),
+  visibleHeight: quantize(state.visibleHeight),
+  width: quantize(state.width),
+});
+
+const areViewportStatesEqual = (
+  previous: MobileViewportState | null,
+  next: MobileViewportState,
+) => {
+  if (!previous) return false;
+  return (
+    previous.bottomInset === next.bottomInset &&
+    previous.isCompactPhone === next.isCompactPhone &&
+    previous.isKeyboardOpen === next.isKeyboardOpen &&
+    previous.isShortPhone === next.isShortPhone &&
+    previous.keyboardHeight === next.keyboardHeight &&
+    previous.visibleHeight === next.visibleHeight &&
+    previous.width === next.width
+  );
+};
+
 const buildViewportState = (
   keyboardHeight: number,
   isKeyboardOpen: boolean,
@@ -134,6 +160,8 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
     let stableHeight = Math.max(window.innerHeight, window.visualViewport?.height ?? 0);
     let viewportFrame: number | null = null;
     let focusTimer: number | null = null;
+    let appliedRootState: MobileViewportState | null = null;
+    let publishedState: MobileViewportState | null = null;
     const listenerHandles: PluginListenerHandle[] = [];
 
     const clearFocusTimer = () => {
@@ -157,24 +185,19 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
         stableHeight = Math.max(metrics.layoutHeight, metrics.rawVisibleHeight);
       }
 
-      const nextState = buildViewportState(keyboardHeight, keyboardOpen, stableHeight);
+      const nextRootState = buildViewportState(keyboardHeight, keyboardOpen, stableHeight);
       if (isDisposed) return;
 
-      applyRootViewportState(nextState);
-      setState((current) => {
-        if (
-          current.bottomInset === nextState.bottomInset &&
-          current.isCompactPhone === nextState.isCompactPhone &&
-          current.isKeyboardOpen === nextState.isKeyboardOpen &&
-          current.isShortPhone === nextState.isShortPhone &&
-          current.keyboardHeight === nextState.keyboardHeight &&
-          current.visibleHeight === nextState.visibleHeight &&
-          current.width === nextState.width
-        ) {
-          return current;
-        }
-        return nextState;
-      });
+      if (!areViewportStatesEqual(appliedRootState, nextRootState)) {
+        appliedRootState = nextRootState;
+        applyRootViewportState(nextRootState);
+      }
+
+      const nextPublishedState = getPublishedViewportState(nextRootState);
+      if (!areViewportStatesEqual(publishedState, nextPublishedState)) {
+        publishedState = nextPublishedState;
+        setState(nextPublishedState);
+      }
     };
 
     const queueViewportSync = () => {
@@ -187,10 +210,13 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
     };
 
     const handleKeyboardShow = (info: KeyboardInfo) => {
+      const wasKeyboardOpen = keyboardOpen;
       keyboardHeight = round(info.keyboardHeight);
       keyboardOpen = keyboardHeight > KEYBOARD_OPEN_THRESHOLD;
       queueViewportSync();
-      scheduleFocusIntoView();
+      if (!wasKeyboardOpen && keyboardOpen) {
+        scheduleFocusIntoView();
+      }
     };
 
     const handleKeyboardHide = () => {
@@ -201,6 +227,7 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
 
     const handleViewportChange = () => {
       const metrics = getViewportMetrics();
+      const wasKeyboardOpen = keyboardOpen;
       const inferredInset = Math.max(
         round(metrics.layoutHeight - metrics.rawVisibleHeight - metrics.offsetTop),
         round(stableHeight - metrics.rawVisibleHeight - metrics.offsetTop),
@@ -212,7 +239,9 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
       ) {
         keyboardHeight = Math.max(keyboardHeight, inferredInset);
         keyboardOpen = true;
-        scheduleFocusIntoView();
+        if (!wasKeyboardOpen) {
+          scheduleFocusIntoView();
+        }
       } else if (!isNativePlatform() || !isEditableElementFocused()) {
         keyboardHeight = 0;
         keyboardOpen = false;

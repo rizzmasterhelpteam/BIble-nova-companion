@@ -289,10 +289,20 @@ export default function Layout() {
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Open settings"
-          className="touch-target app-secondary-button absolute right-4 z-50 rounded-full p-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-          style={{ top: "calc(0.75rem + env(safe-area-inset-top, 0px))" }}
+          className="touch-target absolute right-4 z-50 flex items-center justify-center overflow-hidden rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-95"
+          style={{
+            top: "calc(0.75rem + env(safe-area-inset-top, 0px))",
+            width: "2.4rem",
+            height: "2.4rem",
+            background: profileAvatarUrl ? "transparent" : "var(--app-accent-gradient)",
+            boxShadow: "var(--app-accent-shadow), inset 0 1px 0 rgba(255,255,255,0.15)",
+          }}
         >
-          <Settings2 className="h-4 w-4" />
+          {profileAvatarUrl ? (
+            <img src={profileAvatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
+          ) : (
+            <span className="text-[13px] font-bold text-white/90 select-none">{accountInitial}</span>
+          )}
         </button>
 
         <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -360,21 +370,24 @@ export default function Layout() {
                 <div
                   className={cn("space-y-6 px-5 pt-2 sm:px-6", isCompactPhone ? "pb-5" : "pb-6")}
                 >
-                  <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between">
                     <div>
                       <p className="app-kicker">Settings</p>
-                      <h2 className="mt-2 text-[18px] font-semibold tracking-tight app-heading">Shape your sanctuary</h2>
+                      <h2 className="mt-2 text-[19px] font-semibold tracking-tight app-heading">Shape your sanctuary</h2>
                     </div>
                     <button
                       onClick={() => setSettingsOpen(false)}
-                      className="touch-target app-secondary-button rounded-full p-2 transition-colors"
+                      className="touch-target app-secondary-button rounded-full p-2.5 transition-colors"
                     >
                       <X className="h-4 w-4" />
                     </button>
                   </div>
 
                   <section>
-                    <p className="app-kicker mb-3">Appearance</p>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "var(--app-accent-gradient)" }} />
+                      <p className="app-kicker">Appearance</p>
+                    </div>
                     <div className="flex gap-2">
                       {(["light", "dark", "system"] as const).map((t) => {
                         const icons = {
@@ -393,11 +406,15 @@ export default function Layout() {
                               background: active ? "var(--app-accent-soft)" : "var(--app-secondary-bg)",
                               borderColor: active ? "color-mix(in srgb, var(--app-accent) 35%, transparent)" : "var(--app-secondary-border)",
                               color: active ? "var(--app-accent)" : "var(--app-text-muted)",
+                              boxShadow: active ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 18%, transparent)" : "none",
                             }}
                           >
                             <div className="flex flex-col items-center gap-2">
                               {icons[t]}
-                              {labels[t]}
+                              <span>{labels[t]}</span>
+                              {active && (
+                                <span className="block h-1 w-4 rounded-full" style={{ background: "var(--app-accent)" }} />
+                              )}
                             </div>
                           </button>
                         );
@@ -406,7 +423,10 @@ export default function Layout() {
                   </section>
 
                   <section>
-                    <p className="app-kicker mb-3">Interaction</p>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "var(--app-accent-gradient)" }} />
+                      <p className="app-kicker">Interaction</p>
+                    </div>
                     <button
                       type="button"
                       role="switch"
@@ -522,7 +542,10 @@ export default function Layout() {
                   </section>
 
                   <section>
-                    <p className="app-kicker mb-3">Account</p>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "var(--app-accent-gradient)" }} />
+                      <p className="app-kicker">Account</p>
+                    </div>
                     <div
                       className="overflow-hidden rounded-[1.4rem] border"
                       style={{
@@ -731,7 +754,10 @@ export default function Layout() {
                   </section>
 
                   <section>
-                    <p className="app-kicker mb-3">About</p>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "var(--app-accent-gradient)" }} />
+                      <p className="app-kicker">About</p>
+                    </div>
                     <div
                       className="flex items-center justify-between rounded-[1.4rem] border px-4 py-3.5"
                       style={{
@@ -758,7 +784,7 @@ function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label
   return (
     <NavLink
       to={to}
-      className="touch-target relative flex flex-1 flex-col items-center justify-center gap-1 rounded-pill py-1.5 transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+      className="touch-target relative flex flex-1 flex-col items-center justify-center gap-1 rounded-pill py-2 transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
       style={{ color: "var(--app-text-muted)" }}
     >
       {({ isActive }) => (
@@ -768,23 +794,26 @@ function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label
               layoutId="nav-pill"
               className="absolute inset-0 rounded-pill"
               style={{ background: "var(--app-nav-active)" }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              transition={{ type: "spring", stiffness: 320, damping: 28 }}
             />
           )}
           <div
-            className="relative z-10 transition-transform duration-300"
+            className={cn(
+              "relative z-10 transition-all duration-300",
+              isActive ? "app-nav-active-glow" : "",
+            )}
             style={{
               color: isActive ? "var(--app-accent)" : "var(--app-text-muted)",
-              transform: isActive ? "scale(1.05)" : "scale(1)",
+              transform: isActive ? "scale(1.1)" : "scale(1)",
             }}
           >
             {icon}
           </div>
           <span
-            className="relative z-10 text-[10px] font-medium tracking-wide transition-all duration-300"
+            className="relative z-10 text-[10px] font-semibold tracking-wide transition-all duration-300"
             style={{
               color: isActive ? "var(--app-accent)" : "var(--app-text-muted)",
-              opacity: isActive ? 1 : 0.68,
+              opacity: isActive ? 1 : 0.6,
             }}
           >
             {label}

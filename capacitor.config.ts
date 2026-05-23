@@ -10,7 +10,7 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      launchAutoHide: false,
+      launchAutoHide: true,
       backgroundColor: "#111827",
       androidSplashResourceName: "splash",
       androidScaleType: "CENTER_CROP",
@@ -24,6 +24,14 @@ const config: CapacitorConfig = {
     Keyboard: {
       resize: KeyboardResize.Native,
       resizeOnFullScreen: true,
+    },
+    SocialLogin: {
+      providers: {
+        google: true,
+        facebook: false,
+        apple: true,
+        twitter: false,
+      },
     },
   },
 };

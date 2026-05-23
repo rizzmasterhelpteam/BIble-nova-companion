@@ -23,7 +23,16 @@ type AuthContextType = {
   updateProfileName: (name: string) => Promise<void>;
   updateProfileAvatarUrl: (avatarUrl: string | null) => Promise<void>;
   completeOnboarding: () => void;
-  subscribe: () => void;
+  subscribe: (source?: "local" | "promo_server") => void;
+};
+
+type UserSubscriptionMetadata = {
+  status?: string;
+  source?: string;
+  promoCode?: string;
+  trialEndsAt?: string;
+  redeemedAt?: string;
+  durationDays?: number;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -54,6 +63,7 @@ const clearLocalIdentityData = (id: string) => {
   storageRemove(`bible-nova-companion-profile-avatar-${id}`);
   storageRemove(`onboardingComplete_${id}`);
   storageRemove(`isSubscribed_${id}`);
+  storageRemove(`subscriptionSource_${id}`);
   storageRemove("bible_nova_companion_onboarding_answers");
 };
 
@@ -86,12 +96,65 @@ const getStoredProfileAvatarUrl = (id: string, currentUser: User | null) => {
   return stored || getUserAvatarUrl(currentUser);
 };
 
-const getActiveIdentityId = (userId: string | null) =>
-  userId || (storageGet("is_guest") === "true" ? "guest" : null);
+const getActiveIdentityId = (userId: string | null) => userId;
 
 const setStoredSubscriptionState = (id: string, value: boolean) => {
   storageSet(`isSubscribed_${id}`, value ? "true" : "false");
 };
+
+const setStoredSubscriptionSource = (id: string, source: "local" | "promo_server") => {
+  storageSet(`subscriptionSource_${id}`, source);
+};
+
+const clearStoredSubscriptionSource = (id: string) => {
+  storageRemove(`subscriptionSource_${id}`);
+};
+
+const getStoredSubscriptionSource = (id: string) =>
+  storageGet(`subscriptionSource_${id}`) as "local" | "promo_server" | null;
+
+const getUserSubscriptionMetadata = (currentUser: User | null) =>
+  (currentUser?.app_metadata?.subscription || undefined) as UserSubscriptionMetadata | undefined;
+
+const hasActiveServerSubscription = (currentUser: User | null) => {
+  const subscription = getUserSubscriptionMetadata(currentUser);
+  if (!subscription || subscription.status !== "active") return false;
+  if (!subscription.trialEndsAt) return true;
+  const expiry = Date.parse(subscription.trialEndsAt);
+  return Number.isFinite(expiry) && expiry > Date.now();
+};
+
+const AUTH_STARTUP_TIMEOUT_MS = 5000;
+
+const withStartupTimeout = <T,>(
+  promise: Promise<T>,
+  fallback: T,
+  label: string,
+  timeoutMs = AUTH_STARTUP_TIMEOUT_MS,
+) =>
+  new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      console.warn(`${label} timed out. Continuing startup.`);
+      resolve(fallback);
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -106,25 +169,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     let isDisposed = false;
-    const storedGuest = storageGet("is_guest") === "true";
-    if (storedGuest) {
-      setIsGuest(true);
-      setIdentityKey("guest");
+    const hadLegacyGuestState = storageGet("is_guest") === "true";
+    if (hadLegacyGuestState) {
+      clearLocalIdentityData("guest");
+      storageRemove("is_guest");
     }
 
-    const checkOnboardingAndSub = (userId: string | null) => {
+    const syncOnboardingState = (userId: string | null) => {
       const id = getActiveIdentityId(userId);
       if (!id) {
         if (!isDisposed) {
           setHasCompletedOnboarding(false);
-          setIsSubscribed(false);
         }
         return;
       }
 
       if (!isDisposed) {
         setHasCompletedOnboarding(storageGet(`onboardingComplete_${id}`) === "true");
-        setIsSubscribed(storageGet(`isSubscribed_${id}`) === "true");
       }
     };
 
@@ -136,24 +197,76 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const syncNativeSubscriptionState = async (userId: string | null) => {
-      const id = getActiveIdentityId(userId);
-      if (!isNativePlatform() || !id) return;
+    const resolveCurrentUser = async (currentSession: Session | null) => {
+      const fallbackUser = currentSession?.user || null;
+      const accessToken = currentSession?.access_token;
+
+      if (!accessToken) {
+        return fallbackUser;
+      }
 
       try {
-        const hasEntitlement = await hasActiveSubscription();
-        if (isDisposed) return;
-        setStoredSubscriptionState(id, hasEntitlement);
-        setIsSubscribed(hasEntitlement);
+        const {
+          data: { user: refreshedUser },
+          error,
+        } = await withStartupTimeout(
+          supabase.auth.getUser(accessToken),
+          { data: { user: fallbackUser }, error: null },
+          "Supabase user refresh",
+          4000,
+        );
+
+        if (error) {
+          console.warn("Supabase user refresh error:", error.message);
+        }
+
+        return refreshedUser || fallbackUser;
       } catch (error) {
-        console.warn("Could not sync native subscription state:", error);
+        console.warn("Could not refresh Supabase user:", error);
+        return fallbackUser;
       }
     };
 
+    const syncSubscriptionState = async (currentUser: User | null, fallbackIdentityId: string | null) => {
+      const id = getActiveIdentityId(currentUser?.id || fallbackIdentityId);
+      if (!id) {
+        if (!isDisposed) {
+          setIsSubscribed(false);
+        }
+        return;
+      }
+
+      const storedSubscription = storageGet(`isSubscribed_${id}`) === "true";
+      const storedSubscriptionSource = getStoredSubscriptionSource(id);
+      const serverSubscription = hasActiveServerSubscription(currentUser);
+      const shouldTrustStoredSubscription =
+        storedSubscription &&
+        (!currentUser || (!isSupabaseConfigured && storedSubscriptionSource === "local"));
+      let hasEntitlement = serverSubscription || (shouldTrustStoredSubscription && storedSubscription);
+
+      if (isNativePlatform()) {
+        try {
+          const nativeEntitlement = await hasActiveSubscription();
+          hasEntitlement = hasEntitlement || nativeEntitlement;
+        } catch (error) {
+          console.warn("Could not sync native subscription state:", error);
+        }
+      }
+
+      if (isDisposed) return;
+      setStoredSubscriptionState(id, hasEntitlement);
+      if (!hasEntitlement) {
+        clearStoredSubscriptionSource(id);
+      }
+      setIsSubscribed(hasEntitlement);
+    };
+
     if (!isSupabaseConfigured) {
-      checkOnboardingAndSub(storedGuest ? "guest" : null);
-      syncProfileName(storedGuest ? "guest" : null, null, storedGuest);
-      void syncNativeSubscriptionState(storedGuest ? "guest" : null).finally(() => {
+      setIsGuest(false);
+      setIdentityKey(null);
+      syncOnboardingState(null);
+      syncProfileName(null, null, false);
+      void syncSubscriptionState(null, null).finally(() => {
         if (!isDisposed) {
           setIsLoading(false);
         }
@@ -166,7 +279,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const {
           data: { session },
           error,
-        } = await supabase.auth.getSession();
+        } = await withStartupTimeout(
+          supabase.auth.getSession(),
+          { data: { session: null }, error: null },
+          "Supabase session check",
+        );
         if (isDisposed) return;
 
         if (error) {
@@ -174,23 +291,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         setSession(session);
-        const currentUser = session?.user || null;
+        const currentUser = await resolveCurrentUser(session);
+        if (isDisposed) return;
         setUser(currentUser);
         if (currentUser) {
           setIsGuest(false);
           setIdentityKey(currentUser.id);
           storageRemove("is_guest");
-        } else if (storedGuest) {
-          setIdentityKey("guest");
+        } else {
+          setIsGuest(false);
+          setIdentityKey(null);
         }
 
-        checkOnboardingAndSub(currentUser?.id || (storedGuest ? "guest" : null));
-        syncProfileName(
-          currentUser?.id || (storedGuest ? "guest" : null),
-          currentUser,
-          storedGuest && !currentUser,
-        );
-        await syncNativeSubscriptionState(currentUser?.id || (storedGuest ? "guest" : null));
+        syncOnboardingState(currentUser?.id || null);
+        syncProfileName(currentUser?.id || null, currentUser, false);
+        await syncSubscriptionState(currentUser, null);
       } catch (err) {
         if (!isDisposed) {
           console.error("Failed to get session:", err);
@@ -208,26 +323,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      const currentUser = session?.user || null;
-      setUser(currentUser);
-      if (currentUser) {
-         setIsGuest(false);
-         setIdentityKey(currentUser.id);
-         storageRemove("is_guest");
-      } else {
-         const guestMode = storageGet("is_guest") === "true";
-         setIsGuest(guestMode);
-         setIdentityKey(guestMode ? "guest" : null);
-      }
-      const guestMode = storageGet("is_guest") === "true";
-      checkOnboardingAndSub(currentUser?.id || (guestMode ? "guest" : null));
-      syncProfileName(currentUser?.id || (guestMode ? "guest" : null), currentUser, guestMode && !currentUser);
-      void syncNativeSubscriptionState(currentUser?.id || (guestMode ? "guest" : null)).finally(() => {
+      void (async () => {
+        setSession(session);
+        const currentUser = await resolveCurrentUser(session);
+        if (isDisposed) return;
+
+        setUser(currentUser);
+        if (currentUser) {
+          setIsGuest(false);
+          setIdentityKey(currentUser.id);
+          storageRemove("is_guest");
+        } else {
+          setIsGuest(false);
+          setIdentityKey(null);
+        }
+
+        syncOnboardingState(currentUser?.id || null);
+        syncProfileName(currentUser?.id || null, currentUser, false);
+        await syncSubscriptionState(currentUser, null);
+
         if (!isDisposed) {
           setIsLoading(false);
         }
-      });
+      })();
     });
 
     let removeAppStateListener: (() => void) | undefined;
@@ -236,15 +354,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (!isActive) return;
 
         if (!isSupabaseConfigured) {
-          void syncNativeSubscriptionState(getActiveIdentityId(null));
+          void syncSubscriptionState(null, getActiveIdentityId(null));
           return;
         }
 
         void supabase.auth
           .getSession()
-          .then(({ data: { session } }) =>
-            syncNativeSubscriptionState(session?.user?.id || getActiveIdentityId(null)),
-          )
+          .then(async ({ data: { session }, error }) => {
+            if (error) {
+              throw error;
+            }
+
+            const currentUser = await resolveCurrentUser(session);
+            return syncSubscriptionState(currentUser, getActiveIdentityId(null));
+          })
           .catch((error) => {
             console.warn("Could not refresh session while syncing subscriptions:", error);
           });
@@ -268,15 +391,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const loginAsGuest = useCallback(() => {
-    storageSet("is_guest", "true");
+    storageRemove("is_guest");
+    clearLocalIdentityData("guest");
     setUser(null);
     setSession(null);
-    setIsGuest(true);
-    setIdentityKey("guest");
-    setProfileName(getStoredProfileName("guest", null, true));
-    setProfileAvatarUrl(getStoredProfileAvatarUrl("guest", null));
-    setHasCompletedOnboarding(storageGet(`onboardingComplete_guest`) === "true");
-    setIsSubscribed(storageGet(`isSubscribed_guest`) === "true");
+    setIsGuest(false);
+    setIdentityKey(null);
+    setProfileName(null);
+    setProfileAvatarUrl(null);
+    setHasCompletedOnboarding(false);
+    setIsSubscribed(false);
   }, []);
 
   const logout = useCallback(async () => {
@@ -301,16 +425,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error("Missing active session. Please sign in again before deleting the account.");
       }
 
-      const response = await apiFetch("/api/account", {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-      const data = await response.json().catch(() => ({}));
+      try {
+        const response = await apiFetch("/api/account", {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+        const data = await response.json().catch(() => ({}));
 
-      if (!response.ok) {
-        throw new Error(data.error || "Could not delete the account.");
+        if (!response.ok) {
+          console.warn("Backend account deletion failed:", data.error || "Could not delete the account on server.");
+        }
+      } catch (err) {
+        console.warn("Could not reach backend for account deletion, proceeding with local wipe.", err);
       }
     }
 
@@ -388,13 +516,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [isGuest, user?.id]);
 
-  const subscribe = useCallback(() => {
+  const subscribe = useCallback((source: "local" | "promo_server" = "local") => {
     const id = user?.id || (isGuest ? "guest" : null);
     if (id) {
       setStoredSubscriptionState(id, true);
+      setStoredSubscriptionSource(id, source);
       setIsSubscribed(true);
     }
-  }, [isGuest, user?.id]);
+  }, [isGuest, user]);
 
   const value = useMemo(
     () => ({

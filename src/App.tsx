@@ -4,15 +4,16 @@
  */
 
 import React, { Suspense, lazy, useState, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { HapticsProvider } from "./context/HapticsContext";
 import { MobileViewportProvider } from "./context/MobileViewportContext";
 import { SplashScreen } from "./components/SplashScreen";
-import { AnimatePresence } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { isNativePlatform } from "./lib/native/platform";
 
 const Layout = lazy(() => import("./components/Layout"));
 const Chat = lazy(() => import("./pages/Chat"));
@@ -26,14 +27,14 @@ const Paywall = lazy(() => import("./pages/Paywall"));
 const FullScreenLoader = () => <SplashScreen />;
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
-  const { user, isLoading, isGuest, hasCompletedOnboarding, isSubscribed } = useAuth();
+  const { user, isLoading, hasCompletedOnboarding, isSubscribed } = useAuth();
   const location = useLocation();
   
   if (isLoading) {
     return <FullScreenLoader />;
   }
 
-  if (!user && !isGuest) {
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
 
@@ -47,15 +48,54 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   }
   
   // Prevent users from going back to paywall or onboarding if already in the app properly
-  if (isSubscribed && (location.pathname === "/onboarding" || location.pathname === "/paywall")) {
+  if (hasCompletedOnboarding && isSubscribed && (location.pathname === "/onboarding" || location.pathname === "/paywall")) {
      return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
 };
 
+// Page fade wrapper — opacity only (no layout thrash on Android)
+const PageFade = ({ children }: { children: React.ReactNode }) => (
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    transition={{ duration: 0.18, ease: "linear" }}
+    style={{ display: "contents" }}
+  >
+    {children}
+  </motion.div>
+);
+
+const AnimatedRoutes = () => {
+  const location = useLocation();
+  // Only animate the top-level auth flow routes, not in-app sub-routes
+  const topKey = location.pathname.startsWith("/") 
+    ? ["login","onboarding","paywall"].find(r => location.pathname === `/${r}`) ?? "app"
+    : "app";
+
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <Routes location={location} key={topKey}>
+        <Route path="/login" element={<PageFade><Login /></PageFade>} />
+        <Route path="/onboarding" element={<AuthGuard><PageFade><Onboarding /></PageFade></AuthGuard>} />
+        <Route path="/paywall" element={<AuthGuard><PageFade><Paywall /></PageFade></AuthGuard>} />
+        <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
+          <Route index element={<Chat />} />
+          <Route path="breathe" element={<Breathe />} />
+          <Route path="intentions" element={<Intentions />} />
+          <Route path="confess" element={<Confession />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AnimatePresence>
+  );
+};
+
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const Router = isNativePlatform() ? HashRouter : BrowserRouter;
 
   useEffect(() => {
     const prefersReducedMotion =
@@ -92,25 +132,11 @@ export default function App() {
         <HapticsProvider>
           <AuthProvider>
             <ErrorBoundary>
-              <BrowserRouter>
+              <Router>
                 <Suspense fallback={<FullScreenLoader />}>
-                  <Routes>
-                    <Route path="/login" element={<Login />} />
-
-                    {/* Guarded App Routes */}
-                    <Route path="/onboarding" element={<AuthGuard><Onboarding /></AuthGuard>} />
-                    <Route path="/paywall" element={<AuthGuard><Paywall /></AuthGuard>} />
-
-                    <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
-                      <Route index element={<Chat />} />
-                      <Route path="breathe" element={<Breathe />} />
-                      <Route path="intentions" element={<Intentions />} />
-                      <Route path="confess" element={<Confession />} />
-                    </Route>
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                  </Routes>
+                  <AnimatedRoutes />
                 </Suspense>
-              </BrowserRouter>
+              </Router>
             </ErrorBoundary>
           </AuthProvider>
         </HapticsProvider>

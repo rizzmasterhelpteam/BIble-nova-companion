@@ -5,9 +5,11 @@ import dotenv from "dotenv";
 import {
   createChatCompletion,
   deleteSupabaseAccount,
+  fetchAvailableModels,
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
+  redeemPromoCode,
   transcribeAudio,
 } from "./server-api";
 
@@ -44,19 +46,22 @@ app.delete("/api/account", async (req, res) => {
   }
 });
 
+app.post("/api/promo-redeem", async (req, res) => {
+  try {
+    const result = await redeemPromoCode(req.headers.authorization, req.body?.code || "");
+    res.json(result);
+  } catch (error) {
+    console.error("Promo redemption error:", error);
+    res.status(400).json({ error: getClientErrorMessage(error) });
+  }
+});
+
 app.get("/api/models", async (_req, res) => {
   try {
-    const apiKey = process.env.GROK_API_KEY;
-    if (!apiKey?.trim()) {
-      return res.status(500).json({ error: "GROK_API_KEY is missing." });
-    }
-    const response = await fetch("https://api.x.ai/v1/models", {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-    const data = await response.json();
+    const data = await fetchAvailableModels();
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: String(error) });
+    res.status(500).json({ error: getClientErrorMessage(error) });
   }
 });
 

@@ -6,5 +6,6 @@ coverage/
 *.log
 .idea/
 android/.idea/
+android/workspace/
 .env*
 !.env.example

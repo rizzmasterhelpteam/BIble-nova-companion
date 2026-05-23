@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Sunrise } from "lucide-react";
 import { ChristianCross } from "../components/ChristianCross";
-import { AppLogo } from "../components/AppLogo";
 import { motion, AnimatePresence } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
@@ -70,6 +69,64 @@ const getSelectedLabel = (answers: Record<string, string>, questionId: string) =
   return selected?.label || "Personal reflection";
 };
 
+const getAnalysisSummary = (answers: Record<string, string>) => {
+  const reasonById = {
+    stress: "stress and anxiety feel heavy right now",
+    purpose: "you are looking for clearer purpose and direction",
+    healing: "emotional healing is a priority for you",
+    faith: "reconnecting with your faith matters to you",
+  } as const;
+
+  const goalById = {
+    peace: "find more inner peace",
+    strength: "build stronger resilience",
+    forgiveness: "move toward forgiveness",
+    understanding: "understand yourself more honestly",
+  } as const;
+
+  const supportById = {
+    gentle: "gentle comfort",
+    honest: "honest moral clarity",
+    prayer: "prayer and scripture",
+    practical: "simple practical steps",
+  } as const;
+
+  const supportActionById = {
+    gentle: "a calm and reassuring tone",
+    honest: "clear moral guidance rooted in scripture",
+    prayer: "prayerful guidance and scripture-based reflection",
+    practical: "clear next steps you can act on right away",
+  } as const;
+
+  const rhythmById = {
+    morning: "at the start of the day",
+    evening: "before sleep",
+    stressful: "during stressful moments",
+    uncertain: "when you feel uncertain",
+  } as const;
+
+  const frequencyById = {
+    daily: "You already have a daily rhythm.",
+    weekly: "You already check in from time to time.",
+    rarely: "You want help becoming more consistent.",
+    never: "You are starting from scratch, which is completely fine.",
+  } as const;
+
+  const reason = reasonById[answers.reason as keyof typeof reasonById] ?? "you are looking for thoughtful spiritual support";
+  const goal = goalById[answers.goal as keyof typeof goalById] ?? "feel more grounded";
+  const support = supportById[answers.support as keyof typeof supportById] ?? "steady spiritual guidance";
+  const supportAction = supportActionById[answers.support as keyof typeof supportActionById] ?? "steady spiritual guidance with practical next steps";
+  const rhythm = rhythmById[answers.rhythm as keyof typeof rhythmById] ?? "when life feels heavy";
+  const frequency = frequencyById[answers.frequency as keyof typeof frequencyById] ?? "You are shaping a reflection rhythm that works for you.";
+
+  return {
+    overview: `You shared that ${reason}. You want to ${goal}, prefer ${support}, and usually need support ${rhythm}.`,
+    userAnswer: `${frequency} Right now, ${reason}, and your focus is to ${goal}.`,
+    appResponse: `Bible Nova Companion will answer with ${supportAction}, short scripture-based reflections, and one clear next step that fits ${rhythm}.`,
+    firstSession: `Your first session will begin with a short check-in, a grounded reflection, and a practical action to help you ${goal}.`,
+  };
+};
+
 export default function Onboarding() {
   useDocumentTitle("Welcome | Bible Nova Companion");
   const { isCompactPhone, isShortPhone } = useMobileViewport();
@@ -129,17 +186,23 @@ export default function Onboarding() {
   };
 
   if (showAnalysis) {
-    const reason = getSelectedLabel(answers, "reason").toLowerCase();
-    const goal = getSelectedLabel(answers, "goal").toLowerCase();
-    const support = getSelectedLabel(answers, "support").toLowerCase();
-    const rhythm = getSelectedLabel(answers, "rhythm").toLowerCase();
+    const analysis = getAnalysisSummary(answers);
+    const profileRows = [
+      { label: "What brings you here", value: getSelectedLabel(answers, "reason") },
+      { label: "Current rhythm", value: getSelectedLabel(answers, "frequency") },
+      { label: "Primary goal", value: getSelectedLabel(answers, "goal") },
+      { label: "Best support style", value: getSelectedLabel(answers, "support") },
+      { label: "When support matters most", value: getSelectedLabel(answers, "rhythm") },
+    ];
+    const planSections = [
+      { label: "What you told us", value: analysis.userAnswer },
+      { label: "How the app will help", value: analysis.appResponse },
+      { label: "What happens first", value: analysis.firstSession },
+    ];
 
     return (
       <div
-        className={cn(
-          "app-screen-scroll w-full relative flex flex-col items-center px-4 py-4 scrollbar-hide",
-          shouldTopAlign ? "justify-start" : "justify-center",
-        )}
+        className="app-screen-scroll w-full relative flex flex-col items-center justify-start px-4 py-4 scrollbar-hide"
       >
         <div className="app-atmosphere">
           <div className="app-grid" />
@@ -148,11 +211,11 @@ export default function Onboarding() {
         </div>
 
         <motion.div
-          initial={{ opacity: 0, y: 18, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.35, ease: "easeOut" }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
           className={cn(
-            "app-panel relative z-10 w-full max-w-md rounded-[2rem] shadow-2xl",
+            "app-panel shrink-0 relative z-10 w-full max-w-md rounded-[2rem]",
             !shouldTopAlign && "my-auto",
             isCompactPhone ? "p-5" : "p-6 sm:p-8",
           )}
@@ -165,41 +228,54 @@ export default function Onboarding() {
             Back
           </button>
 
-          <div className={cn("flex justify-center", isShortPhone ? "mb-5" : "mb-7")}>
-            <div className={cn("app-logo-badge overflow-hidden flex items-center justify-center rounded-full ring-1 ring-white/10", isCompactPhone ? "h-16 w-16" : "h-20 w-20")}>
-              <AppLogo className="h-full w-full object-cover" />
-            </div>
-          </div>
-
-          <div className="text-center">
-            <p className="app-kicker mb-3">Your Reflection Analysis</p>
+          <div className="mb-6 text-center">
+            <p className="app-kicker mb-3">Your Support Plan</p>
             <h2 className={cn("app-heading mb-4 pb-1 font-serif leading-[1.24]", isCompactPhone ? "text-[2rem]" : "text-3xl")}>
-              Your path is taking shape.
+              Your guidance experience is now tailored to you.
             </h2>
             <p className="app-muted mx-auto mb-6 max-w-sm text-[15px] leading-relaxed">
-              Bible Nova Companion will focus on {reason}, help you move toward {goal}, and respond with {support} when you need it most.
+              {analysis.overview}
             </p>
           </div>
 
-          <div className={cn("space-y-3", isShortPhone ? "mb-5" : "mb-7")}>
+          <div className={cn("space-y-4", isShortPhone ? "mb-5" : "mb-7")}>
             <div
-              className="rounded-card border p-4"
-              style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}
+              className="rounded-card border px-4 py-4"
+              style={{ borderColor: "var(--app-card-border)", background: "color-mix(in srgb, var(--app-card-strong) 92%, transparent)" }}
             >
-              <p className="app-kicker mb-2 text-[10px]">Guidance Style</p>
-              <p className="app-heading text-sm leading-relaxed">
-                A calm companion for {support}, especially {rhythm}.
-              </p>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="app-kicker text-[10px]">Reflection profile</p>
+                <span className="rounded-pill px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ background: "var(--app-accent-soft)", color: "var(--app-accent)" }}>
+                  Setup complete
+                </span>
+              </div>
+              <div className="space-y-3">
+                {profileRows.map((row) => (
+                  <div key={row.label} className="flex items-start justify-between gap-3 border-b pb-3 last:border-b-0 last:pb-0" style={{ borderColor: "var(--app-card-border)" }}>
+                    <p className="app-soft text-[11px] uppercase tracking-[0.16em]">{row.label}</p>
+                    <p className="app-heading max-w-[60%] text-right text-sm leading-relaxed">{row.value}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div
-              className="rounded-card border p-4"
-              style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}
-            >
-              <p className="app-kicker mb-2 text-[10px]">Starting Point</p>
-              <p className="app-heading text-sm leading-relaxed">
-                Your first experience will be centered around practical spiritual support, prayerful reflection, and simple next steps.
-              </p>
-            </div>
+
+            {planSections.map((section, index) => (
+              <div
+                key={section.label}
+                className="rounded-card border p-4"
+                style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}
+              >
+                <div className="mb-3 flex items-center gap-3">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--app-accent) 16%, transparent)", color: "var(--app-accent)" }}>
+                    0{index + 1}
+                  </span>
+                  <p className="app-kicker text-[10px]">{section.label}</p>
+                </div>
+                <p className="app-heading text-sm leading-relaxed">
+                  {section.value}
+                </p>
+              </div>
+            ))}
           </div>
 
           <button
@@ -230,7 +306,7 @@ export default function Onboarding() {
       </div>
 
       <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col">
-        <div className={cn("flex items-center justify-between", isShortPhone ? "mb-6" : "mb-8 sm:mb-12")}>
+        <div className={cn("flex items-center justify-between", isShortPhone ? "mb-6" : "mb-8")}>
           <button
             onClick={handleBack}
             disabled={currentStep === 0}
@@ -240,38 +316,28 @@ export default function Onboarding() {
             Back
           </button>
           <span className="app-soft text-xs">
-            {Object.keys(answers).length} answered
+            {Object.keys(answers).length} of {questions.length} responses
           </span>
         </div>
-
-        <div className={cn("h-1 w-full overflow-hidden rounded-full", isShortPhone ? "mb-6" : "mb-8")} style={{ background: "var(--app-divider)" }}>
-          <motion.div
-            className="h-full"
-            style={{ background: "var(--app-accent-gradient)" }}
-            initial={{ width: 0 }}
-            animate={{ width: `${((currentStep + 1) / questions.length) * 100}%` }}
-            transition={{ duration: 0.3 }}
-          />
-        </div>
-
-        <span className={cn("app-kicker text-xs font-semibold", isShortPhone ? "mb-3" : "mb-4")}>
-          Question {currentStep + 1} of {questions.length}
-        </span>
 
         <AnimatePresence mode="wait">
           <motion.div
             key={currentStep}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.3 }}
-            className="flex-1"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15, ease: "linear" }}
+            className="flex-1 shrink-0 rounded-[2rem] border px-5 py-6 sm:px-6 sm:py-7"
+            style={{ borderColor: "var(--app-card-border)", background: "color-mix(in srgb, var(--app-card-strong) 96%, transparent)" }}
           >
+            <span className={cn("app-kicker text-xs font-semibold", isShortPhone ? "mb-3 inline-flex" : "mb-4 inline-flex")}>
+              Question {currentStep + 1} of {questions.length}
+            </span>
             <h1 className={cn("app-heading mb-4 pb-1 font-serif leading-[1.24]", isCompactPhone ? "text-[2rem]" : "text-3xl sm:text-4xl")}>
               {question.title}
             </h1>
             <p className={cn("app-muted max-w-sm", isShortPhone ? "mb-7" : "mb-10")}>
-              A few quick choices will help the app adapt its tone and first suggestions.
+              These answers shape the tone, pacing, and first guidance you will see in the app.
             </p>
 
             <div className={cn(isCompactPhone ? "space-y-3" : "space-y-4")}>
@@ -281,16 +347,16 @@ export default function Onboarding() {
                   <button
                     key={option.id}
                     onClick={() => handleSelect(option.id)}
-                    className={`touch-target app-card-hover w-full rounded-card border text-left flex items-center justify-between transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] ${
-                      isSelected
-                        ? "shadow-[0_14px_34px_rgba(0,0,0,0.08)]"
-                        : ""
-                    } ${isCompactPhone ? "p-4" : "p-5"}`}
+                    className={`touch-target w-full rounded-card border text-left flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] ${isCompactPhone ? "p-4" : "p-5"}`}
                     style={{
                       background: isSelected ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                       borderColor: isSelected
                         ? "color-mix(in srgb, var(--app-accent) 38%, transparent)"
                         : "var(--app-card-border)",
+                      boxShadow: isSelected
+                        ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 18%, transparent)"
+                        : undefined,
+                      transition: "background-color 150ms ease, border-color 150ms ease",
                     }}
                   >
                     <div className="flex items-center gap-4">
@@ -315,6 +381,20 @@ export default function Onboarding() {
                         {option.label}
                       </span>
                     </div>
+                    <span
+                      className="rounded-pill px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] flex items-center gap-1.5"
+                      style={{
+                        background: isSelected ? "color-mix(in srgb, var(--app-accent) 16%, transparent)" : "var(--app-card-soft)",
+                        color: isSelected ? "var(--app-accent)" : "var(--app-text-muted)",
+                      }}
+                    >
+                      {isSelected && (
+                        <svg viewBox="0 0 12 12" className="h-3 w-3" fill="currentColor">
+                          <path d="M1 6l3.5 3.5L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                        </svg>
+                      )}
+                      {isSelected ? "Selected" : "Choose"}
+                    </span>
                   </button>
                 );
               })}

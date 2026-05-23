@@ -9,6 +9,7 @@ import {
   KeyRound,
   Volume2,
   Square,
+  ChevronRight,
 } from "lucide-react";
 import { AppLogo } from "../components/AppLogo";
 import { cn, useDocumentTitle } from "../lib/utils";
@@ -41,6 +42,11 @@ type ApiStatus = {
   speechReady?: boolean;
 };
 
+const DEFAULT_API_STATUS: ApiStatus = {
+  chatReady: true,
+  prayerReady: true,
+};
+
 const WELCOME_MESSAGE: Message = {
   id: "welcome",
   role: "ai",
@@ -62,6 +68,24 @@ const getMessageStorageKey = (identityKey: string | null) =>
 const extractReference = (message: string) => {
   const match = message.match(BIBLE_BOOKS);
   return match?.[0];
+};
+
+let apiStatusPromise: Promise<ApiStatus> | null = null;
+
+const loadApiStatus = () => {
+  if (!apiStatusPromise) {
+    apiStatusPromise = apiFetch("/api/status")
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Status request failed with ${response.status}.`);
+        }
+
+        return response.json() as Promise<ApiStatus>;
+      })
+      .catch(() => DEFAULT_API_STATUS);
+  }
+
+  return apiStatusPromise;
 };
 
 export default function Chat() {
@@ -201,18 +225,12 @@ export default function Chat() {
   useEffect(() => {
     let isMounted = true;
 
-    apiFetch("/api/status")
-      .then((response) => response.json())
+    loadApiStatus()
       .then((data: ApiStatus) => {
         if (isMounted) {
           setApiStatus(data);
         }
       })
-      .catch(() => {
-        if (isMounted) {
-          setApiStatus({ chatReady: true, prayerReady: true });
-        }
-      });
 
     return () => {
       isMounted = false;
@@ -378,12 +396,13 @@ export default function Chat() {
     if (!container) return;
 
     const frame = window.requestAnimationFrame(() => {
+      const behavior: ScrollBehavior = isKeyboardOpen ? "auto" : "smooth";
       if (showQuickPrompts && !isKeyboardOpen) {
-        container.scrollTo({ top: 0, behavior: "smooth" });
+        container.scrollTo({ top: 0, behavior });
         return;
       }
 
-      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+      container.scrollTo({ top: container.scrollHeight, behavior });
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -472,28 +491,36 @@ export default function Chat() {
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent">
       <header
         className={cn(
-          "z-20 flex shrink-0 items-center justify-between border-b border-[color:color-mix(in_srgb,var(--app-divider)_50%,transparent)] pr-14 shadow-sm backdrop-blur-2xl transition-colors duration-300",
+          "z-20 flex shrink-0 items-center justify-between border-b pr-14 backdrop-blur-2xl transition-colors duration-300",
           isCompactPhone ? "min-h-[80px] px-4 py-3" : "min-h-[88px] px-5 py-4 sm:px-6",
         )}
         style={{
-          background: "color-mix(in srgb, var(--app-shell-bg) 75%, transparent)",
+          background: "color-mix(in srgb, var(--app-shell-bg) 80%, transparent)",
+          borderColor: "color-mix(in srgb, var(--app-divider) 50%, transparent)",
+          boxShadow: "0 4px 24px rgba(0,0,0,0.08), inset 0 -1px 0 color-mix(in srgb, var(--app-divider) 40%, transparent)",
         }}
       >
         <div className={cn("flex items-center", isCompactPhone ? "gap-3" : "gap-4")}>
           <div className="relative">
-            <div className={cn("app-logo-badge flex items-center justify-center overflow-hidden rounded-full", isCompactPhone ? "h-[38px] w-[38px]" : "h-[42px] w-[42px]")}>
+            <div className={cn(
+              "app-logo-badge flex items-center justify-center overflow-hidden rounded-full ring-2",
+              isCompactPhone ? "h-[38px] w-[38px]" : "h-[44px] w-[44px]"
+            )}
+              style={{ ringColor: "color-mix(in srgb, var(--app-accent) 20%, transparent)" }}
+            >
               <AppLogo alt="" className="h-full w-full object-cover" />
             </div>
+            {/* Pulsing online dot */}
             <div
-              className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2"
+              className="app-status-dot absolute bottom-0 right-0 h-3 w-3 rounded-full border-2"
               style={{ background: "var(--app-success)", borderColor: "var(--app-shell-bg)" }}
             />
           </div>
           <div className="min-w-0">
-            <h3 className={cn("app-heading font-medium tracking-wide", isCompactPhone ? "text-[14px]" : "text-[15px]")}>
+            <h3 className={cn("app-heading font-semibold tracking-wide", isCompactPhone ? "text-[14px]" : "text-[16px]")}>
               Bible Nova Companion
             </h3>
-            <p className="app-kicker mt-1 truncate text-[10px]">
+            <p className="app-kicker mt-0.5 truncate text-[10px]">
               {isCompactPhone ? "Private space" : "Private reflection space"}
             </p>
           </div>
@@ -503,17 +530,18 @@ export default function Chat() {
       <div
         ref={scrollContainerRef}
         className={cn(
-          "app-scroll-region z-10 flex flex-1 flex-col scroll-smooth scrollbar-hide",
+          "app-scroll-region z-10 flex flex-1 flex-col scrollbar-hide",
           isCompactPhone ? "px-4 py-4" : "px-5 py-5 sm:px-6",
         )}
       >
         <div className={cn("mx-auto flex w-full max-w-xl flex-col", isCompactPhone ? "gap-4" : "gap-6")}>
         {showQuickPrompts && (
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
             className={cn(
-              "app-panel relative overflow-hidden shadow-xl backdrop-blur-2xl",
+              "app-panel app-card-shimmer relative overflow-hidden shadow-xl",
               isShortPhone ? "rounded-[1.75rem] p-4" : isCompactPhone ? "rounded-[2rem] p-5" : "rounded-[2.5rem] p-6",
             )}
             style={{
@@ -521,10 +549,12 @@ export default function Chat() {
               borderColor: "color-mix(in srgb, var(--app-card-border) 60%, transparent)",
             }}
           >
-            <div className="absolute inset-0 bg-gradient-to-b from-[color:color-mix(in_srgb,var(--app-accent)_3%,transparent)] to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-b from-[color:color-mix(in_srgb,var(--app-accent)_5%,transparent)] to-transparent pointer-events-none" />
             <div className="relative z-10">
               <div className="app-accent mb-3 flex items-center gap-2">
-                <Sparkles className="w-4 h-4" />
+                <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)" }}>
+                  <Sparkles className="w-3.5 h-3.5" />
+                </span>
                 <p className="text-[11px] font-bold uppercase tracking-[0.2em]">
                   Start gently
                 </p>
@@ -534,18 +564,22 @@ export default function Chat() {
                   ? "Your guidance stays on this device while you explore in guest mode."
                   : "Pick a prompt to start, or write your own reflection below."}
               </p>
-              <div className="flex flex-col gap-2.5">
-                {QUICK_PROMPTS.map((prompt) => (
-                  <button
+              <div className="flex flex-col gap-2">
+                {QUICK_PROMPTS.map((prompt, i) => (
+                  <motion.button
                     key={prompt}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.05 * i, duration: 0.2 }}
                     onClick={() => handleSend(prompt)}
                     className={cn(
-                      "app-secondary-button rounded-[1.25rem] px-4 text-left text-[14px] font-medium leading-[1.4] shadow-sm transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--app-accent)_50%,transparent)]",
+                      "app-secondary-button flex items-center justify-between rounded-[1.25rem] px-4 text-left text-[14px] font-medium leading-[1.4] shadow-sm active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--app-accent)_50%,transparent)]",
                       isShortPhone ? "py-2.5" : "py-3.5",
                     )}
                   >
-                    {prompt}
-                  </button>
+                    <span className="flex-1">{prompt}</span>
+                    <ChevronRight className="ml-3 h-4 w-4 flex-shrink-0 opacity-40" />
+                  </motion.button>
                 ))}
               </div>
             </div>
@@ -554,9 +588,9 @@ export default function Chat() {
 
         {chatUnavailable && (
           <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-[2rem] p-5 shadow-lg backdrop-blur-xl"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="rounded-[2rem] p-5 shadow-lg"
             style={{
               background: "var(--app-accent-soft)",
               border: "1px solid color-mix(in srgb, var(--app-accent) 26%, transparent)",
@@ -581,9 +615,9 @@ export default function Chat() {
             return (
               <motion.div
                 key={message.id}
-                initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ duration: 0.3, ease: "easeOut" }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
                 className={cn(
                   "flex flex-col w-full",
                   message.role === "user" ? "items-end" : "items-start",
@@ -672,13 +706,13 @@ export default function Chat() {
 
                       {message.reference && (
                         <motion.div
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          transition={{ delay: 0.2 }}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: 0.15 }}
                           className="mt-1"
                         >
                           <div
-                            className="rounded-[1.25rem] border p-4 shadow-sm backdrop-blur-md transition-all"
+                            className="rounded-[1.25rem] border p-4 shadow-sm"
                             style={{
                               background: "color-mix(in srgb, var(--app-card-soft) 85%, transparent)",
                               borderColor: "color-mix(in srgb, var(--app-accent) 20%, transparent)",
@@ -708,14 +742,18 @@ export default function Chat() {
                 {message.role === "user" && (
                   <div
                     className={cn(
-                      "break-words whitespace-pre-wrap rounded-[1.5rem] rounded-tr-[0.5rem] border text-[15px] font-light leading-relaxed backdrop-blur-xl transition-all",
+                      "break-words whitespace-pre-wrap rounded-[1.5rem] rounded-tr-[0.5rem] border text-[15px] font-light leading-relaxed",
                       isCompactPhone ? "max-w-[90%] px-5 py-3.5" : "max-w-[85%] px-6 py-4",
                     )}
                     style={{
                       background: "color-mix(in srgb, var(--app-card-strong) 92%, transparent)",
                       color: "var(--app-heading)",
                       borderColor: "color-mix(in srgb, var(--app-card-border) 60%, transparent)",
-                      boxShadow: "inset 0 1px 0 0 color-mix(in srgb, white 8%, transparent), 0 8px 24px rgba(0,0,0,0.06)",
+                      boxShadow: [
+                        "inset 0 1px 0 0 color-mix(in srgb, white 14%, transparent)",
+                        "inset 0 0 0 0.5px color-mix(in srgb, white 6%, transparent)",
+                        "0 8px 24px rgba(0,0,0,0.08)",
+                      ].join(", "),
                     }}
                   >
                     {message.content}
@@ -728,29 +766,24 @@ export default function Chat() {
 
         {isTyping && (
           <motion.div
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="flex max-w-[88%] items-center gap-3"
           >
             <div className="w-[30px] h-[30px] flex-shrink-0 flex items-center justify-center">
-              <AppLogo alt="" className="h-4 w-4 rounded-full object-cover animate-pulse" />
+              <AppLogo alt="" className="h-4 w-4 rounded-full object-cover opacity-80" />
             </div>
-            <div className="flex items-center gap-[5px] rounded-card rounded-tl-[0.5rem] px-4 py-3" style={{ background: "var(--app-card-soft)" }}>
-              {[0, 150, 300].map((delay) => (
-                <motion.span
-                  key={delay}
-                  animate={{ y: [0, -5, 0] }}
-                  transition={{
-                    duration: 0.7,
-                    repeat: Infinity,
-                    delay: delay / 1000,
-                    ease: "easeInOut",
-                  }}
-                  className="block h-[6px] w-[6px] rounded-full"
-                  style={{ background: "var(--app-text-soft)" }}
-                />
-              ))}
+            <div
+              className="flex items-center gap-[6px] rounded-card rounded-tl-[0.5rem] px-5 py-3.5 shadow-sm"
+              style={{
+                background: "var(--app-card-soft)",
+                border: "1px solid var(--app-card-border)",
+              }}
+            >
+              <span className="app-typing-dot" />
+              <span className="app-typing-dot" />
+              <span className="app-typing-dot" />
             </div>
           </motion.div>
         )}
@@ -796,16 +829,18 @@ export default function Chat() {
 
           <div
             className={cn(
-              "flex w-full items-end gap-2 rounded-pill border p-1.5 backdrop-blur-2xl transition-all duration-300 focus-within:ring-2 focus-within:ring-[color:color-mix(in_srgb,var(--app-accent)_20%,transparent)] focus-within:border-[color:color-mix(in_srgb,var(--app-accent)_40%,transparent)]",
+              "flex w-full items-end gap-2 rounded-pill border p-1.5 transition-all duration-300 focus-within:ring-2 focus-within:ring-[color:color-mix(in_srgb,var(--app-accent)_25%,transparent)] focus-within:border-[color:color-mix(in_srgb,var(--app-accent)_50%,transparent)]",
               isCompactPhone ? "pl-3.5" : "pl-4",
             )}
             style={{
-              background: "color-mix(in srgb, var(--app-nav-bg) 85%, transparent)",
+              background: "color-mix(in srgb, var(--app-nav-bg) 90%, transparent)",
               borderColor: "color-mix(in srgb, var(--app-card-border) 80%, transparent)",
-              boxShadow: "0 12px 36px rgba(0,0,0,0.12)",
+              boxShadow: "0 12px 36px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.06)",
             }}
           >
             <textarea
+              id="chat-message"
+              name="message"
               ref={textareaRef}
               value={input}
               onChange={handleInput}
@@ -858,7 +893,13 @@ export default function Chat() {
                 <button
                   onClick={() => handleSend(input)}
                   disabled={isTyping || chatUnavailable || isTranscribingSpeech}
-                  className={cn("touch-target app-primary-button flex h-[38px] w-[38px] items-center justify-center rounded-full text-white transition-all active:scale-95 shadow-[0_4px_12px_color-mix(in_srgb,var(--app-accent)_30%,transparent)]", isTyping && "cursor-not-allowed opacity-50 grayscale")}
+                  className={cn(
+                    "touch-target app-primary-button flex h-[38px] w-[38px] items-center justify-center rounded-full text-white transition-all active:scale-95",
+                    isTyping && "cursor-not-allowed opacity-50 grayscale",
+                  )}
+                  style={{
+                    boxShadow: "0 4px 16px color-mix(in srgb, var(--app-accent) 40%, transparent), 0 8px 24px rgba(0,0,0,0.12)",
+                  }}
                 >
                   <Send strokeWidth={2.5} className="w-[18px] h-[18px] ml-0.5" />
                 </button>

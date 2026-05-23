@@ -16,6 +16,8 @@ const hasSpeechSynthesisSupport = () =>
   "SpeechSynthesisUtterance" in window;
 
 const normalizeText = (text: string) => text.trim().replace(/\s+/g, " ");
+let cachedPreferredVoice: SpeechSynthesisVoice | null | undefined;
+let preferredVoicePromise: Promise<SpeechSynthesisVoice | null> | null = null;
 
 const scoreVoice = (voice: SpeechSynthesisVoice) => {
   const name = voice.name.toLowerCase();
@@ -82,9 +84,25 @@ const waitForVoices = () =>
   });
 
 const pickPreferredVoice = async () => {
-  const voices = await waitForVoices();
-  if (!voices.length) return null;
-  return [...voices].sort((a, b) => scoreVoice(b) - scoreVoice(a))[0] || null;
+  if (cachedPreferredVoice !== undefined) {
+    return cachedPreferredVoice;
+  }
+
+  if (!preferredVoicePromise) {
+    preferredVoicePromise = waitForVoices().then((voices) => {
+      preferredVoicePromise = null;
+
+      if (!voices.length) {
+        return null;
+      }
+
+      cachedPreferredVoice =
+        [...voices].sort((a, b) => scoreVoice(b) - scoreVoice(a))[0] || null;
+      return cachedPreferredVoice;
+    });
+  }
+
+  return preferredVoicePromise;
 };
 
 export const createTextToSpeechSession = ({
