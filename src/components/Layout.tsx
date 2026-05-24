@@ -38,6 +38,8 @@ import {
 } from "../lib/native/notifications";
 
 const DAILY_REMINDER_STORAGE_KEY = "bible-nova-companion-daily-reminders";
+const REMINDER_TIME_STORAGE_KEY = "bible-nova-companion-reminder-time";
+const REMINDER_DAYS_STORAGE_KEY = "bible-nova-companion-reminder-days";
 
 const makeAvatarDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -107,6 +109,8 @@ export default function Layout() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [dailyRemindersEnabled, setDailyRemindersEnabled] = useState(false);
+  const [reminderTime, setReminderTime] = useState("08:00");
+  const [reminderDays, setReminderDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const prefersReducedMotion = useReducedMotion();
   const displayName = profileName || (isGuest ? "Guest" : user?.email?.split("@")[0] ?? "Unknown");
@@ -124,7 +128,26 @@ export default function Layout() {
       .then((value) => setDailyRemindersEnabled(value === "true"))
       .catch(() => undefined);
 
+    void nativeStorage
+      .get(REMINDER_TIME_STORAGE_KEY)
+      .then((value) => {
+        if (value) setReminderTime(value);
+      })
+      .catch(() => undefined);
+
+    void nativeStorage
+      .get(REMINDER_DAYS_STORAGE_KEY)
+      .then((value) => {
+        if (value) setReminderDays(JSON.parse(value));
+      })
+      .catch(() => undefined);
+
   }, [nativeControlsAvailable]);
+
+  const parseTime = (timeStr: string) => {
+    const [h, m] = timeStr.split(":").map(Number);
+    return { hour: isNaN(h) ? 8 : h, minute: isNaN(m) ? 0 : m };
+  };
 
   const handleDailyReminderToggle = async () => {
     setNotificationError(null);
@@ -132,7 +155,8 @@ export default function Layout() {
 
     try {
       if (next) {
-        const scheduled = await scheduleDailyReflectionReminder(8, 0);
+        const { hour, minute } = parseTime(reminderTime);
+        const scheduled = await scheduleDailyReflectionReminder(hour, minute, reminderDays);
         if (!scheduled) throw new Error("Notification permission was not granted.");
       } else {
         await cancelDailyReflectionReminder();
@@ -142,6 +166,24 @@ export default function Layout() {
       await nativeStorage.set(DAILY_REMINDER_STORAGE_KEY, String(next));
     } catch (error) {
       setNotificationError(error instanceof Error ? error.message : "Could not update reminders.");
+    }
+  };
+
+  const handleTimeChange = async (newTime: string) => {
+    setReminderTime(newTime);
+    await nativeStorage.set(REMINDER_TIME_STORAGE_KEY, newTime);
+    if (dailyRemindersEnabled) {
+      const { hour, minute } = parseTime(newTime);
+      await scheduleDailyReflectionReminder(hour, minute, reminderDays);
+    }
+  };
+
+  const handleDaysChange = async (newDays: number[]) => {
+    setReminderDays(newDays);
+    await nativeStorage.set(REMINDER_DAYS_STORAGE_KEY, JSON.stringify(newDays));
+    if (dailyRemindersEnabled) {
+      const { hour, minute } = parseTime(reminderTime);
+      await scheduleDailyReflectionReminder(hour, minute, newDays);
     }
   };
 
@@ -458,7 +500,7 @@ export default function Layout() {
                             </span>
                             <span>
                               <span className="app-heading block text-[14px] font-medium">Daily reminder</span>
-                              <span className="app-muted block text-[11px]">A quiet reflection prompt at 8:00 AM.</span>
+                              <span className="app-muted block text-[11px]">A quiet reflection prompt.</span>
                             </span>
                           </span>
                           <span
@@ -472,9 +514,70 @@ export default function Layout() {
                           </span>
                         </button>
 
-
-
-                        {notificationError && (
+                        <AnimatePresence>
+                          {dailyRemindersEnabled && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div
+                                className="flex flex-col gap-3 rounded-[1.4rem] border px-4 py-3.5 mt-2"
+                                style={{
+                                  background: "var(--app-card-soft)",
+                                  borderColor: "var(--app-card-border)",
+                                }}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="app-heading block text-[13px] font-medium">Time</span>
+                                  <input
+                                    type="time"
+                                    value={reminderTime}
+                                    onChange={(e) => void handleTimeChange(e.target.value)}
+                                    className="rounded-lg border px-2 py-1 text-[13px] app-heading focus-visible:outline-none"
+                                    style={{
+                                      background: "var(--app-secondary-bg)",
+                                      borderColor: "var(--app-secondary-border)",
+                                    }}
+                                  />
+                                </div>
+                                <div className="h-px w-full bg-[color:var(--app-divider)]" />
+                                <div className="flex justify-between gap-1">
+                                  {[
+                                    { id: 1, label: "S" },
+                                    { id: 2, label: "M" },
+                                    { id: 3, label: "T" },
+                                    { id: 4, label: "W" },
+                                    { id: 5, label: "T" },
+                                    { id: 6, label: "F" },
+                                    { id: 7, label: "S" },
+                                  ].map((day) => {
+                                    const isSelected = reminderDays.includes(day.id);
+                                    return (
+                                      <button
+                                        key={day.id}
+                                        onClick={() => {
+                                          const newDays = isSelected
+                                            ? reminderDays.filter((d) => d !== day.id)
+                                            : [...reminderDays, day.id].sort();
+                                          void handleDaysChange(newDays);
+                                        }}
+                                        className="flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-medium transition-colors"
+                                        style={{
+                                          background: isSelected ? "var(--app-accent)" : "var(--app-secondary-bg)",
+                                          color: isSelected ? "white" : "var(--app-text-muted)",
+                                        }}
+                                      >
+                                        {day.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>                        {notificationError && (
                           <p role="alert" className="rounded-xl px-3 py-2 text-[12px] leading-relaxed text-[color:var(--app-danger)]" style={{ background: "var(--app-danger-soft)" }}>
                             {notificationError}
                           </p>

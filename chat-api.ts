@@ -66,7 +66,13 @@ const buildModelMessages = (messages: ChatMessage[]) => {
     )
     .slice(-MAX_CONTEXT_MESSAGES);
 
-  const lastUserIndex = filtered.findLastIndex((m) => m.role === "user");
+  let lastUserIndex = -1;
+  for (let i = filtered.length - 1; i >= 0; i--) {
+    if (filtered[i].role === "user") {
+      lastUserIndex = i;
+      break;
+    }
+  }
 
   return filtered.map((message, index) => {
     let content = trimContent(message.content);

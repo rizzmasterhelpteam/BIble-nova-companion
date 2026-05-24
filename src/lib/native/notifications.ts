@@ -22,31 +22,36 @@ export async function requestLocalNotificationPermission() {
   return requested.display === "granted";
 }
 
-export async function scheduleDailyReflectionReminder(hour = 8, minute = 0) {
+export async function scheduleDailyReflectionReminder(hour = 8, minute = 0, days = [1, 2, 3, 4, 5, 6, 7]) {
   if (!(await requestLocalNotificationPermission())) return false;
 
-  await LocalNotifications.schedule({
-    notifications: [
-      {
-        id: DAILY_REFLECTION_NOTIFICATION_ID,
-        title: "Bible Nova Companion",
-        body: "Take a quiet moment for prayer and reflection.",
-        schedule: {
-          on: { hour, minute },
-          repeats: true,
-        },
-      },
-    ],
-  });
+  await cancelDailyReflectionReminder();
+
+  if (days.length === 0) return true;
+
+  const notifications = days.map((day, index) => ({
+    id: DAILY_REFLECTION_NOTIFICATION_ID + index,
+    title: "Bible Nova Companion",
+    body: "Take a quiet moment for prayer and reflection.",
+    schedule: {
+      on: { weekday: day, hour, minute },
+      repeats: true,
+    },
+  }));
+
+  await LocalNotifications.schedule({ notifications });
 
   return true;
 }
 
 export async function cancelDailyReflectionReminder() {
   if (!isNativePlatform()) return;
-  await LocalNotifications.cancel({
-    notifications: [{ id: DAILY_REFLECTION_NOTIFICATION_ID }],
-  });
+  
+  const notifications = Array.from({ length: 7 }, (_, i) => ({
+    id: DAILY_REFLECTION_NOTIFICATION_ID + i,
+  }));
+
+  await LocalNotifications.cancel({ notifications });
 }
 
 export async function registerForPushNotifications(onToken?: (token: string) => void) {
