@@ -22,33 +22,27 @@ const Intentions = lazy(() => import("./pages/Intentions"));
 const Confession = lazy(() => import("./pages/Confession"));
 const Login = lazy(() => import("./pages/Login"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
-const Paywall = lazy(() => import("./pages/Paywall"));
 
 const FullScreenLoader = () => <SplashScreen />;
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
-  const { user, isLoading, hasCompletedOnboarding, isSubscribed } = useAuth();
+  const { user, isGuest, isLoading, hasCompletedOnboarding } = useAuth();
   const location = useLocation();
+  const hasActiveIdentity = Boolean(user || isGuest);
   
   if (isLoading) {
     return <FullScreenLoader />;
   }
 
-  if (!user) {
+  if (!hasActiveIdentity) {
     return <Navigate to="/login" replace />;
   }
 
-  // Enforce flow: Onboarding -> Paywall -> Main App
   if (!hasCompletedOnboarding && location.pathname !== "/onboarding") {
     return <Navigate to="/onboarding" replace />;
   }
-
-  if (hasCompletedOnboarding && !isSubscribed && location.pathname !== "/paywall" && location.pathname !== "/onboarding") {
-    return <Navigate to="/paywall" replace />;
-  }
   
-  // Prevent users from going back to paywall or onboarding if already in the app properly
-  if (hasCompletedOnboarding && isSubscribed && (location.pathname === "/onboarding" || location.pathname === "/paywall")) {
+  if (hasCompletedOnboarding && (location.pathname === "/onboarding" || location.pathname === "/paywall")) {
      return <Navigate to="/" replace />;
   }
 
@@ -85,7 +79,7 @@ const AnimatedRoutes = () => {
       <Routes location={location}>
         <Route path="/login" element={<PageFade><Login /></PageFade>} />
         <Route path="/onboarding" element={<AuthGuard><PageFade><Onboarding /></PageFade></AuthGuard>} />
-        <Route path="/paywall" element={<AuthGuard><PageFade><Paywall /></PageFade></AuthGuard>} />
+        <Route path="/paywall" element={<AuthGuard><Navigate to="/" replace /></AuthGuard>} />
         <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
           <Route index element={<Chat />} />
           <Route path="breathe" element={<Breathe />} />

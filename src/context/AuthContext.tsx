@@ -66,6 +66,7 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 const AVATAR_NONE = "__none__";
+const GUEST_ID = "guest";
 
 const clearLocalIdentityData = (id: string) => {
   storageRemove(`bible-nova-companion-chat-${id}`);
@@ -107,7 +108,7 @@ const getStoredProfileAvatarUrl = (id: string, currentUser: User | null) => {
   return stored || getUserAvatarUrl(currentUser);
 };
 
-const getActiveIdentityId = (userId: string | null) => userId;
+const getActiveIdentityId = (userId: string | null, guest = false) => (guest ? GUEST_ID : userId);
 
 const setStoredSubscriptionState = (id: string, value: boolean) => {
   storageSet(`isSubscribed_${id}`, value ? "true" : "false");
@@ -180,14 +181,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     let isDisposed = false;
-    const hadLegacyGuestState = storageGet("is_guest") === "true";
-    if (hadLegacyGuestState) {
-      clearLocalIdentityData("guest");
-      storageRemove("is_guest");
-    }
+    const hasPersistedGuestSession = () => storageGet("is_guest") === "true";
 
-    const syncOnboardingState = (userId: string | null) => {
-      const id = getActiveIdentityId(userId);
+    const syncOnboardingState = (userId: string | null, guest = false) => {
+      const id = getActiveIdentityId(userId, guest);
       if (!id) {
         if (!isDisposed) {
           setHasCompletedOnboarding(false);
@@ -201,7 +198,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     const syncProfileName = (id: string | null, currentUser: User | null, guest: boolean) => {
-      const activeId = getActiveIdentityId(id);
+      const activeId = getActiveIdentityId(id, guest);
       if (!isDisposed) {
         setProfileName(activeId ? getStoredProfileName(activeId, currentUser, guest) : null);
         setProfileAvatarUrl(activeId ? getStoredProfileAvatarUrl(activeId, currentUser) : null);
@@ -275,12 +272,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIsSubscribed(hasEntitlement);
     };
 
-    if (!isSupabaseConfigured) {
+    const activateGuestSession = async () => {
+      if (isDisposed) return;
+      setSession(null);
+      setUser(null);
+      setIsGuest(true);
+      setIdentityKey(GUEST_ID);
+      syncOnboardingState(null, true);
+      syncProfileName(GUEST_ID, null, true);
+      await syncSubscriptionState(null, GUEST_ID);
+    };
+
+    const clearActiveSession = async () => {
+      if (isDisposed) return;
+      setSession(null);
+      setUser(null);
       setIsGuest(false);
       setIdentityKey(null);
       syncOnboardingState(null);
       syncProfileName(null, null, false);
-      void syncSubscriptionState(null, null).finally(() => {
+      await syncSubscriptionState(null, null);
+    };
+
+    if (!isSupabaseConfigured) {
+      const restoreSession = hasPersistedGuestSession() ? activateGuestSession() : clearActiveSession();
+      void restoreSession.finally(() => {
         if (!isDisposed) {
           setIsLoading(false);
         }
@@ -307,19 +323,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setSession(session);
         const currentUser = await resolveCurrentUser(session);
         if (isDisposed) return;
-        setUser(currentUser);
         if (currentUser) {
+          setUser(currentUser);
           setIsGuest(false);
           setIdentityKey(currentUser.id);
           storageRemove("is_guest");
+          syncOnboardingState(currentUser.id);
+          syncProfileName(currentUser.id, currentUser, false);
+          await syncSubscriptionState(currentUser, null);
+        } else if (hasPersistedGuestSession()) {
+          await activateGuestSession();
         } else {
-          setIsGuest(false);
-          setIdentityKey(null);
+          await clearActiveSession();
         }
-
-        syncOnboardingState(currentUser?.id || null);
-        syncProfileName(currentUser?.id || null, currentUser, false);
-        await syncSubscriptionState(currentUser, null);
       } catch (err) {
         if (!isDisposed) {
           console.error("Failed to get session:", err);
@@ -342,19 +358,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const currentUser = await resolveCurrentUser(session);
         if (isDisposed) return;
 
-        setUser(currentUser);
         if (currentUser) {
+          setUser(currentUser);
           setIsGuest(false);
           setIdentityKey(currentUser.id);
           storageRemove("is_guest");
+          syncOnboardingState(currentUser.id);
+          syncProfileName(currentUser.id, currentUser, false);
+          await syncSubscriptionState(currentUser, null);
+        } else if (hasPersistedGuestSession()) {
+          await activateGuestSession();
         } else {
-          setIsGuest(false);
-          setIdentityKey(null);
+          await clearActiveSession();
         }
-
-        syncOnboardingState(currentUser?.id || null);
-        syncProfileName(currentUser?.id || null, currentUser, false);
-        await syncSubscriptionState(currentUser, null);
 
         if (!isDisposed) {
           setIsLoading(false);
@@ -368,7 +384,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (!isActive) return;
 
         if (!isSupabaseConfigured) {
-          void syncSubscriptionState(null, getActiveIdentityId(null));
+          void syncSubscriptionState(null, getActiveIdentityId(null, hasPersistedGuestSession()));
           return;
         }
 
@@ -405,16 +421,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const loginAsGuest = useCallback(() => {
-    storageRemove("is_guest");
-    clearLocalIdentityData("guest");
+    storageSet("is_guest", "true");
     setUser(null);
     setSession(null);
-    setIsGuest(false);
-    setIdentityKey(null);
-    setProfileName(null);
-    setProfileAvatarUrl(null);
-    setHasCompletedOnboarding(false);
-    setIsSubscribed(false);
+    setIsGuest(true);
+    setIdentityKey(GUEST_ID);
+    setProfileName(getStoredProfileName(GUEST_ID, null, true));
+    setProfileAvatarUrl(getStoredProfileAvatarUrl(GUEST_ID, null));
+    setHasCompletedOnboarding(storageGet(`onboardingComplete_${GUEST_ID}`) === "true");
+    setIsSubscribed(storageGet(`isSubscribed_${GUEST_ID}`) === "true");
   }, []);
 
   const logout = useCallback(async () => {

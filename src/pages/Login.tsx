@@ -7,6 +7,7 @@ import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { signInWithGoogleNative } from "../lib/native/auth";
 import { isNativePlatform } from "../lib/native/platform";
+import { storageGet } from "../lib/webStorage";
 
 type LegalView = "terms" | "privacy";
 
@@ -75,7 +76,7 @@ export default function Login() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [legalView, setLegalView] = useState<LegalView | null>(null);
   const navigate = useNavigate();
-  const { user, isLoading: isAuthLoading, hasCompletedOnboarding, isSubscribed } = useAuth();
+  const { user, isGuest, isLoading: isAuthLoading, hasCompletedOnboarding, loginAsGuest } = useAuth();
   const shouldTopAlign = isShortPhone || isKeyboardOpen;
   const authTitle = mode === "login" ? "Sign in" : "Create account";
   const authSubtitle = mode === "login"
@@ -85,15 +86,11 @@ export default function Login() {
   useEffect(() => {
     if (isAuthLoading) return;
 
-    if (user) {
-      const destination = !hasCompletedOnboarding
-        ? "/onboarding"
-        : !isSubscribed
-          ? "/paywall"
-          : "/";
+    if (user || isGuest) {
+      const destination = !hasCompletedOnboarding ? "/onboarding" : "/";
       navigate(destination, { replace: true });
     }
-  }, [hasCompletedOnboarding, isAuthLoading, isSubscribed, navigate, user]);
+  }, [hasCompletedOnboarding, isAuthLoading, isGuest, navigate, user]);
 
   useEffect(() => {
     if (!legalView) return;
@@ -183,6 +180,14 @@ export default function Login() {
     }
   };
 
+  const handleGuestAccess = () => {
+    if (isLoading || isAuthLoading) return;
+    setError(null);
+    const guestCompletedOnboarding = storageGet("onboardingComplete_guest") === "true";
+    loginAsGuest();
+    navigate(guestCompletedOnboarding ? "/" : "/onboarding", { replace: true });
+  };
+
   return (
     <div
       className="app-screen-scroll w-full relative flex flex-col"
@@ -234,7 +239,7 @@ export default function Login() {
           >
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 app-accent" />
             <p className="app-muted leading-relaxed">
-              Sign in securely with Google or email.
+              Sign in securely with Google or email, or continue as a guest with local-only progress.
             </p>
           </div>
 
@@ -266,6 +271,16 @@ export default function Login() {
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
           </svg>
           <span className="font-semibold">Continue with Google</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleGuestAccess}
+          disabled={isLoading || isAuthLoading}
+          className="touch-target app-secondary-button flex w-full items-center justify-center gap-3 rounded-card px-4 py-4 transition-all disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-[0.98]"
+        >
+          <ShieldCheck className="h-5 w-5" />
+          <span className="font-semibold">Continue as Guest</span>
         </button>
 
         <div className="relative flex items-center">

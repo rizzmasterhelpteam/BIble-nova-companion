@@ -203,7 +203,7 @@ export default function Onboarding() {
   const handleGetStarted = () => {
     storageRemove(STORAGE_KEY);
     completeOnboarding();
-    window.requestAnimationFrame(() => navigate("/paywall", { replace: true }));
+    window.requestAnimationFrame(() => navigate("/", { replace: true }));
   };
 
   if (showAnalysis) {
