@@ -27,8 +27,8 @@ app.get("/api/status", (_req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   try {
-    const { messages } = req.body;
-    const message = await createChatCompletion(messages);
+    const { messages, shadowNotes } = req.body;
+    const message = await createChatCompletion(messages, shadowNotes);
     res.json({ message });
   } catch (error: any) {
     console.error("LLM API Error:", error);

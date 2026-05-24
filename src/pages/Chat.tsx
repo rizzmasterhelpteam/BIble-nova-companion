@@ -100,7 +100,7 @@ export default function Chat() {
   useDocumentTitle("Bible Nova Companion");
   const location = useLocation();
   const navigate = useNavigate();
-  const { identityKey, isGuest } = useAuth();
+  const { identityKey, isGuest, shadowNotes } = useAuth();
   const { isCompactPhone, isKeyboardOpen, isShortPhone, width } = useMobileViewport();
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
@@ -324,6 +324,7 @@ export default function Chat() {
             role: message.role,
             content: message.content,
           })),
+          shadowNotes,
         }),
         signal: controller.signal,
       });
@@ -369,7 +370,7 @@ export default function Chat() {
         textareaRef.current?.focus();
       }
     }
-  }, [apiStatus?.chatReady, appendAiMessage, isRecording, isTyping]);
+  }, [apiStatus?.chatReady, appendAiMessage, isRecording, isTyping, shadowNotes]);
 
   useEffect(() => {
     if (!hasLoadedMessages) {

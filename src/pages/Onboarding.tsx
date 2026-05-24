@@ -138,7 +138,7 @@ export default function Onboarding() {
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [isAdvancing, setIsAdvancing] = useState(false);
   const stepTimerRef = useRef<number | null>(null);
-  const { completeOnboarding } = useAuth();
+  const { completeOnboarding, updateShadowNotes } = useAuth();
   const navigate = useNavigate();
 
   const clearStepTimer = () => {
@@ -203,6 +203,8 @@ export default function Onboarding() {
   const handleGetStarted = () => {
     storageRemove(STORAGE_KEY);
     completeOnboarding();
+    const analysis = getAnalysisSummary(answers);
+    void updateShadowNotes(analysis.overview);
     window.requestAnimationFrame(() => navigate("/", { replace: true }));
   };
 

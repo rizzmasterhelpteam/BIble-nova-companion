@@ -24,6 +24,8 @@ type AuthContextType = {
   updateProfileAvatarUrl: (avatarUrl: string | null) => Promise<void>;
   completeOnboarding: () => void;
   subscribe: (source: SubscriptionSource) => void;
+  shadowNotes: string | null;
+  updateShadowNotes: (notes: string) => Promise<void>;
 };
 
 type SubscriptionSource =
@@ -63,6 +65,8 @@ const AuthContext = createContext<AuthContextType>({
   updateProfileAvatarUrl: async () => {},
   completeOnboarding: () => {},
   subscribe: () => {},
+  shadowNotes: null,
+  updateShadowNotes: async () => {},
 });
 
 const AVATAR_NONE = "__none__";
@@ -77,6 +81,7 @@ const clearLocalIdentityData = (id: string) => {
   storageRemove(`isSubscribed_${id}`);
   storageRemove(`subscriptionSource_${id}`);
   storageRemove("bible_nova_companion_onboarding_answers");
+  storageRemove(`bible-nova-companion-shadow-notes-${id}`);
 };
 
 const getUserDisplayName = (currentUser: User | null) => {
@@ -106,6 +111,14 @@ const getStoredProfileAvatarUrl = (id: string, currentUser: User | null) => {
   const stored = storageGet(`bible-nova-companion-profile-avatar-${id}`);
   if (stored === AVATAR_NONE) return null;
   return stored || getUserAvatarUrl(currentUser);
+};
+
+const getStoredShadowNotes = (id: string, currentUser: User | null, guest: boolean) => {
+  if (guest) {
+    return storageGet(`bible-nova-companion-shadow-notes-${id}`) || null;
+  }
+  const metadata = currentUser?.user_metadata || {};
+  return metadata.shadow_notes || null;
 };
 
 const getActiveIdentityId = (userId: string | null, guest = false) => (guest ? GUEST_ID : userId);
@@ -178,6 +191,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [shadowNotes, setShadowNotes] = useState<string | null>(null);
 
   useEffect(() => {
     let isDisposed = false;
@@ -202,6 +216,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (!isDisposed) {
         setProfileName(activeId ? getStoredProfileName(activeId, currentUser, guest) : null);
         setProfileAvatarUrl(activeId ? getStoredProfileAvatarUrl(activeId, currentUser) : null);
+      }
+    };
+
+    const syncShadowNotes = (id: string | null, currentUser: User | null, guest: boolean) => {
+      const activeId = getActiveIdentityId(id, guest);
+      if (!isDisposed) {
+        setShadowNotes(activeId ? getStoredShadowNotes(activeId, currentUser, guest) : null);
       }
     };
 
@@ -280,6 +301,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIdentityKey(GUEST_ID);
       syncOnboardingState(null, true);
       syncProfileName(GUEST_ID, null, true);
+      syncShadowNotes(GUEST_ID, null, true);
       await syncSubscriptionState(null, GUEST_ID);
     };
 
@@ -291,6 +313,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIdentityKey(null);
       syncOnboardingState(null);
       syncProfileName(null, null, false);
+      syncShadowNotes(null, null, false);
       await syncSubscriptionState(null, null);
     };
 
@@ -330,6 +353,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           storageRemove("is_guest");
           syncOnboardingState(currentUser.id);
           syncProfileName(currentUser.id, currentUser, false);
+          syncShadowNotes(currentUser.id, currentUser, false);
           await syncSubscriptionState(currentUser, null);
         } else if (hasPersistedGuestSession()) {
           await activateGuestSession();
@@ -365,6 +389,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           storageRemove("is_guest");
           syncOnboardingState(currentUser.id);
           syncProfileName(currentUser.id, currentUser, false);
+          syncShadowNotes(currentUser.id, currentUser, false);
           await syncSubscriptionState(currentUser, null);
         } else if (hasPersistedGuestSession()) {
           await activateGuestSession();
@@ -430,6 +455,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setProfileAvatarUrl(getStoredProfileAvatarUrl(GUEST_ID, null));
     setHasCompletedOnboarding(storageGet(`onboardingComplete_${GUEST_ID}`) === "true");
     setIsSubscribed(storageGet(`isSubscribed_${GUEST_ID}`) === "true");
+    setShadowNotes(getStoredShadowNotes(GUEST_ID, null, true));
   }, []);
 
   const logout = useCallback(async () => {
@@ -440,6 +466,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setProfileAvatarUrl(null);
     setHasCompletedOnboarding(false);
     setIsSubscribed(false);
+    setShadowNotes(null);
     if (isSupabaseConfigured) {
       await supabase.auth.signOut();
     }
@@ -484,6 +511,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setProfileAvatarUrl(null);
     setHasCompletedOnboarding(false);
     setIsSubscribed(false);
+    setShadowNotes(null);
 
     if (isSupabaseConfigured) {
       await supabase.auth.signOut().catch(() => undefined);
@@ -554,6 +582,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [isGuest, user]);
 
+  const updateShadowNotes = useCallback(async (notes: string) => {
+    const id = user?.id || (isGuest ? "guest" : null);
+
+    if (!id) {
+      throw new Error("No active profile to update.");
+    }
+
+    if (user && isSupabaseConfigured) {
+      const { error } = await supabase.auth.updateUser({
+        data: { shadow_notes: notes },
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+    } else if (isGuest) {
+      storageSet(`bible-nova-companion-shadow-notes-${id}`, notes);
+    }
+
+    setShadowNotes(notes);
+  }, [isGuest, user]);
+
   const value = useMemo(
     () => ({
       user,
@@ -572,6 +622,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       updateProfileAvatarUrl,
       completeOnboarding,
       subscribe,
+      shadowNotes,
+      updateShadowNotes,
     }),
     [
       completeOnboarding,
@@ -590,6 +642,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       updateProfileAvatarUrl,
       updateProfileName,
       user,
+      shadowNotes,
+      updateShadowNotes,
     ],
   );
 
