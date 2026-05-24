@@ -34,14 +34,10 @@ import { nativeStorage } from "../lib/native/storage";
 import { cn } from "../lib/utils";
 import {
   cancelDailyReflectionReminder,
-  registerForPushNotifications,
   scheduleDailyReflectionReminder,
-  unregisterFromPushNotifications,
 } from "../lib/native/notifications";
 
 const DAILY_REMINDER_STORAGE_KEY = "bible-nova-companion-daily-reminders";
-const PUSH_STORAGE_KEY = "bible-nova-companion-push-enabled";
-const PUSH_TOKEN_STORAGE_KEY = "bible-nova-companion-push-token";
 
 const makeAvatarDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -111,7 +107,6 @@ export default function Layout() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [dailyRemindersEnabled, setDailyRemindersEnabled] = useState(false);
-  const [pushEnabled, setPushEnabled] = useState(false);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const prefersReducedMotion = useReducedMotion();
   const displayName = profileName || (isGuest ? "Guest" : user?.email?.split("@")[0] ?? "Unknown");
@@ -129,10 +124,6 @@ export default function Layout() {
       .then((value) => setDailyRemindersEnabled(value === "true"))
       .catch(() => undefined);
 
-    void nativeStorage
-      .get(PUSH_STORAGE_KEY)
-      .then((value) => setPushEnabled(value === "true"))
-      .catch(() => undefined);
   }, [nativeControlsAvailable]);
 
   const handleDailyReminderToggle = async () => {
@@ -154,27 +145,6 @@ export default function Layout() {
     }
   };
 
-  const handlePushToggle = async () => {
-    setNotificationError(null);
-    const next = !pushEnabled;
-
-    try {
-      if (next) {
-        const registered = await registerForPushNotifications((token) => {
-          void nativeStorage.set(PUSH_TOKEN_STORAGE_KEY, token);
-        });
-        if (!registered) throw new Error("Push notification permission was not granted.");
-      } else {
-        await unregisterFromPushNotifications();
-        await nativeStorage.remove(PUSH_TOKEN_STORAGE_KEY);
-      }
-
-      setPushEnabled(next);
-      await nativeStorage.set(PUSH_STORAGE_KEY, String(next));
-    } catch (error) {
-      setNotificationError(error instanceof Error ? error.message : "Could not update push notifications.");
-    }
-  };
 
   const handleSignOut = async () => {
     setSettingsOpen(false);
@@ -348,7 +318,7 @@ export default function Layout() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
                 onClick={() => setSettingsOpen(false)}
-                className="app-overlay fixed inset-0 z-[60] backdrop-blur-sm"
+                className="app-overlay app-settings-overlay fixed inset-0 z-[60] backdrop-blur-sm"
               />
 
               <motion.div
@@ -356,7 +326,7 @@ export default function Layout() {
                 animate={{ y: 0 }}
                 exit={{ y: "100%" }}
                 transition={isAndroidApp ? { duration: 0.18, ease: "easeOut" } : { type: "spring", stiffness: 380, damping: 40 }}
-                className="app-panel-strong fixed inset-x-0 bottom-0 z-[70] mx-auto max-h-[92dvh] w-full overflow-y-auto rounded-t-[2rem] border-t scrollbar-hide sm:max-w-lg sm:px-0 xl:max-w-xl"
+                className="app-panel-strong app-settings-sheet fixed inset-x-0 bottom-0 z-[70] mx-auto max-h-[92dvh] w-full overflow-y-auto rounded-t-[2rem] border-t scrollbar-hide sm:max-w-lg sm:px-0 xl:max-w-xl"
                 style={{
                   bottom: "var(--app-bottom-offset)",
                   borderColor: "var(--app-card-border)",
@@ -502,36 +472,7 @@ export default function Layout() {
                           </span>
                         </button>
 
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={pushEnabled}
-                          onClick={handlePushToggle}
-                          className="flex w-full items-center justify-between rounded-[1.4rem] border px-4 py-3.5 text-left transition-colors hover:bg-[color:var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-                          style={{
-                            background: "var(--app-card-soft)",
-                            borderColor: "var(--app-card-border)",
-                          }}
-                        >
-                          <span className="flex items-center gap-3">
-                            <span className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)", color: "var(--app-accent)" }}>
-                              {pushEnabled ? <BellRing className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
-                            </span>
-                            <span>
-                              <span className="app-heading block text-[14px] font-medium">Push notifications</span>
-                              <span className="app-muted block text-[11px]">Registers this device for server-sent updates.</span>
-                            </span>
-                          </span>
-                          <span
-                            className="relative h-6 w-11 rounded-full border transition-colors"
-                            style={{
-                              background: pushEnabled ? "var(--app-accent)" : "var(--app-secondary-bg)",
-                              borderColor: pushEnabled ? "var(--app-accent)" : "var(--app-secondary-border)",
-                            }}
-                          >
-                            <span className="absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white transition-transform" style={{ left: pushEnabled ? "1.45rem" : "0.2rem" }} />
-                          </span>
-                        </button>
+
 
                         {notificationError && (
                           <p role="alert" className="rounded-xl px-3 py-2 text-[12px] leading-relaxed text-[color:var(--app-danger)]" style={{ background: "var(--app-danger-soft)" }}>
