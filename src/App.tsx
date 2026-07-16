@@ -144,7 +144,18 @@ export default function App() {
     const root = document.documentElement;
     const isAndroid = isNativePlatform() && getNativePlatform() === "android";
     root.classList.toggle("native-android", isAndroid);
-    return () => root.classList.remove("native-android");
+    const mediaQuery = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    const updatePerformanceMode = () => {
+      root.classList.toggle("app-performance-mode", isAndroid || Boolean(mediaQuery?.matches));
+    };
+
+    updatePerformanceMode();
+    mediaQuery?.addEventListener("change", updatePerformanceMode);
+
+    return () => {
+      mediaQuery?.removeEventListener("change", updatePerformanceMode);
+      root.classList.remove("native-android", "app-performance-mode");
+    };
   }, []);
 
   useEffect(() => {

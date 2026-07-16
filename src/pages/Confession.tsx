@@ -17,6 +17,7 @@ export default function Confession() {
   const timeoutsRef = useRef<number[]>([]);
   const prefersReducedMotion = useReducedMotion();
   const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
+  const isPerformanceMode = Boolean(prefersReducedMotion || isAndroidApp);
 
   const addTimeout = (fn: () => void, ms: number) => {
     const id = window.setTimeout(fn, ms);
@@ -88,17 +89,17 @@ export default function Confession() {
         {!isDone ? (
           <motion.div
             key="confession-box"
-            initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.95 }}
+            initial={isPerformanceMode ? false : { opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9, filter: "blur(10px)" }}
-            transition={{ duration: prefersReducedMotion ? 0.15 : 0.5 }}
+            exit={isPerformanceMode ? { opacity: 0 } : { opacity: 0, scale: 0.9, filter: "blur(10px)" }}
+            transition={{ duration: isPerformanceMode ? 0.15 : 0.5 }}
             className={cn("relative flex flex-1 flex-col", isCrampedPhone ? "gap-4" : "gap-6")}
           >
             <motion.div
               className="app-panel group relative w-full overflow-hidden rounded-[2rem] border shadow-2xl transition-colors"
               style={{ height: panelHeight, minHeight: isCrampedPhone ? "10.5rem" : isShortPhone ? "13rem" : "15rem" }}
               animate={
-                isReleasing && !prefersReducedMotion && !isAndroidApp
+                isReleasing && !isPerformanceMode
                   ? {
                       scale: [1, 0.98, 0.95, 0.85],
                       rotate: [0, -0.5, 0.5, -1],
@@ -112,7 +113,7 @@ export default function Confession() {
                     }
                   : isReleasing
                     ? { opacity: [1, 0] }
-                    : hasContent
+                    : hasContent && !isPerformanceMode
                       ? {
                           boxShadow: [
                             "0 0 0px 0px rgba(245,158,11,0)",
@@ -125,8 +126,8 @@ export default function Confession() {
               }
               transition={
                 isReleasing
-                  ? { duration: prefersReducedMotion || isAndroidApp ? 0.45 : 8, ease: "easeIn" }
-                  : { duration: 2.5, repeat: Infinity, ease: "easeInOut" }
+                  ? { duration: isPerformanceMode ? 0.45 : 8, ease: "easeIn" }
+                  : { duration: isPerformanceMode ? 0 : 2.5, repeat: isPerformanceMode ? 0 : Infinity, ease: "easeInOut" }
               }
             >
               <textarea

@@ -19,6 +19,7 @@ import { useMobileViewport } from "../context/MobileViewportContext";
 import { apiFetch } from "../lib/apiClient";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { storageGetJson, storageSet } from "../lib/webStorage";
+import { getChatScrollBehavior } from "../lib/mobileLayout";
 import {
   createSpeechRecognitionSession,
   type SpeechRecognitionSession,
@@ -122,6 +123,7 @@ export default function Chat() {
   const handledRouteActionRef = useRef<string | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
   const storageWriteTimerRef = useRef<number | null>(null);
+  const lastScrolledMessageCountRef = useRef(0);
   const showQuickPrompts = messages.length === 1 && !isTyping;
   const chatUnavailable = apiStatus?.chatReady === false;
   const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
@@ -424,7 +426,9 @@ export default function Chat() {
     if (!container) return;
 
     const frame = window.requestAnimationFrame(() => {
-      const behavior: ScrollBehavior = isKeyboardOpen ? "auto" : "smooth";
+      const messageCountChanged = lastScrolledMessageCountRef.current !== messages.length;
+      const behavior = getChatScrollBehavior(isKeyboardOpen, messageCountChanged);
+      lastScrolledMessageCountRef.current = messages.length;
       if (showQuickPrompts && !isKeyboardOpen) {
         container.scrollTo({ top: 0, behavior });
         return;
@@ -434,7 +438,7 @@ export default function Chat() {
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [isKeyboardOpen, messages, isTyping, showQuickPrompts]);
+  }, [isKeyboardOpen, messages.length, isTyping, showQuickPrompts]);
 
   useEffect(() => {
     if (!shouldAutoFocusInput) return;

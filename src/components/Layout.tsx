@@ -32,6 +32,7 @@ import { useMobileViewport } from "../context/MobileViewportContext";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
 import { cn } from "../lib/utils";
+import { shouldHideBottomNavigation } from "../lib/mobileLayout";
 import {
   cancelDailyReflectionReminder,
   scheduleDailyReflectionReminder,
@@ -118,6 +119,7 @@ export default function Layout() {
   const isAccountBusy = isDeletingAccount || isSavingProfile || isProcessingAvatar;
   const nativeControlsAvailable = isNativePlatform();
   const isAndroidApp = nativeControlsAvailable && getNativePlatform() === "android";
+  const hideBottomNavigation = shouldHideBottomNavigation(isKeyboardOpen);
   const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "1.1.4";
 
   useEffect(() => {
@@ -348,7 +350,7 @@ export default function Layout() {
         </button>
 
         <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={location.pathname}
               initial={prefersReducedMotion || isAndroidApp ? false : { opacity: 0, y: 8 }}
@@ -365,12 +367,14 @@ export default function Layout() {
         <nav
           className={cn(
             "z-50 overflow-hidden px-4 transition-all duration-200 sm:px-6",
-            isKeyboardOpen
+            hideBottomNavigation
               ? "max-h-0 pb-0 pt-0 opacity-0"
               : isShortPhone
                 ? "max-h-24 pb-safe-tight pt-1 opacity-100"
                 : "max-h-28 pb-safe pt-2 opacity-100",
           )}
+          aria-hidden={hideBottomNavigation}
+          style={{ pointerEvents: hideBottomNavigation ? "none" : undefined }}
         >
           <div className="app-nav-shell flex w-full max-w-xl items-center justify-between gap-1 rounded-shell p-1">
             <NavItem to="/" icon={<Home strokeWidth={1.6} className="h-5 w-5" />} label="Home" />
@@ -403,6 +407,8 @@ export default function Layout() {
                   borderColor: "var(--app-card-border)",
                   maxHeight:
                     "calc(var(--app-visible-height) - max(env(safe-area-inset-top, 0px), 0.75rem))",
+                  overscrollBehaviorY: "contain",
+                  WebkitOverflowScrolling: "touch",
                 }}
               >
                 <div className="flex justify-center pb-1 pt-3">

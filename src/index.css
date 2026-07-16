@@ -972,6 +972,42 @@
     }
   }
 
+  .app-performance-mode .app-card-shimmer::after,
+  .app-performance-mode .app-status-dot::after,
+  .app-performance-mode .app-progress-glow::after,
+  .app-performance-mode .app-typing-dot,
+  .app-performance-mode .app-float,
+  .app-performance-mode .ash-particle,
+  .app-performance-mode .flame-particle {
+    animation: none !important;
+  }
+
+  .app-performance-mode .app-orb,
+  .app-performance-mode .app-grid {
+    display: none !important;
+    filter: none !important;
+  }
+
+  .app-performance-mode .backdrop-blur-sm,
+  .app-performance-mode .backdrop-blur-md,
+  .app-performance-mode .backdrop-blur-xl,
+  .app-performance-mode .backdrop-blur-2xl,
+  .app-performance-mode .backdrop-blur-\[2px\] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .app-settings-sheet {
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+  }
+
+  @media (max-width: 640px), (pointer: coarse) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
   @media (max-width: 380px) {
     .app-orb {
       filter: blur(96px);
