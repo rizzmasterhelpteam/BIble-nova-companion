@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Bible Nova could not start</title>
+    <style>
+      :root { color-scheme: dark; background: #050b14; }
+      * { box-sizing: border-box; }
+      body {
+        min-height: 100vh;
+        min-height: 100dvh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: #050b14;
+        color: #ebf2ff;
+        font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+        text-align: center;
+      }
+      main {
+        width: min(100%, 360px);
+        padding: 28px 22px;
+        border: 1px solid rgba(111, 214, 255, .18);
+        border-radius: 24px;
+        background: rgba(8, 14, 24, .92);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, .35);
+      }
+      h1 { margin: 0 0 10px; font-size: 24px; }
+      p { margin: 0 0 22px; color: #96a7c6; }
+      button {
+        min-height: 44px;
+        padding: 10px 22px;
+        border: 0;
+        border-radius: 999px;
+        background: #1b9ed8;
+        color: #f5fbff;
+        font: inherit;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main role="alert">
+      <h1>Bible Nova could not start.</h1>
+      <p>The app bundle could not be loaded. Retry to start again.</p>
+      <button type="button" onclick="window.location.reload()">Retry</button>
+    </main>
+  </body>
+</html>

@@ -75,7 +75,7 @@ export default function Login() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [legalView, setLegalView] = useState<LegalView | null>(null);
   const navigate = useNavigate();
-  const { user, isGuest, isLoading: isAuthLoading, hasCompletedOnboarding } = useAuth();
+  const { user, isLoading: isAuthLoading, hasCompletedOnboarding } = useAuth();
   const shouldTopAlign = isShortPhone || isKeyboardOpen;
   const authTitle = mode === "login" ? "Sign in" : "Create account";
   const authSubtitle = mode === "login"
@@ -85,11 +85,11 @@ export default function Login() {
   useEffect(() => {
     if (isAuthLoading) return;
 
-    if (user || isGuest) {
+    if (user) {
       const destination = !hasCompletedOnboarding ? "/onboarding" : "/";
       navigate(destination, { replace: true });
     }
-  }, [hasCompletedOnboarding, isAuthLoading, isGuest, navigate, user]);
+  }, [hasCompletedOnboarding, isAuthLoading, navigate, user]);
 
   useEffect(() => {
     if (!legalView) return;

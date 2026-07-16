@@ -91,7 +91,6 @@ export default function Layout() {
   const { isCompactPhone, isKeyboardOpen, isShortPhone } = useMobileViewport();
   const {
     user,
-    isGuest,
     profileName,
     profileAvatarUrl,
     logout,
@@ -114,7 +113,7 @@ export default function Layout() {
   const [reminderDays, setReminderDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const prefersReducedMotion = useReducedMotion();
-  const displayName = profileName || (isGuest ? "Guest" : user?.email?.split("@")[0] ?? "Unknown");
+  const displayName = profileName || user?.email?.split("@")[0] || "Unknown";
   const accountInitial = displayName.trim().charAt(0).toUpperCase() || "?";
   const isAccountBusy = isDeletingAccount || isSavingProfile || isProcessingAvatar;
   const nativeControlsAvailable = isNativePlatform();
@@ -654,7 +653,7 @@ export default function Layout() {
                             {displayName}
                           </p>
                           <p className="text-[11px] app-muted">
-                            {isGuest ? "Guest mode with local progress" : user?.email ?? "Signed in and synced"}
+                            {user?.email ?? "Signed in and synced"}
                           </p>
                         </div>
                         <button
@@ -779,7 +778,7 @@ export default function Layout() {
                               <Trash2 className="h-4 w-4" />
                               <div>
                                 <span className="block text-[14px] font-medium">
-                                  {isGuest ? "Delete Guest Data" : "Delete Account"}
+                                  Delete Account
                                 </span>
                                 <span className="app-muted block text-[11px]">
                                   Remove this profile and saved reflections.
@@ -794,7 +793,7 @@ export default function Layout() {
                               <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-[color:var(--app-danger)]" />
                               <div>
                                 <p className="text-[14px] font-semibold text-[color:var(--app-danger)]">
-                                  Delete {isGuest ? "guest data" : "account"}?
+                                  Delete account?
                                 </p>
                                 <p className="app-muted mt-1 text-[12px] leading-relaxed">
                                   This removes local chats, intentions, onboarding progress, and subscription state. Signed-in account deletion also requires server support.

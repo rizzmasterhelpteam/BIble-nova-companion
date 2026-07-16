@@ -14,6 +14,8 @@ import { AnimatePresence } from "motion/react";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { getNativePlatform, isNativePlatform } from "./lib/native/platform";
+import { initializeNativeApp } from "./lib/native/app";
+import { startup } from "./lib/startup";
 
 const Layout = lazy(() => import("./components/Layout"));
 const Chat = lazy(() => import("./pages/Chat"));
@@ -68,9 +70,9 @@ const ConnectivityNotice = () => {
 };
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
-  const { user, isGuest, isLoading, hasCompletedOnboarding } = useAuth();
+  const { user, isLoading, hasCompletedOnboarding } = useAuth();
   const location = useLocation();
-  const hasActiveIdentity = Boolean(user || isGuest);
+  const hasActiveIdentity = Boolean(user);
   
   if (isLoading) {
     return <FullScreenLoader />;
@@ -131,6 +133,12 @@ export default function App() {
   const Router = isNativePlatform() ? HashRouter : BrowserRouter;
 
   useEffect(() => {
+    startup.mark("app-mounted");
+    void initializeNativeApp().catch((error) => {
+      console.warn("Native initialization did not complete:", error);
+      startup.mark("native-initialization-failed");
+    });
+
     const root = document.documentElement;
     const isAndroid = isNativePlatform() && getNativePlatform() === "android";
     root.classList.toggle("native-android", isAndroid);
@@ -167,9 +175,10 @@ export default function App() {
     let frameTwo = 0;
 
     frameOne = window.requestAnimationFrame(() => {
-      frameTwo = window.requestAnimationFrame(() => {
-        setHasRenderedAppFrame(true);
-      });
+        frameTwo = window.requestAnimationFrame(() => {
+          setHasRenderedAppFrame(true);
+          startup.mark("first-frame-painted");
+        });
     });
 
     return () => {
@@ -180,7 +189,9 @@ export default function App() {
 
   useEffect(() => {
     if (!hasRenderedAppFrame || showSplash) return;
-    void hideNativeSplashScreen();
+    void hideNativeSplashScreen().then(() => {
+      startup.mark("native-splash-hidden");
+    });
   }, [hasRenderedAppFrame, showSplash]);
 
   return (

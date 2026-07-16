@@ -101,7 +101,7 @@ export default function Chat() {
   useDocumentTitle("Bible Nova Companion");
   const location = useLocation();
   const navigate = useNavigate();
-  const { identityKey, isGuest, shadowNotes } = useAuth();
+  const { identityKey, shadowNotes } = useAuth();
   const { isCompactPhone, isKeyboardOpen, isShortPhone, width } = useMobileViewport();
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
@@ -592,9 +592,7 @@ export default function Chat() {
                 </p>
               </div>
               <p className={cn("app-muted max-w-[96%] text-[14px] leading-relaxed", isShortPhone ? "mb-3" : "mb-5")}>
-                {isGuest
-                  ? "Your guidance stays on this device while you explore in guest mode."
-                  : "Pick a prompt to start, or write your own reflection below."}
+                Pick a prompt to start, or write your own reflection below.
               </p>
               <div className="flex flex-col gap-2">
                 {QUICK_PROMPTS.map((prompt, i) => (

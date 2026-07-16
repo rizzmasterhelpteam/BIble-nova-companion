@@ -26,13 +26,13 @@ Set these in Vercel for the environments you deploy to:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 - `GROQ_API_KEY`
-- `GROQ_MODEL` optional, defaults to `meta-llama/llama-4-scout-17b-16e-instruct`
+- `GROQ_MODEL` required for production; use a currently supported provider model and do not rely on a deprecated fallback
 - `SUPABASE_SERVICE_ROLE_KEY` required server-only for account deletion, persistent rate limits, and subscription entitlements
 - `RATE_LIMIT_IP_SALT` required server-only random value used to hash IP-based rate-limit keys
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` required server-only JSON credentials for verified Android subscriptions
 - `GEMINI_API_KEY` only needed for `/api/generate`
 - `VITE_API_BASE_URL` required in native mobile builds, set to your Vercel site URL
-- `CAPACITOR_SERVER_URL` controls the web app loaded by the native wrapper; it defaults to `https://biblecompanion.vercel.app`
+- Release Capacitor builds load bundled `dist` assets. Set `CAPACITOR_LIVE_RELOAD=true` and `CAPACITOR_SERVER_URL` only for local live reload; never enable it for a release build.
 - `VITE_GOOGLE_PLAY_PUBLIC_KEY` optional Google Play monetization RSA public key for Android billing or verification integrations
 - `VITE_IAP_MONTHLY_PRODUCT_ID` and `VITE_IAP_YEARLY_PRODUCT_ID` required for native subscription IAP
 - `VITE_IAP_MONTHLY_BASE_PLAN_ID` and `VITE_IAP_YEARLY_BASE_PLAN_ID` required for Android subscription IAP (Google Play base plans)
@@ -44,7 +44,7 @@ Keep `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` server-only as well; the native subscrip
 
 Apply `supabase/migrations/20260716123000_production_hardening.sql` and any later migrations to the production Supabase project before enabling the hardened API routes. It creates private persistent rate-limit buckets, the service-role-only `subscription_entitlements` table, and the restricted RPCs used by the server.
 
-In Supabase Auth, enable Anonymous Sign-Ins and review policies for the `authenticated` role because anonymous users receive that role. Anonymous sign-in should also be protected with the project’s CAPTCHA/abuse controls in production.
+In Supabase Auth, keep Anonymous Sign-Ins disabled. The app requires a permanent signed-in account.
 
 ## Mobile Builds
 
@@ -55,7 +55,7 @@ This app is configured with Capacitor for Android and iOS.
 - Open Xcode: `npm run ios:open` (requires macOS)
 
 For mobile builds, set `VITE_API_BASE_URL` to the deployed Vercel URL so native requests call `/api/*` on Vercel instead of the local WebView origin.
-The native wrapper loads `CAPACITOR_SERVER_URL` directly, so web UI deployments at that URL appear in installed apps without rebuilding the native shell. This requires an internet connection and the URL must remain stable.
+The native wrapper uses bundled web assets in release builds, so UI changes require rebuilding the APK/IPA. API requests still use the deployed Vercel URL via `VITE_API_BASE_URL`, and the app shows a recoverable error page if bundled assets fail to load.
 For native Google sign-in on mobile:
 
 - Set `VITE_GOOGLE_WEB_CLIENT_ID` for Android.

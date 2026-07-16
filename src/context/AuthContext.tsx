@@ -1,23 +1,22 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { App as CapacitorApp } from "@capacitor/app";
-import { User, Session } from "@supabase/supabase-js";
+import { Session, User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { hasActiveSubscription } from "../lib/native/purchases";
 import { apiFetch } from "../lib/apiClient";
 import { isNativePlatform } from "../lib/native/platform";
 import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
+import { startup } from "../lib/startup";
 
 type AuthContextType = {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
-  isGuest: boolean;
   identityKey: string | null;
   profileName: string | null;
   profileAvatarUrl: string | null;
   hasCompletedOnboarding: boolean;
   isSubscribed: boolean;
-  loginAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   updateProfileName: (name: string) => Promise<void>;
@@ -28,13 +27,11 @@ type AuthContextType = {
   updateShadowNotes: (notes: string) => Promise<void>;
 };
 
-type SubscriptionSource =
-  | "native_google_play"
-  | "native_app_store";
+type SubscriptionSource = "native_google_play" | "native_app_store";
 
 const isNativeSubscriptionSource = (
   source: SubscriptionSource | null,
-): source is "native_google_play" | "native_app_store" =>
+): source is SubscriptionSource =>
   source === "native_google_play" || source === "native_app_store";
 
 type UserSubscriptionMetadata = {
@@ -52,13 +49,11 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   isLoading: true,
-  isGuest: false,
   identityKey: null,
   profileName: null,
   profileAvatarUrl: null,
   hasCompletedOnboarding: false,
   isSubscribed: false,
-  loginAsGuest: async () => {},
   logout: async () => {},
   deleteAccount: async () => {},
   updateProfileName: async () => {},
@@ -70,7 +65,22 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 const AVATAR_NONE = "__none__";
-const GUEST_ID = "guest";
+
+const LEGACY_GUEST_STORAGE_KEYS = [
+  "is_guest",
+  "onboardingComplete_guest",
+  "isSubscribed_guest",
+  "subscriptionSource_guest",
+  "bible-nova-companion-chat-guest",
+  "bible-nova-companion-intentions-guest",
+  "bible-nova-companion-profile-name-guest",
+  "bible-nova-companion-profile-avatar-guest",
+  "bible-nova-companion-shadow-notes-guest",
+];
+
+const clearLegacyGuestState = () => {
+  LEGACY_GUEST_STORAGE_KEYS.forEach((key) => storageRemove(key));
+};
 
 const clearLocalIdentityData = (id: string) => {
   storageRemove(`bible-nova-companion-chat-${id}`);
@@ -96,10 +106,8 @@ const getUserDisplayName = (currentUser: User | null) => {
   );
 };
 
-const getStoredProfileName = (id: string, currentUser: User | null, guest: boolean) =>
-  storageGet(`bible-nova-companion-profile-name-${id}`) ||
-  getUserDisplayName(currentUser) ||
-  (guest ? "Guest" : null);
+const getStoredProfileName = (id: string, currentUser: User | null) =>
+  storageGet(`bible-nova-companion-profile-name-${id}`) || getUserDisplayName(currentUser);
 
 const getUserAvatarUrl = (currentUser: User | null) => {
   if (!currentUser) return null;
@@ -113,15 +121,10 @@ const getStoredProfileAvatarUrl = (id: string, currentUser: User | null) => {
   return stored || getUserAvatarUrl(currentUser);
 };
 
-const getStoredShadowNotes = (id: string, currentUser: User | null, guest: boolean) => {
-  if (guest) {
-    return storageGet(`bible-nova-companion-shadow-notes-${id}`) || null;
-  }
+const getStoredShadowNotes = (currentUser: User | null) => {
   const metadata = currentUser?.user_metadata || {};
   return metadata.shadow_notes || null;
 };
-
-const getActiveIdentityId = (userId: string | null, guest = false) => (guest ? GUEST_ID : userId);
 
 const setStoredSubscriptionState = (id: string, value: boolean) => {
   storageSet(`isSubscribed_${id}`, value ? "true" : "false");
@@ -166,26 +169,26 @@ const withStartupTimeout = <T,>(
       resolve(fallback);
     }, timeoutMs);
 
-    promise
-      .then((value) => {
+    promise.then(
+      (value) => {
         if (settled) return;
         settled = true;
         window.clearTimeout(timeoutId);
         resolve(value);
-      })
-      .catch((error) => {
+      },
+      (error) => {
         if (settled) return;
         settled = true;
         window.clearTimeout(timeoutId);
         reject(error);
-      });
+      },
+    );
   });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isGuest, setIsGuest] = useState(false);
   const [identityKey, setIdentityKey] = useState<string | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
@@ -195,37 +198,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     let isDisposed = false;
-    // Guest access is no longer offered. Clear the legacy marker so an old
-    // anonymous session can never block the authenticated app from starting.
-    const hasPersistedGuestSession = () => false;
-    storageRemove("is_guest");
+    let anonymousSignOutInFlight = false;
 
-    const syncOnboardingState = (userId: string | null, guest = false) => {
-      const id = getActiveIdentityId(userId, guest);
-      if (!id) {
-        if (!isDisposed) {
-          setHasCompletedOnboarding(false);
-        }
-        return;
-      }
+    clearLegacyGuestState();
+    const clearLegacyStateAfterRestore = () => clearLegacyGuestState();
+    window.addEventListener("bible-nova-storage-restored", clearLegacyStateAfterRestore);
 
+    const syncOnboardingState = (userId: string | null) => {
       if (!isDisposed) {
-        setHasCompletedOnboarding(storageGet(`onboardingComplete_${id}`) === "true");
+        setHasCompletedOnboarding(
+          userId ? storageGet(`onboardingComplete_${userId}`) === "true" : false,
+        );
       }
     };
 
-    const syncProfileName = (id: string | null, currentUser: User | null, guest: boolean) => {
-      const activeId = getActiveIdentityId(id, guest);
+    const syncProfileState = (currentUser: User | null) => {
+      const id = currentUser?.id || null;
       if (!isDisposed) {
-        setProfileName(activeId ? getStoredProfileName(activeId, currentUser, guest) : null);
-        setProfileAvatarUrl(activeId ? getStoredProfileAvatarUrl(activeId, currentUser) : null);
+        setProfileName(id ? getStoredProfileName(id, currentUser) : null);
+        setProfileAvatarUrl(id ? getStoredProfileAvatarUrl(id, currentUser) : null);
       }
     };
 
-    const syncShadowNotes = (id: string | null, currentUser: User | null, guest: boolean) => {
-      const activeId = getActiveIdentityId(id, guest);
+    const syncShadowNotes = (currentUser: User | null) => {
       if (!isDisposed) {
-        setShadowNotes(activeId ? getStoredShadowNotes(activeId, currentUser, guest) : null);
+        setShadowNotes(currentUser ? getStoredShadowNotes(currentUser) : null);
       }
     };
 
@@ -233,9 +230,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const fallbackUser = currentSession?.user || null;
       const accessToken = currentSession?.access_token;
 
-      if (!accessToken) {
-        return fallbackUser;
-      }
+      if (!accessToken) return fallbackUser;
 
       try {
         const {
@@ -259,171 +254,144 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const syncSubscriptionState = async (
-      currentUser: User | null,
-      fallbackIdentityId: string | null,
-      guest = false,
-    ) => {
-      const id = getActiveIdentityId(currentUser?.id || fallbackIdentityId, guest);
+    const syncSubscriptionState = async (currentUser: User | null) => {
+      const id = currentUser?.id || null;
       if (!id) {
-        if (!isDisposed) {
-          setIsSubscribed(false);
-        }
+        if (!isDisposed) setIsSubscribed(false);
         return;
       }
 
       const storedSubscription = storageGet(`isSubscribed_${id}`) === "true";
       const storedSubscriptionSource = getStoredSubscriptionSource(id);
       const serverSubscription = hasActiveServerSubscription(currentUser);
-      const shouldTrustStoredSubscription =
-        storedSubscription && !currentUser;
       let nativeSubscriptionActive = false;
 
-      if (!serverSubscription && storedSubscription && isNativeSubscriptionSource(storedSubscriptionSource) && isNativePlatform()) {
+      if (
+        !serverSubscription &&
+        storedSubscription &&
+        isNativeSubscriptionSource(storedSubscriptionSource) &&
+        isNativePlatform()
+      ) {
         try {
-          nativeSubscriptionActive = await hasActiveSubscription();
+          nativeSubscriptionActive = await withStartupTimeout(
+            hasActiveSubscription(),
+            false,
+            "Native subscription check",
+            2500,
+          );
         } catch (error) {
           console.warn("Could not verify native subscription state:", error);
         }
       }
 
-      const hasEntitlement =
-        serverSubscription ||
-        nativeSubscriptionActive ||
-        (shouldTrustStoredSubscription && storedSubscription);
-
+      const hasEntitlement = serverSubscription || nativeSubscriptionActive;
       if (isDisposed) return;
+
       setStoredSubscriptionState(id, hasEntitlement);
-      if (!hasEntitlement) {
-        clearStoredSubscriptionSource(id);
-      }
+      if (!hasEntitlement) clearStoredSubscriptionSource(id);
       setIsSubscribed(hasEntitlement);
-    };
-
-    const activateGuestSession = async () => {
-      if (isDisposed) return;
-
-      let guestSession: Session | null = null;
-      if (isSupabaseConfigured) {
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) throw sessionError;
-        if (sessionData.session?.user.is_anonymous) {
-          guestSession = sessionData.session;
-        } else {
-          const { data, error } = await supabase.auth.signInAnonymously();
-          if (error || !data.session) {
-            throw new Error("Guest mode is temporarily unavailable. Please try again shortly.");
-          }
-          guestSession = data.session;
-        }
-      }
-
-      const guestUser = guestSession?.user || null;
-      setSession(guestSession);
-      setUser(guestUser);
-      setIsGuest(true);
-      setIdentityKey(GUEST_ID);
-      storageSet("is_guest", "true");
-      syncOnboardingState(null, true);
-      syncProfileName(GUEST_ID, guestUser, true);
-      syncShadowNotes(GUEST_ID, guestUser, true);
-      await syncSubscriptionState(guestUser, GUEST_ID, true);
-    };
-
-    const applyAuthenticatedUser = async (currentUser: User) => {
-      const anonymous = Boolean(currentUser.is_anonymous);
-      setUser(currentUser);
-      setIsGuest(anonymous);
-      setIdentityKey(anonymous ? GUEST_ID : currentUser.id);
-      if (anonymous) {
-        storageSet("is_guest", "true");
-      } else {
-        storageRemove("is_guest");
-      }
-      syncOnboardingState(currentUser.id, anonymous);
-      syncProfileName(currentUser.id, currentUser, anonymous);
-      syncShadowNotes(currentUser.id, currentUser, anonymous);
-      await syncSubscriptionState(currentUser, anonymous ? GUEST_ID : null, anonymous);
     };
 
     const clearActiveSession = async () => {
       if (isDisposed) return;
       setSession(null);
       setUser(null);
-      setIsGuest(false);
       setIdentityKey(null);
       syncOnboardingState(null);
-      syncProfileName(null, null, false);
-      syncShadowNotes(null, null, false);
-      await syncSubscriptionState(null, null);
+      syncProfileState(null);
+      syncShadowNotes(null);
+      await syncSubscriptionState(null);
+    };
+
+    const rejectAnonymousSession = async () => {
+      if (!anonymousSignOutInFlight && isSupabaseConfigured) {
+        anonymousSignOutInFlight = true;
+        try {
+          await supabase.auth.signOut();
+        } catch (error) {
+          console.warn("Could not clear the anonymous session:", error);
+        } finally {
+          anonymousSignOutInFlight = false;
+        }
+      }
+
+      await clearActiveSession();
+    };
+
+    const applyAuthenticatedUser = async (currentUser: User) => {
+      if (currentUser.is_anonymous) {
+        await rejectAnonymousSession();
+        return;
+      }
+
+      setUser(currentUser);
+      setIdentityKey(currentUser.id);
+      syncOnboardingState(currentUser.id);
+      syncProfileState(currentUser);
+      syncShadowNotes(currentUser);
+      await syncSubscriptionState(currentUser);
+    };
+
+    const applySession = async (currentSession: Session | null) => {
+      if (isDisposed) return;
+
+      setSession(currentSession);
+      const currentUser = await resolveCurrentUser(currentSession);
+      if (isDisposed) return;
+
+      if (currentUser?.is_anonymous) {
+        await rejectAnonymousSession();
+      } else if (currentUser) {
+        await applyAuthenticatedUser(currentUser);
+      } else {
+        await clearActiveSession();
+      }
     };
 
     if (!isSupabaseConfigured) {
-      const restoreSession = hasPersistedGuestSession() ? activateGuestSession() : clearActiveSession();
-      void restoreSession.finally(() => {
-        if (!isDisposed) {
-          setIsLoading(false);
-        }
+      void clearActiveSession().finally(() => {
+        if (!isDisposed) setIsLoading(false);
       });
-      return;
+      return () => {
+        window.removeEventListener("bible-nova-storage-restored", clearLegacyStateAfterRestore);
+      };
     }
 
     const initializeAuth = async () => {
+      startup.mark("session-resolution-started");
       try {
         const {
-          data: { session },
+          data: { session: initialSession },
           error,
         } = await withStartupTimeout(
           supabase.auth.getSession(),
           { data: { session: null }, error: null },
           "Supabase session check",
         );
-        if (isDisposed) return;
 
-        if (error) {
-          console.warn("Supabase getSession error:", error.message);
-        }
-
-        setSession(session);
-        const currentUser = await resolveCurrentUser(session);
         if (isDisposed) return;
-        if (currentUser && !currentUser.is_anonymous) {
-          await applyAuthenticatedUser(currentUser);
-        } else {
-          await clearActiveSession();
-        }
-      } catch (err) {
-        if (!isDisposed) {
-          console.error("Failed to get session:", err);
-        }
+        if (error) console.warn("Supabase getSession error:", error.message);
+        await applySession(initialSession);
+      } catch (error) {
+        if (!isDisposed) console.error("Failed to get session:", error);
       } finally {
         if (!isDisposed) {
           setIsLoading(false);
+          startup.mark("session-resolution-completed");
         }
       }
     };
 
     void initializeAuth();
 
-    // Listen to auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      void (async () => {
-        setSession(session);
-        const currentUser = await resolveCurrentUser(session);
-        if (isDisposed) return;
-
-        if (currentUser && !currentUser.is_anonymous) {
-          await applyAuthenticatedUser(currentUser);
-        } else {
-          await clearActiveSession();
-        }
-
-        if (!isDisposed) {
-          setIsLoading(false);
-        }
-      })();
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      window.setTimeout(() => {
+        void applySession(nextSession).finally(() => {
+          if (!isDisposed) setIsLoading(false);
+        });
+      }, 0);
     });
 
     let removeAppStateListener: (() => void) | undefined;
@@ -431,20 +399,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
         if (!isActive) return;
 
-        if (!isSupabaseConfigured) {
-          void syncSubscriptionState(null, getActiveIdentityId(null, hasPersistedGuestSession()));
-          return;
-        }
-
         void supabase.auth
           .getSession()
-          .then(async ({ data: { session }, error }) => {
-            if (error) {
-              throw error;
+          .then(async ({ data: { session: activeSession }, error }) => {
+            if (error) throw error;
+            const currentUser = await resolveCurrentUser(activeSession);
+            if (currentUser?.is_anonymous) {
+              await rejectAnonymousSession();
+              return;
             }
-
-            const currentUser = await resolveCurrentUser(session);
-            return syncSubscriptionState(currentUser, getActiveIdentityId(null));
+            return syncSubscriptionState(currentUser);
           })
           .catch((error) => {
             console.warn("Could not refresh session while syncing subscriptions:", error);
@@ -465,54 +429,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       isDisposed = true;
       subscription.unsubscribe();
       removeAppStateListener?.();
+      window.removeEventListener("bible-nova-storage-restored", clearLegacyStateAfterRestore);
     };
   }, []);
 
-  const loginAsGuest = useCallback(async () => {
-    storageSet("is_guest", "true");
-
-    let guestSession: Session | null = null;
-    if (isSupabaseConfigured) {
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) throw sessionError;
-      if (sessionData.session?.user.is_anonymous) {
-        guestSession = sessionData.session;
-      } else {
-        const { data, error } = await supabase.auth.signInAnonymously();
-        if (error || !data.session) {
-          throw new Error("Guest mode is temporarily unavailable. Please try again shortly.");
-        }
-        guestSession = data.session;
-      }
-    }
-
-    setUser(guestSession?.user || null);
-    setSession(guestSession);
-    setIsGuest(true);
-    setIdentityKey(GUEST_ID);
-    setProfileName(getStoredProfileName(GUEST_ID, null, true));
-    setProfileAvatarUrl(getStoredProfileAvatarUrl(GUEST_ID, null));
-    setHasCompletedOnboarding(storageGet(`onboardingComplete_${GUEST_ID}`) === "true");
-    setIsSubscribed(storageGet(`isSubscribed_${GUEST_ID}`) === "true");
-    setShadowNotes(getStoredShadowNotes(GUEST_ID, null, true));
-  }, []);
-
   const logout = useCallback(async () => {
-    storageRemove("is_guest");
-    setIsGuest(false);
+    setUser(null);
+    setSession(null);
     setIdentityKey(null);
     setProfileName(null);
     setProfileAvatarUrl(null);
     setHasCompletedOnboarding(false);
     setIsSubscribed(false);
     setShadowNotes(null);
+
     if (isSupabaseConfigured) {
       await supabase.auth.signOut();
     }
   }, []);
 
   const deleteAccount = useCallback(async () => {
-    const id = user?.id || (isGuest ? "guest" : null);
+    const id = user?.id || null;
 
     if (user && isSupabaseConfigured) {
       const accessToken = session?.access_token;
@@ -520,33 +457,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error("Missing active session. Please sign in again before deleting the account.");
       }
 
-      try {
-        const response = await apiFetch("/api/account", {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
-        const data = await response.json().catch(() => ({}));
+      const response = await apiFetch("/api/account", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const data = await response.json().catch(() => ({}));
 
-        if (!response.ok || data.deleted !== true) {
-          throw new Error(data.error || "Could not delete the account on the server.");
-        }
-      } catch (err) {
-        throw err instanceof Error
-          ? err
-          : new Error("Could not delete the account. Please try again.");
+      if (!response.ok || data.deleted !== true) {
+        throw new Error(data.error || "Could not delete the account on the server.");
       }
     }
 
-    if (id) {
-      clearLocalIdentityData(id);
-    }
+    if (id) clearLocalIdentityData(id);
 
-    storageRemove("is_guest");
     setUser(null);
     setSession(null);
-    setIsGuest(false);
     setIdentityKey(null);
     setProfileName(null);
     setProfileAvatarUrl(null);
@@ -557,106 +482,83 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (isSupabaseConfigured) {
       await supabase.auth.signOut().catch(() => undefined);
     }
-  }, [isGuest, session?.access_token, user?.id]);
+  }, [session?.access_token, user?.id]);
 
   const updateProfileName = useCallback(async (name: string) => {
     const trimmed = name.trim().replace(/\s+/g, " ");
-    const id = user?.id || (isGuest ? "guest" : null);
+    const id = user?.id || null;
 
-    if (!id) {
-      throw new Error("No active profile to update.");
-    }
+    if (!id) throw new Error("No active profile to update.");
+    if (!trimmed) throw new Error("Profile name cannot be empty.");
+    if (trimmed.length > 40) throw new Error("Profile name must be 40 characters or less.");
 
-    if (!trimmed) {
-      throw new Error("Profile name cannot be empty.");
-    }
-
-    if (trimmed.length > 40) {
-      throw new Error("Profile name must be 40 characters or less.");
-    }
-
-    if (user && isSupabaseConfigured) {
+    if (isSupabaseConfigured) {
       const { data, error } = await supabase.auth.updateUser({
         data: { display_name: trimmed },
       });
 
-      if (error) {
-        throw new Error(error.message);
-      }
-
+      if (error) throw new Error(error.message);
       setUser(data.user);
     }
 
     storageSet(`bible-nova-companion-profile-name-${id}`, trimmed);
     setProfileName(trimmed);
-  }, [isGuest, user]);
+  }, [user]);
 
   const updateProfileAvatarUrl = useCallback(async (avatarUrl: string | null) => {
-    const id = user?.id || (isGuest ? "guest" : null);
-
-    if (!id) {
-      throw new Error("No active profile to update.");
-    }
-
+    const id = user?.id || null;
+    if (!id) throw new Error("No active profile to update.");
     if (avatarUrl && avatarUrl.length > 900_000) {
       throw new Error("Profile picture is too large. Choose a smaller image.");
     }
 
     storageSet(`bible-nova-companion-profile-avatar-${id}`, avatarUrl || AVATAR_NONE);
     setProfileAvatarUrl(avatarUrl);
-  }, [isGuest, user?.id]);
+  }, [user?.id]);
 
   const completeOnboarding = useCallback(() => {
-    const id = user?.id || (isGuest ? "guest" : null);
-    if (id) {
-      storageSet(`onboardingComplete_${id}`, "true");
-      setHasCompletedOnboarding(true);
-    }
-  }, [isGuest, user?.id]);
+    const id = user?.id || null;
+    if (!id) return;
+
+    storageSet(`onboardingComplete_${id}`, "true");
+    setHasCompletedOnboarding(true);
+  }, [user?.id]);
 
   const subscribe = useCallback((source: SubscriptionSource) => {
-    const id = user?.id || (isGuest ? "guest" : null);
-    if (id) {
-      setStoredSubscriptionState(id, true);
-      setStoredSubscriptionSource(id, source);
-      setIsSubscribed(true);
-    }
-  }, [isGuest, user]);
+    const id = user?.id || null;
+    if (!id) return;
+
+    // Paywall calls this only after the server has verified the purchase. On
+    // the next launch, entitlement is rechecked server-side or with the store.
+    setStoredSubscriptionState(id, true);
+    setStoredSubscriptionSource(id, source);
+    setIsSubscribed(true);
+  }, [user?.id]);
 
   const updateShadowNotes = useCallback(async (notes: string) => {
-    const id = user?.id || (isGuest ? "guest" : null);
+    if (!user) throw new Error("No active profile to update.");
 
-    if (!id) {
-      throw new Error("No active profile to update.");
-    }
-
-    if (user && isSupabaseConfigured) {
+    if (isSupabaseConfigured) {
       const { error } = await supabase.auth.updateUser({
         data: { shadow_notes: notes },
       });
 
-      if (error) {
-        throw new Error(error.message);
-      }
-    } else if (isGuest) {
-      storageSet(`bible-nova-companion-shadow-notes-${id}`, notes);
+      if (error) throw new Error(error.message);
     }
 
     setShadowNotes(notes);
-  }, [isGuest, user]);
+  }, [user]);
 
   const value = useMemo(
     () => ({
       user,
       session,
       isLoading,
-      isGuest,
       identityKey,
       profileName,
       profileAvatarUrl,
       hasCompletedOnboarding,
       isSubscribed,
-      loginAsGuest,
       logout,
       deleteAccount,
       updateProfileName,
@@ -671,10 +573,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       deleteAccount,
       hasCompletedOnboarding,
       identityKey,
-      isGuest,
       isLoading,
       isSubscribed,
-      loginAsGuest,
       logout,
       profileAvatarUrl,
       profileName,
@@ -688,11 +588,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     ],
   );
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => useContext(AuthContext);

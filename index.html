@@ -5,9 +5,127 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <title>Bible Nova Companion</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        background: #050b14;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #050b14;
+      }
+
+      #startup-fallback {
+        box-sizing: border-box;
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 2rem;
+        color: #ebf2ff;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        text-align: center;
+      }
+
+      .startup-fallback-card {
+        width: min(100%, 22rem);
+        display: grid;
+        justify-items: center;
+        gap: 0.8rem;
+        padding: 2rem 1.5rem;
+        border: 1px solid rgba(111, 214, 255, 0.18);
+        border-radius: 1.5rem;
+        background: rgba(8, 14, 24, 0.92);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+      }
+
+      .startup-fallback-logo {
+        width: 4.5rem;
+        height: 4.5rem;
+        border-radius: 1.2rem;
+        object-fit: cover;
+        background: #fff;
+      }
+
+      .startup-fallback-card h1,
+      .startup-fallback-card p {
+        margin: 0;
+      }
+
+      .startup-fallback-card p {
+        color: #96a7c6;
+        font-size: 0.9rem;
+        line-height: 1.5;
+      }
+
+      .startup-fallback-card button {
+        min-height: 2.75rem;
+        padding: 0.65rem 1.25rem;
+        border: 0;
+        border-radius: 999px;
+        background: #1b9ed8;
+        color: #f5fbff;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .startup-fallback-id {
+        font-size: 0.7rem !important;
+        overflow-wrap: anywhere;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main id="startup-fallback" aria-live="polite" aria-busy="true">
+        <div class="startup-fallback-card">
+          <img class="startup-fallback-logo" src="/favicon.png" alt="Bible Nova Companion" />
+          <h1>Bible Nova</h1>
+          <p id="startup-fallback-message">Starting securely…</p>
+          <button id="startup-retry" type="button" hidden onclick="window.location.reload()">Retry</button>
+          <p id="startup-fallback-id" class="startup-fallback-id" hidden></p>
+        </div>
+      </main>
+    </div>
+    <script>
+      (() => {
+        const startup = window.__BIBLE_NOVA_STARTUP__ || {
+          id: window.crypto?.randomUUID?.() || `startup-${Date.now()}`,
+          startedAt: Date.now(),
+          stage: "index-loaded",
+          reactMounted: false,
+        };
+        window.__BIBLE_NOVA_STARTUP__ = startup;
+        startup.stage = "index-loaded";
+        document.documentElement.dataset.startupStage = startup.stage;
+
+        window.setTimeout(() => {
+          if (startup.reactMounted) return;
+          startup.stage = "startup-failure";
+          const fallback = document.getElementById("startup-fallback");
+          const message = document.getElementById("startup-fallback-message");
+          const retry = document.getElementById("startup-retry");
+          const diagnosticId = document.getElementById("startup-fallback-id");
+          fallback?.removeAttribute("hidden");
+          fallback?.setAttribute("aria-busy", "false");
+          if (message) message.textContent = "Bible Nova could not start. Please retry.";
+          if (retry) retry.removeAttribute("hidden");
+          if (diagnosticId) {
+            diagnosticId.textContent = `Diagnostic ID: ${startup.id}`;
+            diagnosticId.removeAttribute("hidden");
+          }
+          document.documentElement.dataset.startupStage = startup.stage;
+          const hideSplash = window.Capacitor?.Plugins?.SplashScreen?.hide;
+          if (typeof hideSplash === "function") {
+            void hideSplash().catch(() => undefined);
+          }
+        }, 12000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -5,19 +5,33 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
 dotenv.config();
 
-const remoteAppUrl = process.env.CAPACITOR_SERVER_URL?.trim() || "https://biblecompanion.vercel.app";
+const liveReloadEnabled = process.env.CAPACITOR_LIVE_RELOAD === "true";
+const liveReloadUrl = process.env.CAPACITOR_SERVER_URL?.trim();
+
+if (liveReloadEnabled && !liveReloadUrl) {
+  console.warn("CAPACITOR_LIVE_RELOAD is enabled but CAPACITOR_SERVER_URL is missing. Using bundled assets.");
+}
+
+const serverConfig = {
+  errorPath: "native-error.html",
+  ...(liveReloadEnabled && liveReloadUrl
+    ? {
+        url: liveReloadUrl,
+        androidScheme: "https",
+      }
+    : {}),
+};
 
 const config: CapacitorConfig = {
   appId: "com.biblenovacompanion.app",
   appName: "Bible Nova Companion",
   webDir: "dist",
-  server: {
-    url: remoteAppUrl,
-    androidScheme: "https",
-  },
+  // Release builds load the verified bundle copied into webDir. External URLs
+  // are opt-in for local live reload only.
+  server: serverConfig,
   plugins: {
     SplashScreen: {
-      launchAutoHide: true,
+      launchAutoHide: false,
       backgroundColor: "#111827",
       androidSplashResourceName: "splash",
       androidScaleType: "CENTER_CROP",
