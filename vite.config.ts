@@ -15,6 +15,12 @@ import {
   syncNativeSubscription,
   transcribeAudio,
 } from './server-api';
+import {
+  assertStringLength,
+  enforceRateLimits,
+  getHttpErrorDetails,
+  requireAuthenticatedRequest,
+} from './server-security';
 
 const applyLocalEnv = (env: Record<string, string>) => {
   for (const [key, value] of Object.entries(env)) {
@@ -68,12 +74,22 @@ const localApiPlugin = () => ({
         }
 
         try {
-          const { messages } = await readJsonBody(req);
-          const message = await createChatCompletion(messages);
+          const { userId, ip } = await requireAuthenticatedRequest(req);
+          enforceRateLimits([
+            { key: `chat:user:${userId}`, limit: 30 },
+            { key: `chat:ip:${ip}`, limit: 60 },
+          ]);
+          const { messages, shadowNotes } = await readJsonBody(req);
+          if (shadowNotes !== undefined && shadowNotes !== null) {
+            assertStringLength(shadowNotes, 2_000, 'Shadow notes');
+          }
+          const message = await createChatCompletion(messages, shadowNotes);
           sendJson(res, 200, { message });
         } catch (error) {
           console.error('Vite local API chat error:', error);
-          sendJson(res, 500, { error: getClientErrorMessage(error) });
+          const details = getHttpErrorDetails(error);
+          if (details.retryAfterSeconds) res.setHeader('Retry-After', String(details.retryAfterSeconds));
+          sendJson(res, details.statusCode, { error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
         }
         return;
       }
@@ -85,12 +101,20 @@ const localApiPlugin = () => ({
         }
 
         try {
+          const { userId, ip } = await requireAuthenticatedRequest(req);
+          enforceRateLimits([
+            { key: `generate:user:${userId}`, limit: 20 },
+            { key: `generate:ip:${ip}`, limit: 40 },
+          ]);
           const { prompt } = await readJsonBody(req);
+          assertStringLength(prompt, 2_000, 'Prompt');
           const text = await generatePrayer(prompt);
           sendJson(res, 200, { text });
         } catch (error) {
           console.error('Vite local API generation error:', error);
-          sendJson(res, 500, { error: getClientErrorMessage(error) });
+          const details = getHttpErrorDetails(error);
+          if (details.retryAfterSeconds) res.setHeader('Retry-After', String(details.retryAfterSeconds));
+          sendJson(res, details.statusCode, { error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
         }
         return;
       }
@@ -102,12 +126,23 @@ const localApiPlugin = () => ({
         }
 
         try {
+          const { userId, ip } = await requireAuthenticatedRequest(req);
+          enforceRateLimits([
+            { key: `transcribe:user:${userId}`, limit: 10 },
+            { key: `transcribe:ip:${ip}`, limit: 20 },
+          ]);
           const { audio, language } = await readJsonBody(req);
+          assertStringLength(audio, 8 * 1024 * 1024, 'Audio');
+          if (language !== undefined && language !== null) {
+            assertStringLength(language, 32, 'Language');
+          }
           const text = await transcribeAudio(audio, language);
           sendJson(res, 200, { text });
         } catch (error) {
           console.error('Vite local API speech transcription error:', error);
-          sendJson(res, 500, { error: getClientErrorMessage(error) });
+          const details = getHttpErrorDetails(error);
+          if (details.retryAfterSeconds) res.setHeader('Retry-After', String(details.retryAfterSeconds));
+          sendJson(res, details.statusCode, { error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
         }
         return;
       }

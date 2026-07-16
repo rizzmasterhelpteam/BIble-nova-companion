@@ -494,11 +494,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         });
         const data = await response.json().catch(() => ({}));
 
-        if (!response.ok) {
-          console.warn("Backend account deletion failed:", data.error || "Could not delete the account on server.");
+        if (!response.ok || data.deleted !== true) {
+          throw new Error(data.error || "Could not delete the account on the server.");
         }
       } catch (err) {
-        console.warn("Could not reach backend for account deletion, proceeding with local wipe.", err);
+        throw err instanceof Error
+          ? err
+          : new Error("Could not delete the account. Please try again.");
       }
     }
 

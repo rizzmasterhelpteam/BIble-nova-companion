@@ -22,6 +22,7 @@ const Intentions = lazy(() => import("./pages/Intentions"));
 const Confession = lazy(() => import("./pages/Confession"));
 const Login = lazy(() => import("./pages/Login"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
+const Paywall = lazy(() => import("./pages/Paywall"));
 
 const FullScreenLoader = () => <SplashScreen />;
 
@@ -42,7 +43,7 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/onboarding" replace />;
   }
   
-  if (hasCompletedOnboarding && (location.pathname === "/onboarding" || location.pathname === "/paywall")) {
+  if (hasCompletedOnboarding && location.pathname === "/onboarding") {
      return <Navigate to="/" replace />;
   }
 
@@ -79,7 +80,7 @@ const AnimatedRoutes = () => {
       <Routes location={location}>
         <Route path="/login" element={<PageFade><Login /></PageFade>} />
         <Route path="/onboarding" element={<AuthGuard><PageFade><Onboarding /></PageFade></AuthGuard>} />
-        <Route path="/paywall" element={<AuthGuard><Navigate to="/" replace /></AuthGuard>} />
+        <Route path="/paywall" element={<AuthGuard><PageFade><Paywall /></PageFade></AuthGuard>} />
         <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
           <Route index element={<Chat />} />
           <Route path="breathe" element={<Breathe />} />

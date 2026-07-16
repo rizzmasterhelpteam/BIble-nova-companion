@@ -23,13 +23,14 @@ export async function requestLocalNotificationPermission() {
 }
 
 export async function scheduleDailyReflectionReminder(hour = 8, minute = 0, days = [1, 2, 3, 4, 5, 6, 7]) {
+  const normalizedDays = [...new Set(days)].filter((day) => Number.isInteger(day) && day >= 1 && day <= 7);
+  if (normalizedDays.length === 0) return false;
+
   if (!(await requestLocalNotificationPermission())) return false;
 
   await cancelDailyReflectionReminder();
 
-  if (days.length === 0) return true;
-
-  const notifications = days.map((day, index) => ({
+  const notifications = normalizedDays.map((day, index) => ({
     id: DAILY_REFLECTION_NOTIFICATION_ID + index,
     title: "Bible Nova Companion",
     body: "Take a quiet moment for prayer and reflection.",

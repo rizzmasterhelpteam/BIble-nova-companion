@@ -13,6 +13,12 @@ import {
   syncNativeSubscription,
   transcribeAudio,
 } from "./server-api";
+import {
+  assertStringLength,
+  enforceRateLimits,
+  getHttpErrorDetails,
+  requireAuthenticatedRequest,
+} from "./server-security";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
@@ -28,12 +34,22 @@ app.get("/api/status", (_req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    enforceRateLimits([
+      { key: `chat:user:${userId}`, limit: 30 },
+      { key: `chat:ip:${ip}`, limit: 60 },
+    ]);
     const { messages, shadowNotes } = req.body;
+    if (shadowNotes !== undefined && shadowNotes !== null) {
+      assertStringLength(shadowNotes, 2_000, "Shadow notes");
+    }
     const message = await createChatCompletion(messages, shadowNotes);
     res.json({ message });
   } catch (error: any) {
     console.error("LLM API Error:", error);
-    res.status(500).json({ error: getClientErrorMessage(error) });
+    const details = getHttpErrorDetails(error);
+    if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
+    res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
   }
 });
 
@@ -78,12 +94,22 @@ app.get("/api/models", async (_req, res) => {
 
 app.post("/api/generate", async (req, res) => {
   try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    enforceRateLimits([
+      { key: `generate:user:${userId}`, limit: 20 },
+      { key: `generate:ip:${ip}`, limit: 40 },
+    ]);
     const { prompt } = req.body;
+    assertStringLength(prompt, 2_000, "Prompt");
     const text = await generatePrayer(prompt);
     res.json({ text });
   } catch (error: any) {
     console.error("LLM Gen Error:", error);
-    if (error?.message?.includes("API key not valid")) {
+    const details = getHttpErrorDetails(error);
+    if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
+    if (details.statusCode !== 500) {
+      res.status(details.statusCode).json({ error: details.message });
+    } else if (error?.message?.includes("API key not valid")) {
       res.status(500).json({ error: "Your Gemini API key is invalid. Please update it in the settings panel." });
     } else {
       res.status(500).json({ error: "Failed to generate content. Please try again." });
@@ -93,12 +119,23 @@ app.post("/api/generate", async (req, res) => {
 
 app.post("/api/transcribe", async (req, res) => {
   try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    enforceRateLimits([
+      { key: `transcribe:user:${userId}`, limit: 10 },
+      { key: `transcribe:ip:${ip}`, limit: 20 },
+    ]);
     const { audio, language } = req.body;
+    assertStringLength(audio, 8 * 1024 * 1024, "Audio");
+    if (language !== undefined && language !== null) {
+      assertStringLength(language, 32, "Language");
+    }
     const text = await transcribeAudio(audio, language);
     res.json({ text });
   } catch (error) {
     console.error("Speech transcription error:", error);
-    res.status(500).json({ error: getClientErrorMessage(error) });
+    const details = getHttpErrorDetails(error);
+    if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
+    res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
   }
 });
 

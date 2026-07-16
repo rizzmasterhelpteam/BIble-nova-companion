@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { JWT } from "google-auth-library";
 import { hasChatApiKey } from "./chat-api";
 export {
   createChatCompletion,
@@ -47,6 +48,7 @@ type UserSubscriptionMetadata = {
   status?: string;
   source?: string;
   promoCode?: string;
+  promoRedemptions?: string[];
   trialEndsAt?: string;
   redeemedAt?: string;
   durationDays?: number;
@@ -55,6 +57,13 @@ type UserSubscriptionMetadata = {
   orderId?: string;
   linkedAt?: string;
   platform?: "android" | "ios";
+};
+
+type VerifiedGooglePlaySubscription = {
+  productId: string;
+  planId?: string;
+  orderId?: string;
+  expiryTime: string;
 };
 
 export type NativeSubscriptionSyncPayload = {
@@ -73,6 +82,98 @@ const isActiveSubscriptionMetadata = (subscription: UserSubscriptionMetadata | u
   if (!subscription.trialEndsAt) return true;
   const expiry = Date.parse(subscription.trialEndsAt);
   return Number.isFinite(expiry) && expiry > Date.now();
+};
+
+const GOOGLE_PLAY_PACKAGE_NAME = "com.biblenovacompanion.app";
+const GOOGLE_PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher";
+
+const getGooglePlayServiceAccount = () => {
+  const raw = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?.trim();
+  if (!raw) {
+    throw new Error("Google Play subscription verification is not configured on the server.");
+  }
+
+  try {
+    const credentials = JSON.parse(raw) as { client_email?: string; private_key?: string };
+    if (!credentials.client_email || !credentials.private_key) {
+      throw new Error("Missing client_email or private_key.");
+    }
+    return credentials;
+  } catch {
+    throw new Error("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is invalid.");
+  }
+};
+
+const verifyGooglePlaySubscription = async (
+  payload: NativeSubscriptionSyncPayload,
+): Promise<VerifiedGooglePlaySubscription> => {
+  const purchaseToken = normalizeOptionalString(payload.purchaseToken);
+  const productId = normalizeOptionalString(payload.productId);
+  if (!purchaseToken || !productId) {
+    throw new Error("A Google Play purchase token and product ID are required for verification.");
+  }
+
+  const credentials = getGooglePlayServiceAccount();
+  const auth = new JWT({
+    email: credentials.client_email,
+    key: credentials.private_key,
+    scopes: [GOOGLE_PLAY_SCOPE],
+  });
+  const { token: accessToken } = await auth.getAccessToken();
+  if (!accessToken) {
+    throw new Error("Could not authenticate with Google Play for purchase verification.");
+  }
+
+  const endpoint = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(GOOGLE_PLAY_PACKAGE_NAME)}/purchases/subscriptionsv2/tokens/${encodeURIComponent(purchaseToken)}`;
+  const response = await fetch(endpoint, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = (await response.json().catch(() => ({}))) as {
+    subscriptionState?: string;
+    acknowledgementState?: string;
+    lineItems?: Array<{
+      productId?: string;
+      expiryTime?: string;
+      latestSuccessfulOrderId?: string;
+      offerDetails?: { basePlanId?: string };
+    }>;
+  };
+
+  if (!response.ok) {
+    throw new Error("Google Play could not verify this purchase.");
+  }
+
+  const lineItem = data.lineItems?.find((item) => item.productId === productId);
+  const expiryTime = lineItem?.expiryTime;
+  const expiry = expiryTime ? Date.parse(expiryTime) : NaN;
+  const allowedState =
+    data.subscriptionState === "SUBSCRIPTION_STATE_ACTIVE" ||
+    data.subscriptionState === "SUBSCRIPTION_STATE_IN_GRACE_PERIOD";
+
+  if (!lineItem || !expiryTime || !Number.isFinite(expiry) || expiry <= Date.now() || !allowedState) {
+    throw new Error("This Google Play subscription is not active.");
+  }
+
+  if (data.acknowledgementState !== "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED") {
+    throw new Error("This Google Play subscription has not been acknowledged.");
+  }
+
+  const verifiedOrderId = lineItem.latestSuccessfulOrderId;
+  if (payload.orderId && verifiedOrderId && payload.orderId !== verifiedOrderId) {
+    throw new Error("The purchase order does not match Google Play.");
+  }
+
+  const verifiedPlanId = lineItem.offerDetails?.basePlanId;
+  if (payload.planId && verifiedPlanId && payload.planId !== verifiedPlanId) {
+    throw new Error("The purchase plan does not match Google Play.");
+  }
+
+  return {
+    productId,
+    planId: verifiedPlanId,
+    orderId: verifiedOrderId,
+    expiryTime,
+  };
 };
 
 const normalizeOptionalString = (value: string | undefined) => {
@@ -219,9 +320,18 @@ export async function syncNativeSubscription(
     throw new Error("Native subscription sync requires a product ID.");
   }
 
-  if (platform === "android" && !purchaseToken && !orderId) {
-    throw new Error("Android subscription sync requires purchase details.");
+  if (platform !== "android") {
+    throw new Error("iOS subscription verification is not configured yet. Premium access was not granted.");
   }
+
+  const verifiedPurchase = await verifyGooglePlaySubscription({
+    ...payload,
+    productId,
+    planId,
+    orderId,
+    purchaseToken,
+    platform,
+  });
 
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
@@ -247,12 +357,13 @@ export async function syncNativeSubscription(
   const linkedAt = new Date().toISOString();
   const nextSubscription: UserSubscriptionMetadata = {
     status: "active",
-    source: platform === "ios" ? "native_app_store" : "native_google_play",
-    productId,
-    planId,
-    orderId,
+    source: "native_google_play",
+    productId: verifiedPurchase.productId,
+    planId: verifiedPurchase.planId,
+    orderId: verifiedPurchase.orderId,
     linkedAt,
     platform,
+    trialEndsAt: verifiedPurchase.expiryTime,
   };
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
@@ -308,12 +419,34 @@ export async function redeemPromoCode(authorizationHeader: string | undefined, r
     throw new Error("Could not verify the signed-in user. Please sign in again.");
   }
 
-  const existingSubscription = (data.user.app_metadata?.subscription || undefined) as UserSubscriptionMetadata | undefined;
+  const existingAppMetadata = data.user.app_metadata || {};
+  const redeemedPromoCodes = Array.isArray(existingAppMetadata.promo_redemptions)
+    ? existingAppMetadata.promo_redemptions.filter((value): value is string => typeof value === "string")
+    : [];
+  const existingSubscription = (existingAppMetadata.subscription || undefined) as UserSubscriptionMetadata | undefined;
+
+  if (redeemedPromoCodes.includes(code)) {
+    throw new Error("This promo code has already been used on this account.");
+  }
+
+  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
   if (
     existingSubscription?.source === "promo_code" &&
     existingSubscription?.promoCode === code &&
     isActiveSubscriptionMetadata(existingSubscription)
   ) {
+    const { error: markRedeemedError } = await adminClient.auth.admin.updateUserById(data.user.id, {
+      app_metadata: {
+        ...existingAppMetadata,
+        promo_redemptions: [...new Set([...redeemedPromoCodes, code])],
+      },
+    });
+    if (markRedeemedError) {
+      throw new Error(markRedeemedError.message);
+    }
     return {
       code,
       durationDays: existingSubscription.durationDays || PRIMARY_PROMO_CODE_DAYS,
@@ -333,12 +466,10 @@ export async function redeemPromoCode(authorizationHeader: string | undefined, r
     durationDays: PRIMARY_PROMO_CODE_DAYS,
   };
 
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
   const { error: updateError } = await adminClient.auth.admin.updateUserById(data.user.id, {
     app_metadata: {
-      ...(data.user.app_metadata || {}),
+      ...existingAppMetadata,
+      promo_redemptions: [...new Set([...redeemedPromoCodes, code])],
       subscription: nextSubscription,
     },
   });

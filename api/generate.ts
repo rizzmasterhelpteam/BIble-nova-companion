@@ -1,3 +1,5 @@
+import { assertStringLength, enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../server-security";
+
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
   res.setHeader?.("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -40,7 +42,13 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    enforceRateLimits([
+      { key: `generate:user:${userId}`, limit: 20 },
+      { key: `generate:ip:${ip}`, limit: 40 },
+    ]);
     const { prompt } = getBody(req);
+    assertStringLength(prompt, 2_000, "Prompt");
     const { GoogleGenAI } = await import("@google/genai");
     const apiKey = process.env.GEMINI_API_KEY;
 
@@ -66,6 +74,10 @@ export default async function handler(req: any, res: any) {
     res.status(200).json({ text: response.text });
   } catch (error) {
     console.error("Vercel API generation error:", error);
-    res.status(500).json({ error: getClientErrorMessage(error) });
+    const details = getHttpErrorDetails(error);
+    if (details.retryAfterSeconds) {
+      res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
+    }
+    res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
   }
 }

@@ -16,12 +16,7 @@ const renderApp = () => {
   );
 };
 
-Promise.race([
-  restoreWebStorageFromPreferences(),
-  new Promise<void>((resolve) => {
-    window.setTimeout(resolve, 400);
-  }),
-])
+restoreWebStorageFromPreferences()
   .catch((error) => {
     console.warn("Continuing without restored native web storage:", error);
   })

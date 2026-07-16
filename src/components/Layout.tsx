@@ -138,7 +138,14 @@ export default function Layout() {
     void nativeStorage
       .get(REMINDER_DAYS_STORAGE_KEY)
       .then((value) => {
-        if (value) setReminderDays(JSON.parse(value));
+        if (!value) return;
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+          const validDays = [...new Set(parsed)].filter(
+            (day): day is number => Number.isInteger(day) && day >= 1 && day <= 7,
+          );
+          setReminderDays(validDays);
+        }
       })
       .catch(() => undefined);
 
@@ -155,6 +162,9 @@ export default function Layout() {
 
     try {
       if (next) {
+        if (reminderDays.length === 0) {
+          throw new Error("Select at least one day before enabling reminders.");
+        }
         const { hour, minute } = parseTime(reminderTime);
         const scheduled = await scheduleDailyReflectionReminder(hour, minute, reminderDays);
         if (!scheduled) throw new Error("Notification permission was not granted.");
@@ -170,20 +180,39 @@ export default function Layout() {
   };
 
   const handleTimeChange = async (newTime: string) => {
-    setReminderTime(newTime);
-    await nativeStorage.set(REMINDER_TIME_STORAGE_KEY, newTime);
-    if (dailyRemindersEnabled) {
-      const { hour, minute } = parseTime(newTime);
-      await scheduleDailyReflectionReminder(hour, minute, reminderDays);
+    setNotificationError(null);
+    try {
+      if (dailyRemindersEnabled) {
+        if (reminderDays.length === 0) {
+          throw new Error("Select at least one day before changing the reminder time.");
+        }
+        const { hour, minute } = parseTime(newTime);
+        const scheduled = await scheduleDailyReflectionReminder(hour, minute, reminderDays);
+        if (!scheduled) throw new Error("Could not reschedule reminders.");
+      }
+      await nativeStorage.set(REMINDER_TIME_STORAGE_KEY, newTime);
+      setReminderTime(newTime);
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : "Could not update reminder time.");
     }
   };
 
   const handleDaysChange = async (newDays: number[]) => {
-    setReminderDays(newDays);
-    await nativeStorage.set(REMINDER_DAYS_STORAGE_KEY, JSON.stringify(newDays));
-    if (dailyRemindersEnabled) {
-      const { hour, minute } = parseTime(reminderTime);
-      await scheduleDailyReflectionReminder(hour, minute, newDays);
+    setNotificationError(null);
+    const normalizedDays = [...new Set(newDays)].filter((day) => Number.isInteger(day) && day >= 1 && day <= 7);
+    try {
+      if (dailyRemindersEnabled) {
+        if (normalizedDays.length === 0) {
+          throw new Error("Select at least one day before disabling all reminder days.");
+        }
+        const { hour, minute } = parseTime(reminderTime);
+        const scheduled = await scheduleDailyReflectionReminder(hour, minute, normalizedDays);
+        if (!scheduled) throw new Error("Could not reschedule reminders.");
+      }
+      await nativeStorage.set(REMINDER_DAYS_STORAGE_KEY, JSON.stringify(normalizedDays));
+      setReminderDays(normalizedDays);
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : "Could not update reminder days.");
     }
   };
 

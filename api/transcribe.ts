@@ -1,3 +1,5 @@
+import { assertStringLength, enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../server-security";
+
 const API_BUILD_ID = "2026-05-11-speech-transcription";
 
 const setCorsHeaders = (res: any) => {
@@ -94,11 +96,24 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    enforceRateLimits([
+      { key: `transcribe:user:${userId}`, limit: 10 },
+      { key: `transcribe:ip:${ip}`, limit: 20 },
+    ]);
     const { audio, language } = getBody(req);
+    assertStringLength(audio, 8 * 1024 * 1024, "Audio");
+    if (language !== undefined && language !== null) {
+      assertStringLength(language, 32, "Language");
+    }
     const text = await transcribeAudio(audio, language);
     res.status(200).json({ text });
   } catch (error) {
     console.error("Vercel API speech transcription error:", error);
-    res.status(500).json({ error: getClientErrorMessage(error) });
+    const details = getHttpErrorDetails(error);
+    if (details.retryAfterSeconds) {
+      res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
+    }
+    res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
   }
 }

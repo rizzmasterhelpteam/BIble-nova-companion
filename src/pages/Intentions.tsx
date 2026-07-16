@@ -12,9 +12,7 @@ type Intention = {
   createdAt: number;
 };
 
-const FALLBACK_INTENTIONS: Intention[] = [
-  { id: 1, text: "Pray for my friend's quick recovery.", createdAt: Date.now() - 1000 * 60 * 60 * 2 },
-];
+const FALLBACK_INTENTIONS: Intention[] = [];
 
 const SUGGESTIONS = [
   "Help me stay patient with someone I love.",
