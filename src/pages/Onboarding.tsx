@@ -3,10 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Sunrise } from "lucide-react";
 import { ChristianCross } from "../components/ChristianCross";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { storageGetJson, storageRemove, storageSet } from "../lib/webStorage";
+import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 
 const STORAGE_KEY = "bible_nova_companion_onboarding_answers";
 
@@ -131,6 +132,10 @@ export default function Onboarding() {
   useDocumentTitle("Welcome | Bible Nova Companion");
   const { isCompactPhone, isShortPhone } = useMobileViewport();
   const shouldTopAlign = isShortPhone;
+  const prefersReducedMotion = useReducedMotion();
+  const isPerformanceMode = Boolean(
+    prefersReducedMotion || (isNativePlatform() && getNativePlatform() === "android"),
+  );
   const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>(() =>
     storageGetJson<Record<string, string>>(STORAGE_KEY, {}),
@@ -174,12 +179,19 @@ export default function Onboarding() {
     setAnswers(nextAnswers);
 
     if (currentStep < questions.length - 1) {
-      setIsAdvancing(true);
+      const transitionDelay = isPerformanceMode ? 0 : 120;
+      setIsAdvancing(transitionDelay > 0);
+
+      if (transitionDelay === 0) {
+        setCurrentStep((prev) => Math.min(prev + 1, questions.length - 1));
+        return;
+      }
+
       stepTimerRef.current = window.setTimeout(() => {
         stepTimerRef.current = null;
         setCurrentStep((prev) => Math.min(prev + 1, questions.length - 1));
         setIsAdvancing(false);
-      }, 180);
+      }, transitionDelay);
       return;
     }
 
@@ -234,9 +246,9 @@ export default function Onboarding() {
         </div>
 
         <motion.div
-          initial={{ opacity: 0 }}
+          initial={isPerformanceMode ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.22, ease: "easeOut" }}
+          transition={{ duration: isPerformanceMode ? 0 : 0.22, ease: "easeOut" }}
           className={cn(
             "app-panel shrink-0 relative z-10 w-full max-w-md rounded-[2rem]",
             !shouldTopAlign && "my-auto",
@@ -344,13 +356,13 @@ export default function Onboarding() {
           </span>
         </div>
 
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={currentStep}
-            initial={{ opacity: 0 }}
+            initial={isPerformanceMode ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15, ease: "linear" }}
+            exit={isPerformanceMode ? undefined : { opacity: 0 }}
+            transition={{ duration: isPerformanceMode ? 0 : 0.12, ease: "linear" }}
             className="flex-1 shrink-0 rounded-[2rem] border px-5 py-6 sm:px-6 sm:py-7"
             style={{ borderColor: "var(--app-card-border)", background: "color-mix(in srgb, var(--app-card-strong) 96%, transparent)" }}
           >

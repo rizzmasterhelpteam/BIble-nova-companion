@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Check, Star, AlertCircle, ShieldCheck } from "lucide-react";
 import { AppLogo } from "../components/AppLogo";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { useMobileViewport } from "../context/MobileViewportContext";
@@ -40,6 +40,10 @@ export default function Paywall() {
   useDocumentTitle("Subscribe | Bible Nova Companion");
   const { isCompactPhone, isShortPhone } = useMobileViewport();
   const shouldTopAlign = isShortPhone;
+  const prefersReducedMotion = useReducedMotion();
+  const isPerformanceMode = Boolean(
+    prefersReducedMotion || (isNativePlatform() && getNativePlatform() === "android"),
+  );
   const nativeStoreAvailable =
     isNativePlatform() && getNativePlatform() === "android";
   const [selectedPlan, setSelectedPlan] = useState<Plan>("yearly");
@@ -314,7 +318,7 @@ export default function Paywall() {
     <div
       className="app-screen-scroll w-full relative flex flex-col overflow-x-hidden"
       style={{
-        paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "0.75rem" : "1rem"})`,
+        paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "1rem" : "1.25rem"})`,
         paddingBottom: `max(env(safe-area-inset-bottom, 0px), ${isShortPhone ? "0.75rem" : "1rem"})`,
       }}
     >
@@ -328,12 +332,12 @@ export default function Paywall() {
         className="relative z-10 flex min-h-full w-full flex-1 flex-col items-center justify-start p-4 sm:py-12"
       >
         <motion.div
-          initial={{ opacity: 0 }}
+          initial={isPerformanceMode ? false : { opacity: 0, y: 4 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.22, ease: "easeOut" }}
+          transition={{ duration: isPerformanceMode ? 0 : 0.2, ease: "easeOut" }}
           className={cn(
-            "app-panel shrink-0 w-full max-w-md rounded-[2rem]",
-            !shouldTopAlign && "my-auto",
+            "app-panel app-paywall-panel shrink-0 w-full max-w-lg rounded-[2rem]",
+            !shouldTopAlign && "sm:my-auto",
             isCompactPhone ? "p-5" : "p-6 sm:p-7",
           )}
         >
@@ -570,9 +574,9 @@ export default function Paywall() {
             {features.map((feature, index) => (
               <motion.div
                 key={feature}
-                initial={{ opacity: 0 }}
+                initial={isPerformanceMode ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.04 * index, duration: 0.2 }}
+                transition={{ delay: isPerformanceMode ? 0 : 0.04 * index, duration: isPerformanceMode ? 0 : 0.16 }}
                 className="flex items-center gap-3"
               >
                 <div

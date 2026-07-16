@@ -30,8 +30,7 @@ type AuthContextType = {
 
 type SubscriptionSource =
   | "native_google_play"
-  | "native_app_store"
-  | "promo_server";
+  | "native_app_store";
 
 const isNativeSubscriptionSource = (
   source: SubscriptionSource | null,
@@ -41,10 +40,7 @@ const isNativeSubscriptionSource = (
 type UserSubscriptionMetadata = {
   status?: string;
   source?: string;
-  promoCode?: string;
   trialEndsAt?: string;
-  redeemedAt?: string;
-  durationDays?: number;
   productId?: string;
   planId?: string;
   orderId?: string;

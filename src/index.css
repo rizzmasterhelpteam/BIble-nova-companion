@@ -638,6 +638,17 @@
     color: var(--app-text);
   }
 
+  .app-paywall-panel {
+    border: 1px solid var(--app-card-border);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--app-card-strong) 96%, transparent), var(--app-card-bg));
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .app-paywall-panel .app-badge-glow {
+    box-shadow: 0 12px 30px color-mix(in srgb, var(--app-accent) 18%, transparent);
+  }
+
   .app-danger-panel {
     background: var(--app-danger-soft);
     border: 1px solid color-mix(in srgb, var(--app-danger) 22%, transparent);

@@ -9,7 +9,6 @@ import {
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
-  redeemPromoCode,
   syncNativeSubscription,
   transcribeAudio,
 } from "./server-api";
@@ -79,21 +78,6 @@ app.post("/api/subscription/native-sync", async (req, res) => {
     res.json({ subscription });
   } catch (error) {
     console.error("Native subscription sync error:", error);
-    res.status(400).json({ error: getClientErrorMessage(error) });
-  }
-});
-
-app.post("/api/promo-redeem", async (req, res) => {
-  try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
-    await enforceRateLimits([
-      { key: `promo:user:${userId}`, limit: 5 },
-      { key: `promo:ip:${ip}`, limit: 10 },
-    ]);
-    const result = await redeemPromoCode(req.headers.authorization, req.body?.code || "");
-    res.json(result);
-  } catch (error) {
-    console.error("Promo redemption error:", error);
     res.status(400).json({ error: getClientErrorMessage(error) });
   }
 });

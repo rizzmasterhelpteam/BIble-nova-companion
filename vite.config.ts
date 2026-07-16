@@ -11,7 +11,6 @@ import {
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
-  redeemPromoCode,
   syncNativeSubscription,
   transcribeAudio,
 } from './server-api';
@@ -185,28 +184,6 @@ const localApiPlugin = () => ({
           sendJson(res, 200, { subscription });
         } catch (error) {
           console.error('Vite local API native subscription sync error:', error);
-          sendJson(res, 400, { error: getClientErrorMessage(error) });
-        }
-        return;
-      }
-
-      if (pathname === '/api/promo-redeem') {
-        if (req.method !== 'POST') {
-          sendJson(res, 405, { error: 'Method not allowed.' });
-          return;
-        }
-
-        try {
-          const { userId, ip } = await requireAuthenticatedRequest(req);
-          await enforceRateLimits([
-            { key: `promo:user:${userId}`, limit: 5 },
-            { key: `promo:ip:${ip}`, limit: 10 },
-          ]);
-          const { code } = await readJsonBody(req);
-          const result = await redeemPromoCode(req.headers.authorization, code || '');
-          sendJson(res, 200, result);
-        } catch (error) {
-          console.error('Vite local API promo redemption error:', error);
           sendJson(res, 400, { error: getClientErrorMessage(error) });
         }
         return;

@@ -48,10 +48,7 @@ export const getApiStatus = () => ({
 type UserSubscriptionMetadata = {
   status?: string;
   source?: string;
-  promoCode?: string;
   trialEndsAt?: string;
-  redeemedAt?: string;
-  durationDays?: number;
   productId?: string;
   planId?: string;
   orderId?: string;
@@ -72,16 +69,6 @@ export type NativeSubscriptionSyncPayload = {
   orderId?: string;
   purchaseToken?: string;
   platform?: "android" | "ios";
-};
-
-const PRIMARY_PROMO_CODE = (process.env.PROMO_CODE_PRIMARY || "").trim().toUpperCase();
-const PRIMARY_PROMO_CODE_DAYS = Math.max(1, Number(process.env.PROMO_CODE_PRIMARY_DAYS || 15));
-
-const isActiveSubscriptionMetadata = (subscription: UserSubscriptionMetadata | undefined) => {
-  if (!subscription || subscription.status !== "active") return false;
-  if (!subscription.trialEndsAt) return true;
-  const expiry = Date.parse(subscription.trialEndsAt);
-  return Number.isFinite(expiry) && expiry > Date.now();
 };
 
 const GOOGLE_PLAY_PACKAGE_NAME = "com.biblenovacompanion.app";
@@ -405,121 +392,4 @@ export async function syncNativeSubscription(
   }
 
   return nextSubscription;
-}
-
-export async function redeemPromoCode(authorizationHeader: string | undefined, rawCode: string) {
-  const accessToken = authorizationHeader?.replace(/^Bearer\s+/i, "").trim();
-  if (!accessToken) {
-    throw new Error("Missing active session. Please sign in again before redeeming a promo code.");
-  }
-
-  const code = rawCode.trim().toUpperCase();
-  if (!code) {
-    throw new Error("Enter a promo code.");
-  }
-
-  if (code !== PRIMARY_PROMO_CODE) {
-    throw new Error("That promo code is invalid.");
-  }
-
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes("placeholder.supabase.co")) {
-    throw new Error("Supabase is not configured on the server.");
-  }
-
-  if (!serviceRoleKey) {
-    throw new Error("Promo redemption requires SUPABASE_SERVICE_ROLE_KEY on the server.");
-  }
-
-  const authClient = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  const { data, error } = await authClient.auth.getUser(accessToken);
-
-  if (error || !data.user) {
-    throw new Error("Could not verify the signed-in user. Please sign in again.");
-  }
-
-  const existingAppMetadata = data.user.app_metadata || {};
-  const existingSubscription = (existingAppMetadata.subscription || undefined) as UserSubscriptionMetadata | undefined;
-
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-
-  const { data: existingRedemption, error: redemptionLookupError } = await adminClient
-    .from("promo_redemptions")
-    .select("id")
-    .eq("user_id", data.user.id)
-    .eq("promo_code", code)
-    .maybeSingle();
-
-  if (redemptionLookupError) {
-    throw new Error(redemptionLookupError.message);
-  }
-
-  if (existingRedemption) {
-    throw new Error("This promo code has already been used on this account.");
-  }
-
-  if (
-    existingSubscription?.source === "promo_code" &&
-    existingSubscription?.promoCode === code &&
-    isActiveSubscriptionMetadata(existingSubscription)
-  ) {
-    const { error: markRedeemedError } = await adminClient.from("promo_redemptions").insert({
-      user_id: data.user.id,
-      promo_code: code,
-    });
-    if (markRedeemedError) {
-      throw new Error(markRedeemedError.code === "23505" ? "This promo code has already been used on this account." : markRedeemedError.message);
-    }
-    return {
-      code,
-      durationDays: existingSubscription.durationDays || PRIMARY_PROMO_CODE_DAYS,
-      trialEndsAt: existingSubscription.trialEndsAt,
-      alreadyRedeemed: true,
-    };
-  }
-
-  const now = new Date();
-  const trialEndsAt = new Date(now.getTime() + PRIMARY_PROMO_CODE_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  const nextSubscription: UserSubscriptionMetadata = {
-    status: "active",
-    source: "promo_code",
-    promoCode: code,
-    redeemedAt: now.toISOString(),
-    trialEndsAt,
-    durationDays: PRIMARY_PROMO_CODE_DAYS,
-  };
-
-  const { error: redemptionError } = await adminClient.from("promo_redemptions").insert({
-    user_id: data.user.id,
-    promo_code: code,
-  });
-
-  if (redemptionError) {
-    throw new Error(redemptionError.code === "23505" ? "This promo code has already been used on this account." : redemptionError.message);
-  }
-
-  const { error: updateError } = await adminClient.auth.admin.updateUserById(data.user.id, {
-    app_metadata: {
-      ...existingAppMetadata,
-      subscription: nextSubscription,
-    },
-  });
-
-  if (updateError) {
-    throw new Error(updateError.message);
-  }
-
-  return {
-    code,
-    durationDays: PRIMARY_PROMO_CODE_DAYS,
-    trialEndsAt,
-    alreadyRedeemed: false,
-  };
 }
