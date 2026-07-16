@@ -10,7 +10,7 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { HapticsProvider } from "./context/HapticsContext";
 import { MobileViewportProvider } from "./context/MobileViewportContext";
 import { SplashScreen } from "./components/SplashScreen";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { getNativePlatform, isNativePlatform } from "./lib/native/platform";
@@ -91,21 +91,11 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-// Page fade wrapper — opacity only (no layout thrash on Android)
+// Keep the first route immediately visible on every platform. A remote WebView
+// must never leave the app behind an opacity-only transition if motion startup
+// is delayed or interrupted.
 const PageFade = ({ children }: { children: React.ReactNode }) => {
-  const isAndroid = isNativePlatform() && getNativePlatform() === "android";
-
-  return (
-    <motion.div
-      initial={isAndroid ? false : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: isAndroid ? 0 : 0.18, ease: "linear" }}
-      style={{ display: "contents" }}
-    >
-      {children}
-    </motion.div>
-  );
+  return <>{children}</>;
 };
 
 const AnimatedRoutes = () => {
@@ -116,7 +106,7 @@ const AnimatedRoutes = () => {
     : "app";
 
   return (
-    <AnimatePresence mode="wait" initial={false}>
+    <AnimatePresence mode="sync" initial={false}>
       <React.Fragment key={topKey}>
       <Routes location={location}>
         <Route path="/login" element={<PageFade><Login /></PageFade>} />
@@ -208,11 +198,7 @@ export default function App() {
           </AuthProvider>
         </HapticsProvider>
 
-        <AnimatePresence>
-          {showSplash && (
-            <SplashScreen key="splash" />
-          )}
-        </AnimatePresence>
+        {showSplash && <SplashScreen key="splash" />}
         <ConnectivityNotice />
       </MobileViewportProvider>
     </ThemeProvider>

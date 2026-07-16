@@ -195,7 +195,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     let isDisposed = false;
-    const hasPersistedGuestSession = () => storageGet("is_guest") === "true";
+    // Guest access is no longer offered. Clear the legacy marker so an old
+    // anonymous session can never block the authenticated app from starting.
+    const hasPersistedGuestSession = () => false;
+    storageRemove("is_guest");
 
     const syncOnboardingState = (userId: string | null, guest = false) => {
       const id = getActiveIdentityId(userId, guest);
@@ -384,10 +387,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setSession(session);
         const currentUser = await resolveCurrentUser(session);
         if (isDisposed) return;
-        if (currentUser) {
+        if (currentUser && !currentUser.is_anonymous) {
           await applyAuthenticatedUser(currentUser);
-        } else if (hasPersistedGuestSession()) {
-          await activateGuestSession();
         } else {
           await clearActiveSession();
         }
@@ -413,10 +414,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const currentUser = await resolveCurrentUser(session);
         if (isDisposed) return;
 
-        if (currentUser) {
+        if (currentUser && !currentUser.is_anonymous) {
           await applyAuthenticatedUser(currentUser);
-        } else if (hasPersistedGuestSession()) {
-          await activateGuestSession();
         } else {
           await clearActiveSession();
         }
