@@ -44,10 +44,6 @@ export default function Paywall() {
   const [selectedPlan, setSelectedPlan] = useState<Plan>("yearly");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [promoRedeemOpen, setPromoRedeemOpen] = useState(false);
-  const [promoCode, setPromoCode] = useState("");
-  const [promoStatus, setPromoStatus] = useState<string | null>(null);
-  const [isRedeemingPromo, setIsRedeemingPromo] = useState(false);
   const [iapPackages, setIapPackages] = useState<Partial<Record<Plan, SubscriptionPackage>>>({});
   const [iapReady, setIapReady] = useState(false);
   const [isLoadingOffering, setIsLoadingOffering] = useState(nativeStoreAvailable);
@@ -234,54 +230,6 @@ export default function Paywall() {
 
     subscribe("native_google_play");
     return data.subscription;
-  };
-
-  const handleRedeemPromoCode = async () => {
-    const normalizedCode = promoCode.trim().toUpperCase();
-    setPromoStatus(null);
-    setError(null);
-
-    if (!normalizedCode) {
-      setPromoStatus("Enter a promo code.");
-      return;
-    }
-
-    if (!user || !session?.access_token) {
-      setPromoStatus("Sign in with Google or email before redeeming a promo code.");
-      return;
-    }
-
-    setIsRedeemingPromo(true);
-
-    try {
-      const response = await apiFetch("/api/promo-redeem", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ code: normalizedCode }),
-      });
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(data.error || "Could not redeem the promo code.");
-      }
-
-      subscribe("promo_server");
-      setPromoRedeemOpen(false);
-      setPromoCode("");
-      setPromoStatus(
-        data.alreadyRedeemed
-          ? `Promo access is already active until ${new Date(data.trialEndsAt).toLocaleDateString()}.`
-          : `${data.code} applied. Your free trial is active until ${new Date(data.trialEndsAt).toLocaleDateString()}.`,
-      );
-      navigate("/");
-    } catch (err) {
-      setPromoStatus(err instanceof Error ? err.message : "Could not redeem the promo code.");
-    } finally {
-      setIsRedeemingPromo(false);
-    }
   };
 
   const handleRestorePurchases = async () => {
@@ -535,21 +483,6 @@ export default function Paywall() {
             </div>
           )}
 
-          {promoStatus && (
-            <div
-              role="status"
-              className="mb-4 flex items-start gap-2 rounded-card px-4 py-3 text-sm"
-              style={{
-                background: "var(--app-success-soft)",
-                border: "1px solid color-mix(in srgb, var(--app-success) 28%, transparent)",
-                color: "var(--app-text)",
-              }}
-            >
-              <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" style={{ color: "var(--app-success)" }} />
-              <span>{promoStatus}</span>
-            </div>
-          )}
-
           {nativeStoreAvailable && iapLoadError && (
             <div
               role="alert"
@@ -597,15 +530,6 @@ export default function Paywall() {
           </div>
 
           <div className="mb-4 grid grid-cols-1 gap-2">
-            <button
-              onClick={() => {
-                setPromoStatus(null);
-                setPromoRedeemOpen(true);
-              }}
-              className="touch-target app-ghost-button w-full rounded-pill py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-            >
-              Have a promo code?
-            </button>
             {nativeStoreAvailable && (
               <>
               <button
@@ -657,75 +581,6 @@ export default function Paywall() {
         </motion.div>
       </div>
 
-      {promoRedeemOpen && (
-        <div className="fixed inset-0 z-[80] flex items-end justify-center px-4 pb-4 pt-safe sm:items-center sm:p-6">
-          <button
-            type="button"
-            aria-label="Close promo code dialog"
-            onClick={() => setPromoRedeemOpen(false)}
-            className="app-overlay absolute inset-0 backdrop-blur-sm"
-          />
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="promo-code-dialog-title"
-            className="app-panel-strong relative z-10 w-full max-w-md rounded-[2rem] border p-5 shadow-2xl sm:p-6"
-          >
-            <div className="mb-4">
-              <p className="app-kicker mb-2">Promo code</p>
-              <h2 id="promo-code-dialog-title" className="app-heading text-xl font-semibold">
-                Unlock 15 days free
-              </h2>
-            </div>
-
-            <div className="space-y-3">
-              <p className="app-muted text-sm leading-relaxed">
-                Enter your promo code below. The free trial is attached to your signed-in Google or email account, not just this device.
-              </p>
-              <input
-                type="text"
-                value={promoCode}
-                onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
-                placeholder="Enter promo code"
-                autoCapitalize="characters"
-                autoCorrect="off"
-                spellCheck={false}
-                className="app-input w-full rounded-card px-4 py-3.5 text-[15px] uppercase tracking-[0.16em] transition-all"
-              />
-              {promoStatus && (
-                <div
-                  className="rounded-card px-4 py-3 text-sm"
-                  style={{
-                    background: "var(--app-card-soft)",
-                    border: "1px solid var(--app-card-border)",
-                    color: "var(--app-text)",
-                  }}
-                >
-                  {promoStatus}
-                </div>
-              )}
-            </div>
-
-            <div className="mt-5 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setPromoRedeemOpen(false)}
-                className="touch-target app-secondary-button flex-1 rounded-pill px-3 py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleRedeemPromoCode}
-                disabled={isRedeemingPromo}
-                className="touch-target app-primary-button flex-1 rounded-pill px-3 py-3 text-sm font-medium text-white transition-all disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-              >
-                {isRedeemingPromo ? "Redeeming..." : "Redeem code"}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
     </div>
   );
 }
