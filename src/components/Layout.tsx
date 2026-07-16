@@ -118,7 +118,7 @@ export default function Layout() {
   const isAccountBusy = isDeletingAccount || isSavingProfile || isProcessingAvatar;
   const nativeControlsAvailable = isNativePlatform();
   const isAndroidApp = nativeControlsAvailable && getNativePlatform() === "android";
-  const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "1.1.2";
+  const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "1.1.4";
 
   useEffect(() => {
     if (!nativeControlsAvailable) return;
