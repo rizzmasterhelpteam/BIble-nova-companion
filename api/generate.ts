@@ -43,7 +43,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
-    enforceRateLimits([
+    await enforceRateLimits([
       { key: `generate:user:${userId}`, limit: 20 },
       { key: `generate:ip:${ip}`, limit: 40 },
     ]);

@@ -17,7 +17,7 @@ type AuthContextType = {
   profileAvatarUrl: string | null;
   hasCompletedOnboarding: boolean;
   isSubscribed: boolean;
-  loginAsGuest: () => void;
+  loginAsGuest: () => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   updateProfileName: (name: string) => Promise<void>;
@@ -62,7 +62,7 @@ const AuthContext = createContext<AuthContextType>({
   profileAvatarUrl: null,
   hasCompletedOnboarding: false,
   isSubscribed: false,
-  loginAsGuest: () => {},
+  loginAsGuest: async () => {},
   logout: async () => {},
   deleteAccount: async () => {},
   updateProfileName: async () => {},
@@ -260,8 +260,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const syncSubscriptionState = async (currentUser: User | null, fallbackIdentityId: string | null) => {
-      const id = getActiveIdentityId(currentUser?.id || fallbackIdentityId);
+    const syncSubscriptionState = async (
+      currentUser: User | null,
+      fallbackIdentityId: string | null,
+      guest = false,
+    ) => {
+      const id = getActiveIdentityId(currentUser?.id || fallbackIdentityId, guest);
       if (!id) {
         if (!isDisposed) {
           setIsSubscribed(false);
@@ -299,14 +303,48 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const activateGuestSession = async () => {
       if (isDisposed) return;
-      setSession(null);
-      setUser(null);
+
+      let guestSession: Session | null = null;
+      if (isSupabaseConfigured) {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        if (sessionData.session?.user.is_anonymous) {
+          guestSession = sessionData.session;
+        } else {
+          const { data, error } = await supabase.auth.signInAnonymously();
+          if (error || !data.session) {
+            throw new Error("Guest mode is temporarily unavailable. Please try again shortly.");
+          }
+          guestSession = data.session;
+        }
+      }
+
+      const guestUser = guestSession?.user || null;
+      setSession(guestSession);
+      setUser(guestUser);
       setIsGuest(true);
       setIdentityKey(GUEST_ID);
+      storageSet("is_guest", "true");
       syncOnboardingState(null, true);
-      syncProfileName(GUEST_ID, null, true);
-      syncShadowNotes(GUEST_ID, null, true);
-      await syncSubscriptionState(null, GUEST_ID);
+      syncProfileName(GUEST_ID, guestUser, true);
+      syncShadowNotes(GUEST_ID, guestUser, true);
+      await syncSubscriptionState(guestUser, GUEST_ID, true);
+    };
+
+    const applyAuthenticatedUser = async (currentUser: User) => {
+      const anonymous = Boolean(currentUser.is_anonymous);
+      setUser(currentUser);
+      setIsGuest(anonymous);
+      setIdentityKey(anonymous ? GUEST_ID : currentUser.id);
+      if (anonymous) {
+        storageSet("is_guest", "true");
+      } else {
+        storageRemove("is_guest");
+      }
+      syncOnboardingState(currentUser.id, anonymous);
+      syncProfileName(currentUser.id, currentUser, anonymous);
+      syncShadowNotes(currentUser.id, currentUser, anonymous);
+      await syncSubscriptionState(currentUser, anonymous ? GUEST_ID : null, anonymous);
     };
 
     const clearActiveSession = async () => {
@@ -351,14 +389,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const currentUser = await resolveCurrentUser(session);
         if (isDisposed) return;
         if (currentUser) {
-          setUser(currentUser);
-          setIsGuest(false);
-          setIdentityKey(currentUser.id);
-          storageRemove("is_guest");
-          syncOnboardingState(currentUser.id);
-          syncProfileName(currentUser.id, currentUser, false);
-          syncShadowNotes(currentUser.id, currentUser, false);
-          await syncSubscriptionState(currentUser, null);
+          await applyAuthenticatedUser(currentUser);
         } else if (hasPersistedGuestSession()) {
           await activateGuestSession();
         } else {
@@ -387,14 +418,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (isDisposed) return;
 
         if (currentUser) {
-          setUser(currentUser);
-          setIsGuest(false);
-          setIdentityKey(currentUser.id);
-          storageRemove("is_guest");
-          syncOnboardingState(currentUser.id);
-          syncProfileName(currentUser.id, currentUser, false);
-          syncShadowNotes(currentUser.id, currentUser, false);
-          await syncSubscriptionState(currentUser, null);
+          await applyAuthenticatedUser(currentUser);
         } else if (hasPersistedGuestSession()) {
           await activateGuestSession();
         } else {
@@ -449,10 +473,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
-  const loginAsGuest = useCallback(() => {
+  const loginAsGuest = useCallback(async () => {
     storageSet("is_guest", "true");
-    setUser(null);
-    setSession(null);
+
+    let guestSession: Session | null = null;
+    if (isSupabaseConfigured) {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (sessionData.session?.user.is_anonymous) {
+        guestSession = sessionData.session;
+      } else {
+        const { data, error } = await supabase.auth.signInAnonymously();
+        if (error || !data.session) {
+          throw new Error("Guest mode is temporarily unavailable. Please try again shortly.");
+        }
+        guestSession = data.session;
+      }
+    }
+
+    setUser(guestSession?.user || null);
+    setSession(guestSession);
     setIsGuest(true);
     setIdentityKey(GUEST_ID);
     setProfileName(getStoredProfileName(GUEST_ID, null, true));

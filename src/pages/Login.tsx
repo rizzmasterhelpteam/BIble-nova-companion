@@ -180,12 +180,16 @@ export default function Login() {
     }
   };
 
-  const handleGuestAccess = () => {
+  const handleGuestAccess = async () => {
     if (isLoading || isAuthLoading) return;
     setError(null);
     const guestCompletedOnboarding = storageGet("onboardingComplete_guest") === "true";
-    loginAsGuest();
-    navigate(guestCompletedOnboarding ? "/" : "/onboarding", { replace: true });
+    try {
+      await loginAsGuest();
+      navigate(guestCompletedOnboarding ? "/" : "/onboarding", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Guest mode is temporarily unavailable.");
+    }
   };
 
   return (

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../server-security";
 
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
@@ -73,10 +74,17 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    await enforceRateLimits([
+      { key: `account:user:${userId}`, limit: 3 },
+      { key: `account:ip:${ip}`, limit: 6 },
+    ]);
     await deleteSupabaseAccount(req.headers.authorization);
     res.status(200).json({ deleted: true });
   } catch (error) {
     console.error("Vercel API account deletion error:", error);
-    res.status(500).json({ error: getClientErrorMessage(error) });
+    const details = getHttpErrorDetails(error);
+    if (details.retryAfterSeconds) res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
+    res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
   }
 }

@@ -42,7 +42,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
-    enforceRateLimits([
+    await enforceRateLimits([
       { key: `chat:user:${userId}`, limit: 30 },
       { key: `chat:ip:${ip}`, limit: 60 },
     ]);

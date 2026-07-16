@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { JWT } from "google-auth-library";
 import { hasChatApiKey } from "./chat-api";
@@ -48,7 +49,6 @@ type UserSubscriptionMetadata = {
   status?: string;
   source?: string;
   promoCode?: string;
-  promoRedemptions?: string[];
   trialEndsAt?: string;
   redeemedAt?: string;
   durationDays?: number;
@@ -74,7 +74,7 @@ export type NativeSubscriptionSyncPayload = {
   platform?: "android" | "ios";
 };
 
-const PRIMARY_PROMO_CODE = (process.env.PROMO_CODE_PRIMARY || "GETNOW").trim().toUpperCase();
+const PRIMARY_PROMO_CODE = (process.env.PROMO_CODE_PRIMARY || "").trim().toUpperCase();
 const PRIMARY_PROMO_CODE_DAYS = Math.max(1, Number(process.env.PROMO_CODE_PRIMARY_DAYS || 15));
 
 const isActiveSubscriptionMetadata = (subscription: UserSubscriptionMetadata | undefined) => {
@@ -320,6 +320,10 @@ export async function syncNativeSubscription(
     throw new Error("Native subscription sync requires a product ID.");
   }
 
+  if (!purchaseToken) {
+    throw new Error("Native subscription sync requires a purchase token.");
+  }
+
   if (platform !== "android") {
     throw new Error("iOS subscription verification is not configured yet. Premium access was not granted.");
   }
@@ -369,6 +373,26 @@ export async function syncNativeSubscription(
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+  const purchaseTokenHash = createHash("sha256").update(purchaseToken).digest("hex");
+  const { data: entitlementLinked, error: entitlementError } = await adminClient.rpc(
+    "link_subscription_entitlement",
+    {
+      p_user_id: data.user.id,
+      p_platform: platform,
+      p_product_id: verifiedPurchase.productId,
+      p_base_plan_id: verifiedPurchase.planId || "",
+      p_order_id: verifiedPurchase.orderId || "",
+      p_purchase_token_hash: purchaseTokenHash,
+      p_status: "active",
+      p_expiry_time: verifiedPurchase.expiryTime,
+      p_verified_at: linkedAt,
+    },
+  );
+
+  if (entitlementError || entitlementLinked !== true) {
+    throw new Error(entitlementError?.message || "Could not persist the verified subscription entitlement.");
+  }
+
   const { error: updateError } = await adminClient.auth.admin.updateUserById(data.user.id, {
     app_metadata: {
       ...(data.user.app_metadata || {}),
@@ -420,32 +444,38 @@ export async function redeemPromoCode(authorizationHeader: string | undefined, r
   }
 
   const existingAppMetadata = data.user.app_metadata || {};
-  const redeemedPromoCodes = Array.isArray(existingAppMetadata.promo_redemptions)
-    ? existingAppMetadata.promo_redemptions.filter((value): value is string => typeof value === "string")
-    : [];
   const existingSubscription = (existingAppMetadata.subscription || undefined) as UserSubscriptionMetadata | undefined;
-
-  if (redeemedPromoCodes.includes(code)) {
-    throw new Error("This promo code has already been used on this account.");
-  }
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+
+  const { data: existingRedemption, error: redemptionLookupError } = await adminClient
+    .from("promo_redemptions")
+    .select("id")
+    .eq("user_id", data.user.id)
+    .eq("promo_code", code)
+    .maybeSingle();
+
+  if (redemptionLookupError) {
+    throw new Error(redemptionLookupError.message);
+  }
+
+  if (existingRedemption) {
+    throw new Error("This promo code has already been used on this account.");
+  }
 
   if (
     existingSubscription?.source === "promo_code" &&
     existingSubscription?.promoCode === code &&
     isActiveSubscriptionMetadata(existingSubscription)
   ) {
-    const { error: markRedeemedError } = await adminClient.auth.admin.updateUserById(data.user.id, {
-      app_metadata: {
-        ...existingAppMetadata,
-        promo_redemptions: [...new Set([...redeemedPromoCodes, code])],
-      },
+    const { error: markRedeemedError } = await adminClient.from("promo_redemptions").insert({
+      user_id: data.user.id,
+      promo_code: code,
     });
     if (markRedeemedError) {
-      throw new Error(markRedeemedError.message);
+      throw new Error(markRedeemedError.code === "23505" ? "This promo code has already been used on this account." : markRedeemedError.message);
     }
     return {
       code,
@@ -466,10 +496,18 @@ export async function redeemPromoCode(authorizationHeader: string | undefined, r
     durationDays: PRIMARY_PROMO_CODE_DAYS,
   };
 
+  const { error: redemptionError } = await adminClient.from("promo_redemptions").insert({
+    user_id: data.user.id,
+    promo_code: code,
+  });
+
+  if (redemptionError) {
+    throw new Error(redemptionError.code === "23505" ? "This promo code has already been used on this account." : redemptionError.message);
+  }
+
   const { error: updateError } = await adminClient.auth.admin.updateUserById(data.user.id, {
     app_metadata: {
       ...existingAppMetadata,
-      promo_redemptions: [...new Set([...redeemedPromoCodes, code])],
       subscription: nextSubscription,
     },
   });

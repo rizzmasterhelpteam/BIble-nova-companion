@@ -97,7 +97,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
-    enforceRateLimits([
+    await enforceRateLimits([
       { key: `transcribe:user:${userId}`, limit: 10 },
       { key: `transcribe:ip:${ip}`, limit: 20 },
     ]);

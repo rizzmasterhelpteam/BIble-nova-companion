@@ -35,7 +35,7 @@ app.get("/api/status", (_req, res) => {
 app.post("/api/chat", async (req, res) => {
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
-    enforceRateLimits([
+    await enforceRateLimits([
       { key: `chat:user:${userId}`, limit: 30 },
       { key: `chat:ip:${ip}`, limit: 60 },
     ]);
@@ -55,6 +55,11 @@ app.post("/api/chat", async (req, res) => {
 
 app.delete("/api/account", async (req, res) => {
   try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    await enforceRateLimits([
+      { key: `account:user:${userId}`, limit: 3 },
+      { key: `account:ip:${ip}`, limit: 6 },
+    ]);
     await deleteSupabaseAccount(req.headers.authorization);
     res.json({ deleted: true });
   } catch (error) {
@@ -65,6 +70,11 @@ app.delete("/api/account", async (req, res) => {
 
 app.post("/api/subscription/native-sync", async (req, res) => {
   try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    await enforceRateLimits([
+      { key: `subscription-sync:user:${userId}`, limit: 10 },
+      { key: `subscription-sync:ip:${ip}`, limit: 20 },
+    ]);
     const subscription = await syncNativeSubscription(req.headers.authorization, req.body || {});
     res.json({ subscription });
   } catch (error) {
@@ -75,6 +85,11 @@ app.post("/api/subscription/native-sync", async (req, res) => {
 
 app.post("/api/promo-redeem", async (req, res) => {
   try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    await enforceRateLimits([
+      { key: `promo:user:${userId}`, limit: 5 },
+      { key: `promo:ip:${ip}`, limit: 10 },
+    ]);
     const result = await redeemPromoCode(req.headers.authorization, req.body?.code || "");
     res.json(result);
   } catch (error) {
@@ -95,7 +110,7 @@ app.get("/api/models", async (_req, res) => {
 app.post("/api/generate", async (req, res) => {
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
-    enforceRateLimits([
+    await enforceRateLimits([
       { key: `generate:user:${userId}`, limit: 20 },
       { key: `generate:ip:${ip}`, limit: 40 },
     ]);
@@ -120,7 +135,7 @@ app.post("/api/generate", async (req, res) => {
 app.post("/api/transcribe", async (req, res) => {
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
-    enforceRateLimits([
+    await enforceRateLimits([
       { key: `transcribe:user:${userId}`, limit: 10 },
       { key: `transcribe:ip:${ip}`, limit: 20 },
     ]);

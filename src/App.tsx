@@ -26,6 +26,47 @@ const Paywall = lazy(() => import("./pages/Paywall"));
 
 const FullScreenLoader = () => <SplashScreen />;
 
+const ConnectivityNotice = () => {
+  const [isOffline, setIsOffline] = useState(
+    typeof navigator !== "undefined" && navigator.onLine === false,
+  );
+
+  useEffect(() => {
+    const handleOffline = () => setIsOffline(true);
+    const handleOnline = () => setIsOffline(false);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, []);
+
+  if (!isOffline) return null;
+
+  return (
+    <div
+      className="fixed inset-x-3 bottom-3 z-[120] flex items-center justify-between gap-3 rounded-card border px-4 py-3 shadow-xl"
+      role="alert"
+      style={{
+        background: "var(--app-panel-strong)",
+        borderColor: "var(--app-card-border)",
+        color: "var(--app-text)",
+      }}
+    >
+      <span className="text-sm">You’re offline. Reconnect to continue using Bible Nova Companion.</span>
+      <button
+        type="button"
+        className="touch-target rounded-pill px-3 py-2 text-sm font-medium"
+        style={{ background: "var(--app-accent)", color: "var(--app-accent-contrast)" }}
+        onClick={() => window.location.reload()}
+      >
+        Retry
+      </button>
+    </div>
+  );
+};
+
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, isGuest, isLoading, hasCompletedOnboarding } = useAuth();
   const location = useLocation();
@@ -161,6 +202,7 @@ export default function App() {
             <SplashScreen key="splash" />
           )}
         </AnimatePresence>
+        <ConnectivityNotice />
       </MobileViewportProvider>
     </ThemeProvider>
   );

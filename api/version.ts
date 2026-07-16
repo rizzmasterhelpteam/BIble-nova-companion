@@ -1,4 +1,4 @@
-const API_BUILD_ID = "2026-05-10-no-relative-imports";
+const API_BUILD_ID = "2026-07-16-production-hardening";
 
 export default function handler(req: any, res: any) {
   res.setHeader?.("Access-Control-Allow-Origin", "*");

@@ -27,8 +27,10 @@ Set these in Vercel for the environments you deploy to:
 - `VITE_SUPABASE_ANON_KEY`
 - `GROQ_API_KEY`
 - `GROQ_MODEL` optional, defaults to `meta-llama/llama-4-scout-17b-16e-instruct`
-- `SUPABASE_SERVICE_ROLE_KEY` only needed for signed-in account deletion
+- `SUPABASE_SERVICE_ROLE_KEY` required server-only for account deletion, persistent rate limits, promo redemption, and subscription entitlements
+- `RATE_LIMIT_IP_SALT` required server-only random value used to hash IP-based rate-limit keys
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` required server-only JSON credentials for verified Android subscriptions
+- `PROMO_CODE_PRIMARY` and `PROMO_CODE_PRIMARY_DAYS` configure the server-side promo flow; keep the actual code private
 - `GEMINI_API_KEY` only needed for `/api/generate`
 - `VITE_API_BASE_URL` required in native mobile builds, set to your Vercel site URL
 - `CAPACITOR_SERVER_URL` controls the web app loaded by the native wrapper; it defaults to `https://biblecompanion.vercel.app`
@@ -37,7 +39,13 @@ Set these in Vercel for the environments you deploy to:
 - `VITE_IAP_MONTHLY_BASE_PLAN_ID` and `VITE_IAP_YEARLY_BASE_PLAN_ID` required for Android subscription IAP (Google Play base plans)
 
 `VITE_` variables are embedded into the browser bundle. Keep `GROQ_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `GEMINI_API_KEY` server-only.
-Keep `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` server-only as well; the native subscription endpoint fails closed when Google Play verification is not configured.
+Keep `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` server-only as well; the native subscription endpoint fails closed when Google Play verification is not configured. Rate-limit persistence also fails closed when the server-only Supabase role or `RATE_LIMIT_IP_SALT` is missing.
+
+## Production Database Migration
+
+Apply `supabase/migrations/20260716123000_production_hardening.sql` to the production Supabase project before enabling the hardened API routes. It creates private persistent rate-limit buckets, the service-role-only `subscription_entitlements` and `promo_redemptions` tables, and the restricted RPCs used by the server.
+
+In Supabase Auth, enable Anonymous Sign-Ins and review policies for the `authenticated` role because anonymous users receive that role. Anonymous sign-in should also be protected with the project’s CAPTCHA/abuse controls in production.
 
 ## Mobile Builds
 

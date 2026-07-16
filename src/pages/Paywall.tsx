@@ -682,9 +682,6 @@ export default function Paywall() {
               <p className="app-muted text-sm leading-relaxed">
                 Enter your promo code below. The free trial is attached to your signed-in Google or email account, not just this device.
               </p>
-              <p className="app-muted text-sm leading-relaxed">
-                Current launch code: <span className="app-heading font-medium">GETNOW</span> for 15 days of full access.
-              </p>
               <input
                 type="text"
                 value={promoCode}
