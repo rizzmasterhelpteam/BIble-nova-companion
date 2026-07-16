@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import PageHeader from "../components/PageHeader";
 import { useDocumentTitle, cn } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
+import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 
 type Phase = "Inhale" | "Hold" | "Exhale";
 type Timings = { inhale: number; hold: number; exhale: number };
@@ -23,6 +24,7 @@ const PHASE_ORDER: Phase[] = ["Inhale", "Hold", "Exhale"];
 export default function Breathe() {
   useDocumentTitle("Breathe | Bible Nova Companion");
   const { isCompactPhone, isShortPhone } = useMobileViewport();
+  const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
   const [phase, setPhase] = useState<Phase>("Inhale");
   const [circleScale, setCircleScale] = useState(1);
   const [showSettings, setShowSettings] = useState(false);
@@ -107,6 +109,20 @@ export default function Breathe() {
           )}
           style={{ maxWidth: visualSize }}
         >
+          {/* Ambient outer halo */}
+          {!isAndroidApp && (
+            <div
+              className="absolute rounded-full"
+              style={{
+                background:
+                  "radial-gradient(circle, color-mix(in srgb, var(--app-accent) 10%, transparent) 0%, transparent 72%)",
+                height: isShortPhone ? "13rem" : isCompactPhone ? "14rem" : "16.5rem",
+                width: isShortPhone ? "13rem" : isCompactPhone ? "14rem" : "16.5rem",
+                transform: `scale(${circleScale * 0.9 + 0.1})`,
+                transition: `transform ${phaseDuration * 1.2}ms ease-in-out`,
+              }}
+            />
+          )}
           <div
             className="absolute rounded-full"
             style={{
@@ -118,6 +134,19 @@ export default function Breathe() {
               width: innerGlowSize,
             }}
           />
+          {/* Second outer ring — slightly slower */}
+          {!isAndroidApp && (
+            <div
+              className="absolute rounded-full border"
+              style={{
+                borderColor: "color-mix(in srgb, var(--app-accent) 10%, transparent)",
+                height: isShortPhone ? "10rem" : "12rem",
+                width: isShortPhone ? "10rem" : "12rem",
+                transform: `scale(${circleScale})`,
+                transition: `transform ${phaseDuration * 1.15}ms ease-in-out`,
+              }}
+            />
+          )}
           <div
             className="absolute rounded-full border"
             style={{
@@ -130,12 +159,12 @@ export default function Breathe() {
             }}
           />
           <div
-            className="absolute rounded-full border backdrop-blur-xl"
+            className="absolute rounded-full border"
             style={{
               background: "color-mix(in srgb, var(--app-card-bg) 54%, transparent)",
-              borderColor: "color-mix(in srgb, var(--app-accent) 35%, transparent)",
+              borderColor: "color-mix(in srgb, var(--app-accent) 40%, transparent)",
               boxShadow:
-                "inset 0 0 24px color-mix(in srgb, var(--app-accent) 12%, transparent), 0 0 24px color-mix(in srgb, var(--app-accent) 16%, transparent)",
+                "inset 0 0 24px color-mix(in srgb, var(--app-accent) 14%, transparent), 0 0 32px color-mix(in srgb, var(--app-accent) 20%, transparent)",
               height: isShortPhone ? "5.4rem" : "7rem",
               transform: `scale(${centerScale})`,
               transition: `transform ${phaseDuration}ms ease-in-out`,
@@ -146,7 +175,7 @@ export default function Breathe() {
             <Wind
               strokeWidth={1.5}
               className="h-10 w-10 opacity-90"
-              style={{ color: "var(--app-accent)", filter: "drop-shadow(0 0 12px color-mix(in srgb, var(--app-accent) 40%, transparent))" }}
+              style={{ color: "var(--app-accent)", filter: "drop-shadow(0 0 14px color-mix(in srgb, var(--app-accent) 50%, transparent))" }}
             />
             <span className="app-heading text-2xl font-light uppercase tracking-[0.15em] drop-shadow-md">
               {phase}
@@ -208,10 +237,10 @@ export default function Breathe() {
               role="dialog"
               aria-modal="true"
               aria-labelledby="breathing-customizer-title"
-              initial={{ opacity: 0, y: 24, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 24, scale: 0.98 }}
-              transition={{ duration: 0.22, ease: "easeOut" }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
               className="app-panel absolute inset-x-4 bottom-4 z-30 rounded-card p-4 shadow-2xl sm:inset-x-8"
               style={{ bottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}
             >

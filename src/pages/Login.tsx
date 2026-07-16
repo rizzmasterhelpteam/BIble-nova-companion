@@ -7,6 +7,7 @@ import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { signInWithGoogleNative } from "../lib/native/auth";
 import { isNativePlatform } from "../lib/native/platform";
+import { storageGet } from "../lib/webStorage";
 
 type LegalView = "terms" | "privacy";
 
@@ -75,7 +76,7 @@ export default function Login() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [legalView, setLegalView] = useState<LegalView | null>(null);
   const navigate = useNavigate();
-  const { user, isLoading: isAuthLoading, hasCompletedOnboarding, isSubscribed } = useAuth();
+  const { user, isGuest, isLoading: isAuthLoading, hasCompletedOnboarding, loginAsGuest } = useAuth();
   const shouldTopAlign = isShortPhone || isKeyboardOpen;
   const authTitle = mode === "login" ? "Sign in" : "Create account";
   const authSubtitle = mode === "login"
@@ -85,15 +86,11 @@ export default function Login() {
   useEffect(() => {
     if (isAuthLoading) return;
 
-    if (user) {
-      const destination = !hasCompletedOnboarding
-        ? "/onboarding"
-        : !isSubscribed
-          ? "/paywall"
-          : "/";
+    if (user || isGuest) {
+      const destination = !hasCompletedOnboarding ? "/onboarding" : "/";
       navigate(destination, { replace: true });
     }
-  }, [hasCompletedOnboarding, isAuthLoading, isSubscribed, navigate, user]);
+  }, [hasCompletedOnboarding, isAuthLoading, isGuest, navigate, user]);
 
   useEffect(() => {
     if (!legalView) return;
@@ -163,7 +160,7 @@ export default function Login() {
         const { error } = await supabase.auth.signInWithOAuth({
           provider: "google",
           options: {
-            redirectTo: window.location.origin,
+            redirectTo: new URL("/login", window.location.origin).toString(),
           },
         });
         if (error) throw error;
@@ -183,6 +180,14 @@ export default function Login() {
     }
   };
 
+  const handleGuestAccess = () => {
+    if (isLoading || isAuthLoading) return;
+    setError(null);
+    const guestCompletedOnboarding = storageGet("onboardingComplete_guest") === "true";
+    loginAsGuest();
+    navigate(guestCompletedOnboarding ? "/" : "/onboarding", { replace: true });
+  };
+
   return (
     <div
       className="app-screen-scroll w-full relative flex flex-col"
@@ -197,12 +202,29 @@ export default function Login() {
         <div className="app-orb app-orb-b bottom-[-16%] right-[-8%] h-[26rem] w-[26rem]" />
       </div>
 
-      <div className={cn("relative z-10 mx-auto flex w-full max-w-md flex-1 px-4 py-4 sm:px-6", shouldTopAlign ? "items-start" : "items-center")}>
+      <div className={cn(
+        "relative z-10 mx-auto flex w-full max-w-md flex-1 px-4 py-4 sm:px-6",
+        shouldTopAlign ? "items-start" : "items-center"
+      )}>
         <section
-          className="app-panel w-full rounded-[2rem] border px-5 py-6 shadow-[0_24px_56px_rgba(0,0,0,0.12)] sm:px-6 sm:py-7"
+          className={cn(
+            "app-panel shrink-0 w-full rounded-[2rem] border px-5 py-6 shadow-[0_24px_56px_rgba(0,0,0,0.12)] sm:px-6 sm:py-7",
+            !shouldTopAlign && "my-auto",
+          )}
           style={{ borderColor: "var(--app-card-border)" }}
         >
-          <div className="mb-5">
+          <div className="mb-6">
+            {/* Brand mark */}
+            <div className="mb-5 flex justify-center">
+              <div
+                className="flex h-14 w-14 items-center justify-center rounded-full"
+                style={{ background: "var(--app-accent-gradient)", boxShadow: "var(--app-accent-shadow)" }}
+              >
+                <svg viewBox="0 0 100 100" className="h-7 w-7 text-white">
+                  <path d="M44 10 h12 v22 h22 v12 h-22 v46 h-12 v-46 h-22 v-12 h22 z" fill="currentColor" />
+                </svg>
+              </div>
+            </div>
             <p className="app-kicker mb-2">Bible Nova Companion</p>
             <h1 className={cn("app-heading leading-tight", isCompactPhone ? "text-[1.85rem]" : "text-[2rem]")}>{authTitle}</h1>
             <p className="app-muted mt-2 text-sm leading-relaxed">{authSubtitle}</p>
@@ -217,7 +239,7 @@ export default function Login() {
           >
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 app-accent" />
             <p className="app-muted leading-relaxed">
-              Sign in securely with Google or email.
+              Sign in securely with Google or email, or continue as a guest with local-only progress.
             </p>
           </div>
 
@@ -237,7 +259,10 @@ export default function Login() {
         <button
           onClick={handleGoogleAuth}
           disabled={isLoading || !isSupabaseConfigured}
-          className="touch-target app-secondary-button flex w-full items-center justify-center gap-3 rounded-card px-4 py-3.5 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+          className="touch-target app-secondary-button flex w-full items-center justify-center gap-3 rounded-card px-4 py-4 transition-all disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-[0.98]"
+          style={{
+            boxShadow: "0 8px 24px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.12)",
+          }}
         >
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -245,7 +270,17 @@ export default function Login() {
             <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
           </svg>
-          <span className="font-medium">Continue with Google</span>
+          <span className="font-semibold">Continue with Google</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleGuestAccess}
+          disabled={isLoading || isAuthLoading}
+          className="touch-target app-secondary-button flex w-full items-center justify-center gap-3 rounded-card px-4 py-4 transition-all disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-[0.98]"
+        >
+          <ShieldCheck className="h-5 w-5" />
+          <span className="font-semibold">Continue as Guest</span>
         </button>
 
         <div className="relative flex items-center">
@@ -301,7 +336,7 @@ export default function Login() {
             type="submit"
             disabled={isLoading || !isSupabaseConfigured}
             aria-busy={isLoading}
-            className="touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-medium text-white transition-all active:scale-[0.98] disabled:grayscale"
+            className="touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-semibold text-white transition-all active:scale-[0.98] disabled:grayscale"
           >
             {isLoading ? (
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -321,7 +356,7 @@ export default function Login() {
               event.preventDefault();
               setMode(mode === "login" ? "signup" : "login");
             }}
-            className="ml-2 font-medium app-accent transition-colors hover:opacity-80"
+            className="ml-2 font-semibold app-accent transition-colors hover:opacity-80 relative after:absolute after:bottom-0 after:left-0 after:h-[2px] after:w-full after:rounded-full after:bg-current after:scale-x-0 hover:after:scale-x-100 after:transition-transform after:duration-200 after:origin-left"
           >
             {mode === "login" ? "Sign up" : "Sign in"}
           </button>

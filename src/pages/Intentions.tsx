@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Heart, Plus, Trash2 } from "lucide-react";
 import PageHeader from "../components/PageHeader";
 import { cn, useDocumentTitle } from "../lib/utils";
@@ -39,6 +39,7 @@ export default function Intentions() {
     [identityKey],
   );
   const [intentions, setIntentions] = useState<Intention[]>(FALLBACK_INTENTIONS);
+  const storageTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!storageKey) return;
@@ -48,8 +49,28 @@ export default function Intentions() {
 
   useEffect(() => {
     if (!storageKey) return;
-    storageSet(storageKey, JSON.stringify(intentions));
+    if (storageTimerRef.current !== null) {
+      window.clearTimeout(storageTimerRef.current);
+    }
+
+    storageTimerRef.current = window.setTimeout(() => {
+      storageTimerRef.current = null;
+      storageSet(storageKey, JSON.stringify(intentions.slice(0, 100)));
+    }, 250);
+
+    return () => {
+      if (storageTimerRef.current !== null) {
+        window.clearTimeout(storageTimerRef.current);
+        storageTimerRef.current = null;
+      }
+    };
   }, [intentions, storageKey]);
+
+  useEffect(() => () => {
+    if (storageTimerRef.current !== null) {
+      window.clearTimeout(storageTimerRef.current);
+    }
+  }, []);
 
   const addIntention = (value = newIntention) => {
     const trimmed = value.trim();

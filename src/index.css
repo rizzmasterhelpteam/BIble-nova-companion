@@ -420,8 +420,8 @@
   }
 
   .app-screen-scroll {
-    height: var(--app-visible-height);
     min-height: var(--app-visible-height);
+    height: auto;
     background: var(--app-page-bg);
     color: var(--app-text);
     min-width: 0;
@@ -430,6 +430,9 @@
     overscroll-behavior-y: contain;
     touch-action: pan-y;
     -webkit-overflow-scrolling: touch;
+    /* Fix: prevent flex children from shrinking the scroll container */
+    display: flex;
+    flex-direction: column;
   }
 
   .app-shell {
@@ -461,10 +464,11 @@
   .app-orb {
     position: absolute;
     border-radius: 999px;
-    filter: blur(110px);
-    will-change: transform, opacity;
+    filter: blur(60px);
+    will-change: opacity;
     transform: translateZ(0);
     pointer-events: none;
+    contain: strict;
   }
 
   .app-orb-a {
@@ -492,9 +496,9 @@
   }
 
   .app-panel-strong {
-    background: var(--app-card-strong);
+    background: color-mix(in srgb, var(--bg-base) 14%, var(--app-card-strong) 86%);
     border: 1px solid var(--app-card-border);
-    box-shadow: 0 18px 42px rgba(12, 12, 18, 0.08);
+    box-shadow: 0 22px 52px rgba(12, 12, 18, 0.14);
   }
 
   .app-panel-soft {
@@ -529,13 +533,31 @@
     background: var(--app-accent-gradient);
     color: var(--app-accent-contrast);
     box-shadow: var(--app-accent-shadow);
+    transition: filter 200ms ease, transform 150ms ease, box-shadow 200ms ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .app-primary-button::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 60%);
+    pointer-events: none;
+    border-radius: inherit;
+  }
+
+  .app-primary-button:active:not(:disabled) {
+    transform: scale(0.975);
+    filter: brightness(1.08);
+    box-shadow: 0 8px 24px rgba(184, 135, 50, 0.48);
   }
 
   .app-secondary-button {
     background: var(--app-secondary-bg);
     border: 1px solid var(--app-secondary-border);
     color: var(--app-text);
-    backdrop-filter: blur(18px);
+    /* backdrop-filter removed: expensive on Android */
   }
 
   .app-ghost-button {
@@ -547,7 +569,7 @@
     background: var(--app-input-bg);
     border: 1px solid var(--app-input-border);
     color: var(--app-text);
-    backdrop-filter: blur(18px);
+    /* backdrop-filter removed: expensive on Android */
   }
 
   .app-input::placeholder {
@@ -589,8 +611,9 @@
   .app-nav-shell {
     background: var(--app-nav-bg);
     border: 1px solid var(--app-card-border);
-    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.12);
-    backdrop-filter: blur(24px);
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.08);
+    /* backdrop-filter kept only on desktop; stripped on mobile below */
+    backdrop-filter: blur(20px);
   }
 
   .app-divider {
@@ -622,7 +645,7 @@
   }
 
   .app-overlay {
-    background: var(--app-overlay);
+    background: color-mix(in srgb, var(--app-overlay) 72%, rgba(0, 0, 0, 0.78));
   }
 
   .design-option-card {
@@ -712,11 +735,13 @@
   @media (hover: hover) and (pointer: fine) {
     .app-card-hover:hover {
       background: var(--app-card-hover);
-      transform: translateY(-1px);
+      transform: translateY(-2px);
+      box-shadow: 0 20px 44px rgba(0, 0, 0, 0.1);
     }
 
-    .app-primary-button:hover {
-      filter: brightness(1.04);
+    .app-primary-button:hover:not(:disabled) {
+      filter: brightness(1.06);
+      box-shadow: 0 24px 56px rgba(184, 135, 50, 0.38);
     }
 
     .app-secondary-button:hover {
@@ -726,6 +751,52 @@
     .app-ghost-button:hover {
       color: var(--app-heading);
       background: var(--app-secondary-bg);
+    }
+  }
+
+  @media (max-width: 640px), (pointer: coarse) {
+    .app-orb {
+      filter: blur(40px);
+      opacity: 0.6;
+      will-change: auto;
+      contain: strict;
+    }
+
+    .app-grid {
+      opacity: 0.3;
+      display: none; /* grid is pure decoration, skip it on mobile for perf */
+    }
+
+    /* Kill ALL backdrop-filter on touch/mobile — big Android perf win */
+    .glass,
+    .app-input,
+    .app-nav-shell,
+    .app-secondary-button,
+    .app-panel,
+    .app-panel-strong,
+    .backdrop-blur-sm,
+    .backdrop-blur-md,
+    .backdrop-blur-xl,
+    .backdrop-blur-2xl,
+    .backdrop-blur-\[2px\] {
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+    }
+
+    /* Kill shimmer and dot animations on touch */
+    .app-card-shimmer::after,
+    .app-status-dot::after,
+    .app-typing-dot,
+    .app-progress-glow::after,
+    .ash-particle,
+    .flame-particle {
+      animation: none !important;
+    }
+
+    /* No lift-transform on touch — causes jank */
+    .app-card-hover:hover,
+    .app-card-hover:active {
+      transform: none !important;
     }
   }
 
@@ -759,11 +830,145 @@
     animation: flame-flicker var(--flame-duration, 2s) ease-in-out var(--flame-delay, 0s) infinite;
   }
 
+  /* ── Premium Keyframes ─────────────────────────────────── */
+
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+
+  @keyframes status-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.5); opacity: 0; }
+  }
+
+  @keyframes float-up {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-6px); }
+  }
+
+  @keyframes dot-bounce {
+    0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+    40% { transform: translateY(-6px); opacity: 1; }
+  }
+
+  @keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes progress-glow {
+    0%, 100% { opacity: 0.4; transform: scaleX(1); }
+    50% { opacity: 0.8; transform: scaleX(1.1); }
+  }
+
+  @keyframes feature-pop {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  /* ── Premium Utilities ─────────────────────────────────── */
+
+  .app-status-dot {
+    position: relative;
+  }
+
+  .app-status-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    animation: status-pulse 2s ease-in-out infinite;
+  }
+
+  .app-badge-glow {
+    background: var(--app-accent-gradient);
+    box-shadow: var(--app-accent-shadow), 0 0 0 3px color-mix(in srgb, var(--app-accent) 18%, transparent);
+    color: var(--app-accent-contrast);
+  }
+
+  .app-card-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .app-card-shimmer::after {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; bottom: 0; width: 200%;
+    background: linear-gradient(
+      105deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.02) 45%,
+      rgba(255, 255, 255, 0.06) 50%,
+      rgba(255, 255, 255, 0.02) 55%,
+      transparent 100%
+    );
+    animation: shimmer 3.5s ease-in-out infinite;
+    pointer-events: none;
+    border-radius: inherit;
+    will-change: transform;
+  }
+
+  .app-progress-glow {
+    position: relative;
+  }
+
+  .app-progress-glow::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 24px;
+    height: 100%;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--app-accent) 60%, white);
+    animation: progress-glow 2s ease-in-out infinite;
+    will-change: opacity, transform;
+  }
+
+  .app-typing-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--app-accent);
+    animation: dot-bounce 1.2s ease-in-out infinite;
+  }
+
+  .app-typing-dot:nth-child(2) { animation-delay: 0.15s; }
+  .app-typing-dot:nth-child(3) { animation-delay: 0.30s; }
+
+  .app-input-ring:focus,
+  .app-input-ring:focus-visible {
+    outline: none;
+    border-color: var(--app-accent) !important;
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--app-accent) 18%, transparent),
+      0 0 16px color-mix(in srgb, var(--app-accent) 12%, transparent);
+  }
+
+  .app-feature-item {
+    animation: feature-pop 0.4s ease-out both;
+  }
+
+  .app-float {
+    animation: float-up 4s ease-in-out infinite;
+  }
+
+  .app-nav-active-glow {
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--app-accent) 55%, transparent));
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .ash-particle,
-    .flame-particle {
+    .flame-particle,
+    .app-card-shimmer::after,
+    .app-status-dot::after,
+    .app-typing-dot,
+    .app-float {
       animation: none;
-      opacity: 0;
     }
   }
 
@@ -771,5 +976,55 @@
     .app-orb {
       filter: blur(96px);
     }
+  }
+
+  .native-android .app-atmosphere {
+    opacity: 0.45;
+  }
+
+  .native-android .app-orb,
+  .native-android .app-grid {
+    display: none !important;
+    filter: none !important;
+  }
+
+  .native-android .app-shell {
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.16);
+  }
+
+  .native-android .app-panel,
+  .native-android .app-panel-strong,
+  .native-android .app-nav-shell {
+    background: color-mix(in srgb, var(--bg-base) 22%, var(--app-card-strong) 78%);
+  }
+
+  .native-android .app-overlay {
+    background: rgba(12, 10, 8, 0.78);
+  }
+
+  .native-android .app-panel,
+  .native-android .app-panel-strong,
+  .native-android .app-nav-shell,
+  .native-android .app-primary-button {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+
+  .native-android .app-card-shimmer::after,
+  .native-android .app-status-dot::after,
+  .native-android .app-progress-glow::after,
+  .native-android .app-typing-dot,
+  .native-android .app-float,
+  .native-android .ash-particle,
+  .native-android .flame-particle {
+    animation: none !important;
+  }
+
+  .native-android .backdrop-blur-sm,
+  .native-android .backdrop-blur-md,
+  .native-android .backdrop-blur-xl,
+  .native-android .backdrop-blur-2xl,
+  .native-android .backdrop-blur-\[2px\] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
   }
 }

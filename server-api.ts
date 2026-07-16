@@ -50,6 +50,19 @@ type UserSubscriptionMetadata = {
   trialEndsAt?: string;
   redeemedAt?: string;
   durationDays?: number;
+  productId?: string;
+  planId?: string;
+  orderId?: string;
+  linkedAt?: string;
+  platform?: "android" | "ios";
+};
+
+export type NativeSubscriptionSyncPayload = {
+  productId?: string;
+  planId?: string;
+  orderId?: string;
+  purchaseToken?: string;
+  platform?: "android" | "ios";
 };
 
 const PRIMARY_PROMO_CODE = (process.env.PROMO_CODE_PRIMARY || "GETNOW").trim().toUpperCase();
@@ -60,6 +73,11 @@ const isActiveSubscriptionMetadata = (subscription: UserSubscriptionMetadata | u
   if (!subscription.trialEndsAt) return true;
   const expiry = Date.parse(subscription.trialEndsAt);
   return Number.isFinite(expiry) && expiry > Date.now();
+};
+
+const normalizeOptionalString = (value: string | undefined) => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 };
 
 const parseBase64Audio = (audio: string) => {
@@ -101,7 +119,10 @@ export async function transcribeAudio(audio: string, language?: string) {
     body: formData,
   });
 
-  const data = (await response.json().catch(() => ({}))) as { text?: string; error?: { message?: string } };
+  const data = (await response.json().catch(() => ({}))) as {
+    text?: string;
+    error?: { message?: string };
+  };
   if (!response.ok) {
     throw new Error(data.error?.message || "Speech transcription failed.");
   }
@@ -177,6 +198,78 @@ export async function deleteSupabaseAccount(authorizationHeader?: string) {
   }
 
   return data.user.id;
+}
+
+export async function syncNativeSubscription(
+  authorizationHeader: string | undefined,
+  payload: NativeSubscriptionSyncPayload,
+) {
+  const accessToken = authorizationHeader?.replace(/^Bearer\s+/i, "").trim();
+  if (!accessToken) {
+    throw new Error("Missing active session. Please sign in again before restoring premium.");
+  }
+
+  const productId = normalizeOptionalString(payload.productId);
+  const planId = normalizeOptionalString(payload.planId);
+  const orderId = normalizeOptionalString(payload.orderId);
+  const purchaseToken = normalizeOptionalString(payload.purchaseToken);
+  const platform = payload.platform === "ios" ? "ios" : "android";
+
+  if (!productId) {
+    throw new Error("Native subscription sync requires a product ID.");
+  }
+
+  if (platform === "android" && !purchaseToken && !orderId) {
+    throw new Error("Android subscription sync requires purchase details.");
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes("placeholder.supabase.co")) {
+    throw new Error("Supabase is not configured on the server.");
+  }
+
+  if (!serviceRoleKey) {
+    throw new Error("Native subscription linking requires SUPABASE_SERVICE_ROLE_KEY on the server.");
+  }
+
+  const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { data, error } = await authClient.auth.getUser(accessToken);
+
+  if (error || !data.user) {
+    throw new Error("Could not verify the signed-in user. Please sign in again.");
+  }
+
+  const linkedAt = new Date().toISOString();
+  const nextSubscription: UserSubscriptionMetadata = {
+    status: "active",
+    source: platform === "ios" ? "native_app_store" : "native_google_play",
+    productId,
+    planId,
+    orderId,
+    linkedAt,
+    platform,
+  };
+
+  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { error: updateError } = await adminClient.auth.admin.updateUserById(data.user.id, {
+    app_metadata: {
+      ...(data.user.app_metadata || {}),
+      subscription: nextSubscription,
+    },
+  });
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+
+  return nextSubscription;
 }
 
 export async function redeemPromoCode(authorizationHeader: string | undefined, rawCode: string) {

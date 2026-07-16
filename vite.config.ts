@@ -12,6 +12,7 @@ import {
   getApiStatus,
   getClientErrorMessage,
   redeemPromoCode,
+  syncNativeSubscription,
   transcribeAudio,
 } from './server-api';
 
@@ -111,6 +112,39 @@ const localApiPlugin = () => ({
         return;
       }
 
+      if (pathname === '/api/account') {
+        if (req.method !== 'DELETE') {
+          sendJson(res, 405, { error: 'Method not allowed.' });
+          return;
+        }
+
+        try {
+          await deleteSupabaseAccount(req.headers.authorization);
+          sendJson(res, 200, { deleted: true });
+        } catch (error) {
+          console.error('Vite local API account deletion error:', error);
+          sendJson(res, 500, { error: getClientErrorMessage(error) });
+        }
+        return;
+      }
+
+      if (pathname === '/api/subscription/native-sync') {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'Method not allowed.' });
+          return;
+        }
+
+        try {
+          const payload = await readJsonBody(req);
+          const subscription = await syncNativeSubscription(req.headers.authorization, payload || {});
+          sendJson(res, 200, { subscription });
+        } catch (error) {
+          console.error('Vite local API native subscription sync error:', error);
+          sendJson(res, 400, { error: getClientErrorMessage(error) });
+        }
+        return;
+      }
+
       if (pathname === '/api/promo-redeem') {
         if (req.method !== 'POST') {
           sendJson(res, 405, { error: 'Method not allowed.' });
@@ -124,22 +158,6 @@ const localApiPlugin = () => ({
         } catch (error) {
           console.error('Vite local API promo redemption error:', error);
           sendJson(res, 400, { error: getClientErrorMessage(error) });
-        }
-        return;
-      }
-
-      if (pathname === '/api/account') {
-        if (req.method !== 'DELETE') {
-          sendJson(res, 405, { error: 'Method not allowed.' });
-          return;
-        }
-
-        try {
-          await deleteSupabaseAccount(req.headers.authorization);
-          sendJson(res, 200, { deleted: true });
-        } catch (error) {
-          console.error('Vite local API account deletion error:', error);
-          sendJson(res, 500, { error: getClientErrorMessage(error) });
         }
         return;
       }

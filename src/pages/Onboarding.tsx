@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Sunrise, CheckCircle2 } from "lucide-react";
+import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Sunrise } from "lucide-react";
 import { ChristianCross } from "../components/ChristianCross";
 import { motion, AnimatePresence } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
@@ -136,8 +136,17 @@ export default function Onboarding() {
     storageGetJson<Record<string, string>>(STORAGE_KEY, {}),
   );
   const [showAnalysis, setShowAnalysis] = useState(false);
-  const { completeOnboarding } = useAuth();
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  const stepTimerRef = useRef<number | null>(null);
+  const { completeOnboarding, updateShadowNotes } = useAuth();
   const navigate = useNavigate();
+
+  const clearStepTimer = () => {
+    if (stepTimerRef.current !== null) {
+      window.clearTimeout(stepTimerRef.current);
+      stepTimerRef.current = null;
+    }
+  };
 
   useEffect(() => {
     const initialStep = questions.findIndex((question) => !answers[question.id]);
@@ -154,21 +163,33 @@ export default function Onboarding() {
     storageSet(STORAGE_KEY, JSON.stringify(answers));
   }, [answers]);
 
+  useEffect(() => () => clearStepTimer(), []);
+
   const handleSelect = (optionId: string) => {
+    if (isAdvancing) return;
     const question = questions[currentStep];
     const nextAnswers = { ...answers, [question.id]: optionId };
 
+    clearStepTimer();
     setAnswers(nextAnswers);
 
     if (currentStep < questions.length - 1) {
-      window.setTimeout(() => setCurrentStep((prev) => prev + 1), 220);
+      setIsAdvancing(true);
+      stepTimerRef.current = window.setTimeout(() => {
+        stepTimerRef.current = null;
+        setCurrentStep((prev) => Math.min(prev + 1, questions.length - 1));
+        setIsAdvancing(false);
+      }, 180);
       return;
     }
 
+    setIsAdvancing(false);
     setShowAnalysis(true);
   };
 
   const handleBack = () => {
+    clearStepTimer();
+    setIsAdvancing(false);
     if (showAnalysis) {
       setShowAnalysis(false);
       setCurrentStep(questions.length - 1);
@@ -182,7 +203,9 @@ export default function Onboarding() {
   const handleGetStarted = () => {
     storageRemove(STORAGE_KEY);
     completeOnboarding();
-    navigate("/paywall");
+    const analysis = getAnalysisSummary(answers);
+    void updateShadowNotes(analysis.overview);
+    window.requestAnimationFrame(() => navigate("/", { replace: true }));
   };
 
   if (showAnalysis) {
@@ -202,10 +225,7 @@ export default function Onboarding() {
 
     return (
       <div
-        className={cn(
-          "app-screen-scroll w-full relative flex flex-col items-center px-4 py-4 scrollbar-hide",
-          shouldTopAlign ? "justify-start" : "justify-center",
-        )}
+        className="app-screen-scroll w-full relative flex flex-col items-center justify-start px-4 py-4 scrollbar-hide"
       >
         <div className="app-atmosphere">
           <div className="app-grid" />
@@ -214,11 +234,11 @@ export default function Onboarding() {
         </div>
 
         <motion.div
-          initial={{ opacity: 0, y: 18, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.35, ease: "easeOut" }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
           className={cn(
-            "app-panel relative z-10 w-full max-w-md rounded-[2rem] shadow-2xl",
+            "app-panel shrink-0 relative z-10 w-full max-w-md rounded-[2rem]",
             !shouldTopAlign && "my-auto",
             isCompactPhone ? "p-5" : "p-6 sm:p-8",
           )}
@@ -293,6 +313,7 @@ export default function Onboarding() {
   }
 
   const question = questions[currentStep];
+  const completedCount = questions.filter((item) => Boolean(answers[item.id])).length;
 
   return (
     <div
@@ -319,48 +340,18 @@ export default function Onboarding() {
             Back
           </button>
           <span className="app-soft text-xs">
-            {Object.keys(answers).length} of {questions.length} responses
+            {completedCount} of {questions.length} responses
           </span>
-        </div>
-
-        <div className={cn("rounded-[2rem] border px-5 py-5 shadow-[0_22px_52px_rgba(0,0,0,0.10)]", isShortPhone ? "mb-5" : "mb-6")} style={{ borderColor: "var(--app-card-border)", background: "linear-gradient(180deg, color-mix(in srgb, var(--app-card-strong) 96%, transparent), color-mix(in srgb, var(--app-card-bg) 90%, transparent))" }}>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="app-kicker mb-1 text-[10px]">Personalize your guidance</p>
-              <p className="app-heading text-base font-semibold">A short setup to shape your first sessions</p>
-            </div>
-            <div className="rounded-card px-3 py-2 text-right" style={{ background: "var(--app-card-soft)" }}>
-              <p className="app-soft text-[10px] uppercase tracking-[0.16em]">Progress</p>
-              <p className="app-heading text-sm font-semibold">{Math.round(((currentStep + 1) / questions.length) * 100)}%</p>
-            </div>
-          </div>
-
-          <div className={cn("h-1 w-full overflow-hidden rounded-full", isShortPhone ? "mb-4" : "mb-5")} style={{ background: "var(--app-divider)" }}>
-            <motion.div
-              className="h-full"
-              style={{ background: "var(--app-accent-gradient)" }}
-              initial={{ width: 0 }}
-              animate={{ width: `${((currentStep + 1) / questions.length) * 100}%` }}
-              transition={{ duration: 0.3 }}
-            />
-          </div>
-
-          <div className="flex items-start gap-3 rounded-card border px-4 py-3" style={{ borderColor: "var(--app-card-border)", background: "color-mix(in srgb, var(--app-card-bg) 75%, transparent)" }}>
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 app-accent" />
-            <p className="app-muted text-sm leading-relaxed">
-              These answers set the tone, pacing, and first practical guidance you receive. You can refine them later from settings.
-            </p>
-          </div>
         </div>
 
         <AnimatePresence mode="wait">
           <motion.div
             key={currentStep}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.3 }}
-            className="flex-1 rounded-[2rem] border px-5 py-6 shadow-[0_22px_52px_rgba(0,0,0,0.10)] sm:px-6 sm:py-7"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15, ease: "linear" }}
+            className="flex-1 shrink-0 rounded-[2rem] border px-5 py-6 sm:px-6 sm:py-7"
             style={{ borderColor: "var(--app-card-border)", background: "color-mix(in srgb, var(--app-card-strong) 96%, transparent)" }}
           >
             <span className={cn("app-kicker text-xs font-semibold", isShortPhone ? "mb-3 inline-flex" : "mb-4 inline-flex")}>
@@ -380,19 +371,20 @@ export default function Onboarding() {
                   <button
                     key={option.id}
                     onClick={() => handleSelect(option.id)}
-                    className={`touch-target app-card-hover w-full rounded-card border text-left flex items-center justify-between transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] ${
-                      isSelected
-                        ? "shadow-[0_14px_34px_rgba(0,0,0,0.08)]"
-                        : ""
-                    } ${isCompactPhone ? "p-4" : "p-5"}`}
+                    disabled={isAdvancing}
+                    className={`touch-target w-full rounded-card border text-left flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] ${isCompactPhone ? "p-4" : "p-5"}`}
                     style={{
                       background: isSelected ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                       borderColor: isSelected
                         ? "color-mix(in srgb, var(--app-accent) 38%, transparent)"
                         : "var(--app-card-border)",
+                      boxShadow: isSelected
+                        ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 18%, transparent)"
+                        : undefined,
+                      transition: "background-color 150ms ease, border-color 150ms ease",
                     }}
                   >
-                    <div className="flex items-center gap-4">
+                    <div className="flex min-w-0 items-center gap-4">
                       {option.icon && (
                         <div
                           className="rounded-full p-2"
@@ -405,22 +397,27 @@ export default function Onboarding() {
                         </div>
                       )}
                       <span
-                        className={cn(isCompactPhone ? "text-[16px]" : "text-lg")}
+                        className={cn("min-w-0 leading-snug", isCompactPhone ? "text-[16px]" : "text-lg")}
                         style={{
                           color: isSelected ? "var(--app-accent)" : "var(--app-text)",
                           fontWeight: isSelected ? 600 : 500,
                         }}
                       >
-                        {option.label}
+                      {option.label}
                       </span>
                     </div>
                     <span
-                      className="rounded-pill px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]"
+                      className="rounded-pill flex shrink-0 items-center gap-1.5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]"
                       style={{
                         background: isSelected ? "color-mix(in srgb, var(--app-accent) 16%, transparent)" : "var(--app-card-soft)",
                         color: isSelected ? "var(--app-accent)" : "var(--app-text-muted)",
                       }}
                     >
+                      {isSelected && (
+                        <svg viewBox="0 0 12 12" className="h-3 w-3" fill="currentColor">
+                          <path d="M1 6l3.5 3.5L11 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                        </svg>
+                      )}
                       {isSelected ? "Selected" : "Choose"}
                     </span>
                   </button>

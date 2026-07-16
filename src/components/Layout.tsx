@@ -29,19 +29,17 @@ import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { useHaptics } from "../context/HapticsContext";
 import { useMobileViewport } from "../context/MobileViewportContext";
-import { isNativePlatform } from "../lib/native/platform";
+import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
 import { cn } from "../lib/utils";
 import {
   cancelDailyReflectionReminder,
-  registerForPushNotifications,
   scheduleDailyReflectionReminder,
-  unregisterFromPushNotifications,
 } from "../lib/native/notifications";
 
 const DAILY_REMINDER_STORAGE_KEY = "bible-nova-companion-daily-reminders";
-const PUSH_STORAGE_KEY = "bible-nova-companion-push-enabled";
-const PUSH_TOKEN_STORAGE_KEY = "bible-nova-companion-push-token";
+const REMINDER_TIME_STORAGE_KEY = "bible-nova-companion-reminder-time";
+const REMINDER_DAYS_STORAGE_KEY = "bible-nova-companion-reminder-days";
 
 const makeAvatarDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -111,13 +109,15 @@ export default function Layout() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [dailyRemindersEnabled, setDailyRemindersEnabled] = useState(false);
-  const [pushEnabled, setPushEnabled] = useState(false);
+  const [reminderTime, setReminderTime] = useState("08:00");
+  const [reminderDays, setReminderDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const prefersReducedMotion = useReducedMotion();
   const displayName = profileName || (isGuest ? "Guest" : user?.email?.split("@")[0] ?? "Unknown");
   const accountInitial = displayName.trim().charAt(0).toUpperCase() || "?";
   const isAccountBusy = isDeletingAccount || isSavingProfile || isProcessingAvatar;
   const nativeControlsAvailable = isNativePlatform();
+  const isAndroidApp = nativeControlsAvailable && getNativePlatform() === "android";
   const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "1.1.2";
 
   useEffect(() => {
@@ -129,10 +129,25 @@ export default function Layout() {
       .catch(() => undefined);
 
     void nativeStorage
-      .get(PUSH_STORAGE_KEY)
-      .then((value) => setPushEnabled(value === "true"))
+      .get(REMINDER_TIME_STORAGE_KEY)
+      .then((value) => {
+        if (value) setReminderTime(value);
+      })
       .catch(() => undefined);
+
+    void nativeStorage
+      .get(REMINDER_DAYS_STORAGE_KEY)
+      .then((value) => {
+        if (value) setReminderDays(JSON.parse(value));
+      })
+      .catch(() => undefined);
+
   }, [nativeControlsAvailable]);
+
+  const parseTime = (timeStr: string) => {
+    const [h, m] = timeStr.split(":").map(Number);
+    return { hour: isNaN(h) ? 8 : h, minute: isNaN(m) ? 0 : m };
+  };
 
   const handleDailyReminderToggle = async () => {
     setNotificationError(null);
@@ -140,7 +155,8 @@ export default function Layout() {
 
     try {
       if (next) {
-        const scheduled = await scheduleDailyReflectionReminder(8, 0);
+        const { hour, minute } = parseTime(reminderTime);
+        const scheduled = await scheduleDailyReflectionReminder(hour, minute, reminderDays);
         if (!scheduled) throw new Error("Notification permission was not granted.");
       } else {
         await cancelDailyReflectionReminder();
@@ -153,27 +169,24 @@ export default function Layout() {
     }
   };
 
-  const handlePushToggle = async () => {
-    setNotificationError(null);
-    const next = !pushEnabled;
-
-    try {
-      if (next) {
-        const registered = await registerForPushNotifications((token) => {
-          void nativeStorage.set(PUSH_TOKEN_STORAGE_KEY, token);
-        });
-        if (!registered) throw new Error("Push notification permission was not granted.");
-      } else {
-        await unregisterFromPushNotifications();
-        await nativeStorage.remove(PUSH_TOKEN_STORAGE_KEY);
-      }
-
-      setPushEnabled(next);
-      await nativeStorage.set(PUSH_STORAGE_KEY, String(next));
-    } catch (error) {
-      setNotificationError(error instanceof Error ? error.message : "Could not update push notifications.");
+  const handleTimeChange = async (newTime: string) => {
+    setReminderTime(newTime);
+    await nativeStorage.set(REMINDER_TIME_STORAGE_KEY, newTime);
+    if (dailyRemindersEnabled) {
+      const { hour, minute } = parseTime(newTime);
+      await scheduleDailyReflectionReminder(hour, minute, reminderDays);
     }
   };
+
+  const handleDaysChange = async (newDays: number[]) => {
+    setReminderDays(newDays);
+    await nativeStorage.set(REMINDER_DAYS_STORAGE_KEY, JSON.stringify(newDays));
+    if (dailyRemindersEnabled) {
+      const { hour, minute } = parseTime(reminderTime);
+      await scheduleDailyReflectionReminder(hour, minute, newDays);
+    }
+  };
+
 
   const handleSignOut = async () => {
     setSettingsOpen(false);
@@ -289,20 +302,30 @@ export default function Layout() {
         <button
           onClick={() => setSettingsOpen(true)}
           aria-label="Open settings"
-          className="touch-target app-secondary-button absolute right-4 z-50 rounded-full p-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-          style={{ top: "calc(0.75rem + env(safe-area-inset-top, 0px))" }}
+          className="touch-target absolute right-4 z-50 flex items-center justify-center overflow-hidden rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-95"
+          style={{
+            top: "calc(0.75rem + env(safe-area-inset-top, 0px))",
+            width: "2.4rem",
+            height: "2.4rem",
+            background: profileAvatarUrl ? "transparent" : "var(--app-accent-gradient)",
+            boxShadow: "var(--app-accent-shadow), inset 0 1px 0 rgba(255,255,255,0.15)",
+          }}
         >
-          <Settings2 className="h-4 w-4" />
+          {profileAvatarUrl ? (
+            <img src={profileAvatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
+          ) : (
+            <span className="text-[13px] font-bold text-white/90 select-none">{accountInitial}</span>
+          )}
         </button>
 
         <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}
-              initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-              animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
-              transition={{ duration: prefersReducedMotion ? 0 : 0.3 }}
+              initial={prefersReducedMotion || isAndroidApp ? false : { opacity: 0, y: 8 }}
+              animate={prefersReducedMotion || isAndroidApp ? { opacity: 1 } : { opacity: 1, y: 0 }}
+              exit={prefersReducedMotion || isAndroidApp ? { opacity: 0 } : { opacity: 0, y: -8 }}
+              transition={{ duration: prefersReducedMotion || isAndroidApp ? 0 : 0.3 }}
               className="relative flex min-h-0 flex-1 flex-col"
             >
               <Outlet />
@@ -337,15 +360,15 @@ export default function Layout() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
                 onClick={() => setSettingsOpen(false)}
-                className="app-overlay fixed inset-0 z-[60] backdrop-blur-sm"
+                className="app-overlay app-settings-overlay fixed inset-0 z-[60] backdrop-blur-sm"
               />
 
               <motion.div
                 initial={{ y: "100%" }}
                 animate={{ y: 0 }}
                 exit={{ y: "100%" }}
-                transition={{ type: "spring", stiffness: 380, damping: 40 }}
-                className="app-panel-strong fixed inset-x-0 bottom-0 z-[70] mx-auto max-h-[92dvh] w-full overflow-y-auto rounded-t-[2rem] border-t scrollbar-hide sm:max-w-lg sm:px-0 xl:max-w-xl"
+                transition={isAndroidApp ? { duration: 0.18, ease: "easeOut" } : { type: "spring", stiffness: 380, damping: 40 }}
+                className="app-panel-strong app-settings-sheet fixed inset-x-0 bottom-0 z-[70] mx-auto max-h-[92dvh] w-full overflow-y-auto rounded-t-[2rem] border-t scrollbar-hide sm:max-w-lg sm:px-0 xl:max-w-xl"
                 style={{
                   bottom: "var(--app-bottom-offset)",
                   borderColor: "var(--app-card-border)",
@@ -360,21 +383,24 @@ export default function Layout() {
                 <div
                   className={cn("space-y-6 px-5 pt-2 sm:px-6", isCompactPhone ? "pb-5" : "pb-6")}
                 >
-                  <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between">
                     <div>
                       <p className="app-kicker">Settings</p>
-                      <h2 className="mt-2 text-[18px] font-semibold tracking-tight app-heading">Shape your sanctuary</h2>
+                      <h2 className="mt-2 text-[19px] font-semibold tracking-tight app-heading">Shape your sanctuary</h2>
                     </div>
                     <button
                       onClick={() => setSettingsOpen(false)}
-                      className="touch-target app-secondary-button rounded-full p-2 transition-colors"
+                      className="touch-target app-secondary-button rounded-full p-2.5 transition-colors"
                     >
                       <X className="h-4 w-4" />
                     </button>
                   </div>
 
                   <section>
-                    <p className="app-kicker mb-3">Appearance</p>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "var(--app-accent-gradient)" }} />
+                      <p className="app-kicker">Appearance</p>
+                    </div>
                     <div className="flex gap-2">
                       {(["light", "dark", "system"] as const).map((t) => {
                         const icons = {
@@ -393,11 +419,15 @@ export default function Layout() {
                               background: active ? "var(--app-accent-soft)" : "var(--app-secondary-bg)",
                               borderColor: active ? "color-mix(in srgb, var(--app-accent) 35%, transparent)" : "var(--app-secondary-border)",
                               color: active ? "var(--app-accent)" : "var(--app-text-muted)",
+                              boxShadow: active ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 18%, transparent)" : "none",
                             }}
                           >
                             <div className="flex flex-col items-center gap-2">
                               {icons[t]}
-                              {labels[t]}
+                              <span>{labels[t]}</span>
+                              {active && (
+                                <span className="block h-1 w-4 rounded-full" style={{ background: "var(--app-accent)" }} />
+                              )}
                             </div>
                           </button>
                         );
@@ -406,7 +436,10 @@ export default function Layout() {
                   </section>
 
                   <section>
-                    <p className="app-kicker mb-3">Interaction</p>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "var(--app-accent-gradient)" }} />
+                      <p className="app-kicker">Interaction</p>
+                    </div>
                     <button
                       type="button"
                       role="switch"
@@ -467,7 +500,7 @@ export default function Layout() {
                             </span>
                             <span>
                               <span className="app-heading block text-[14px] font-medium">Daily reminder</span>
-                              <span className="app-muted block text-[11px]">A quiet reflection prompt at 8:00 AM.</span>
+                              <span className="app-muted block text-[11px]">A quiet reflection prompt.</span>
                             </span>
                           </span>
                           <span
@@ -481,38 +514,70 @@ export default function Layout() {
                           </span>
                         </button>
 
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={pushEnabled}
-                          onClick={handlePushToggle}
-                          className="flex w-full items-center justify-between rounded-[1.4rem] border px-4 py-3.5 text-left transition-colors hover:bg-[color:var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-                          style={{
-                            background: "var(--app-card-soft)",
-                            borderColor: "var(--app-card-border)",
-                          }}
-                        >
-                          <span className="flex items-center gap-3">
-                            <span className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)", color: "var(--app-accent)" }}>
-                              {pushEnabled ? <BellRing className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
-                            </span>
-                            <span>
-                              <span className="app-heading block text-[14px] font-medium">Push notifications</span>
-                              <span className="app-muted block text-[11px]">Registers this device for server-sent updates.</span>
-                            </span>
-                          </span>
-                          <span
-                            className="relative h-6 w-11 rounded-full border transition-colors"
-                            style={{
-                              background: pushEnabled ? "var(--app-accent)" : "var(--app-secondary-bg)",
-                              borderColor: pushEnabled ? "var(--app-accent)" : "var(--app-secondary-border)",
-                            }}
-                          >
-                            <span className="absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white transition-transform" style={{ left: pushEnabled ? "1.45rem" : "0.2rem" }} />
-                          </span>
-                        </button>
-
-                        {notificationError && (
+                        <AnimatePresence>
+                          {dailyRemindersEnabled && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div
+                                className="flex flex-col gap-3 rounded-[1.4rem] border px-4 py-3.5 mt-2"
+                                style={{
+                                  background: "var(--app-card-soft)",
+                                  borderColor: "var(--app-card-border)",
+                                }}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="app-heading block text-[13px] font-medium">Time</span>
+                                  <input
+                                    type="time"
+                                    value={reminderTime}
+                                    onChange={(e) => void handleTimeChange(e.target.value)}
+                                    className="rounded-lg border px-2 py-1 text-[13px] app-heading focus-visible:outline-none"
+                                    style={{
+                                      background: "var(--app-secondary-bg)",
+                                      borderColor: "var(--app-secondary-border)",
+                                    }}
+                                  />
+                                </div>
+                                <div className="h-px w-full bg-[color:var(--app-divider)]" />
+                                <div className="flex justify-between gap-1">
+                                  {[
+                                    { id: 1, label: "S" },
+                                    { id: 2, label: "M" },
+                                    { id: 3, label: "T" },
+                                    { id: 4, label: "W" },
+                                    { id: 5, label: "T" },
+                                    { id: 6, label: "F" },
+                                    { id: 7, label: "S" },
+                                  ].map((day) => {
+                                    const isSelected = reminderDays.includes(day.id);
+                                    return (
+                                      <button
+                                        key={day.id}
+                                        onClick={() => {
+                                          const newDays = isSelected
+                                            ? reminderDays.filter((d) => d !== day.id)
+                                            : [...reminderDays, day.id].sort();
+                                          void handleDaysChange(newDays);
+                                        }}
+                                        className="flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-medium transition-colors"
+                                        style={{
+                                          background: isSelected ? "var(--app-accent)" : "var(--app-secondary-bg)",
+                                          color: isSelected ? "white" : "var(--app-text-muted)",
+                                        }}
+                                      >
+                                        {day.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>                        {notificationError && (
                           <p role="alert" className="rounded-xl px-3 py-2 text-[12px] leading-relaxed text-[color:var(--app-danger)]" style={{ background: "var(--app-danger-soft)" }}>
                             {notificationError}
                           </p>
@@ -522,7 +587,10 @@ export default function Layout() {
                   </section>
 
                   <section>
-                    <p className="app-kicker mb-3">Account</p>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "var(--app-accent-gradient)" }} />
+                      <p className="app-kicker">Account</p>
+                    </div>
                     <div
                       className="overflow-hidden rounded-[1.4rem] border"
                       style={{
@@ -731,7 +799,10 @@ export default function Layout() {
                   </section>
 
                   <section>
-                    <p className="app-kicker mb-3">About</p>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "var(--app-accent-gradient)" }} />
+                      <p className="app-kicker">About</p>
+                    </div>
                     <div
                       className="flex items-center justify-between rounded-[1.4rem] border px-4 py-3.5"
                       style={{
@@ -758,7 +829,7 @@ function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label
   return (
     <NavLink
       to={to}
-      className="touch-target relative flex flex-1 flex-col items-center justify-center gap-1 rounded-pill py-1.5 transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+      className="touch-target relative flex flex-1 flex-col items-center justify-center gap-1 rounded-pill py-2 transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
       style={{ color: "var(--app-text-muted)" }}
     >
       {({ isActive }) => (
@@ -768,23 +839,26 @@ function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label
               layoutId="nav-pill"
               className="absolute inset-0 rounded-pill"
               style={{ background: "var(--app-nav-active)" }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              transition={{ type: "spring", stiffness: 320, damping: 28 }}
             />
           )}
           <div
-            className="relative z-10 transition-transform duration-300"
+            className={cn(
+              "relative z-10 transition-all duration-300",
+              isActive ? "app-nav-active-glow" : "",
+            )}
             style={{
               color: isActive ? "var(--app-accent)" : "var(--app-text-muted)",
-              transform: isActive ? "scale(1.05)" : "scale(1)",
+              transform: isActive ? "scale(1.1)" : "scale(1)",
             }}
           >
             {icon}
           </div>
           <span
-            className="relative z-10 text-[10px] font-medium tracking-wide transition-all duration-300"
+            className="relative z-10 text-[10px] font-semibold tracking-wide transition-all duration-300"
             style={{
               color: isActive ? "var(--app-accent)" : "var(--app-text-muted)",
-              opacity: isActive ? 1 : 0.68,
+              opacity: isActive ? 1 : 0.6,
             }}
           >
             {label}

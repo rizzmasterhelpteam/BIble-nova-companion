@@ -19,7 +19,7 @@ const renderApp = () => {
 Promise.race([
   restoreWebStorageFromPreferences(),
   new Promise<void>((resolve) => {
-    window.setTimeout(resolve, 1500);
+    window.setTimeout(resolve, 400);
   }),
 ])
   .catch((error) => {

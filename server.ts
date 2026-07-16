@@ -10,6 +10,7 @@ import {
   getApiStatus,
   getClientErrorMessage,
   redeemPromoCode,
+  syncNativeSubscription,
   transcribeAudio,
 } from "./server-api";
 
@@ -27,8 +28,8 @@ app.get("/api/status", (_req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   try {
-    const { messages } = req.body;
-    const message = await createChatCompletion(messages);
+    const { messages, shadowNotes } = req.body;
+    const message = await createChatCompletion(messages, shadowNotes);
     res.json({ message });
   } catch (error: any) {
     console.error("LLM API Error:", error);
@@ -43,6 +44,16 @@ app.delete("/api/account", async (req, res) => {
   } catch (error) {
     console.error("Account deletion error:", error);
     res.status(500).json({ error: getClientErrorMessage(error) });
+  }
+});
+
+app.post("/api/subscription/native-sync", async (req, res) => {
+  try {
+    const subscription = await syncNativeSubscription(req.headers.authorization, req.body || {});
+    res.json({ subscription });
+  } catch (error) {
+    console.error("Native subscription sync error:", error);
+    res.status(400).json({ error: getClientErrorMessage(error) });
   }
 });
 

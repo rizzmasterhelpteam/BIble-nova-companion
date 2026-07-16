@@ -10,10 +10,10 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { HapticsProvider } from "./context/HapticsContext";
 import { MobileViewportProvider } from "./context/MobileViewportContext";
 import { SplashScreen } from "./components/SplashScreen";
-import { AnimatePresence } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { isNativePlatform } from "./lib/native/platform";
+import { getNativePlatform, isNativePlatform } from "./lib/native/platform";
 
 const Layout = lazy(() => import("./components/Layout"));
 const Chat = lazy(() => import("./pages/Chat"));
@@ -22,42 +22,88 @@ const Intentions = lazy(() => import("./pages/Intentions"));
 const Confession = lazy(() => import("./pages/Confession"));
 const Login = lazy(() => import("./pages/Login"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
-const Paywall = lazy(() => import("./pages/Paywall"));
 
 const FullScreenLoader = () => <SplashScreen />;
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
-  const { user, isLoading, hasCompletedOnboarding, isSubscribed } = useAuth();
+  const { user, isGuest, isLoading, hasCompletedOnboarding } = useAuth();
   const location = useLocation();
+  const hasActiveIdentity = Boolean(user || isGuest);
   
   if (isLoading) {
     return <FullScreenLoader />;
   }
 
-  if (!user) {
+  if (!hasActiveIdentity) {
     return <Navigate to="/login" replace />;
   }
 
-  // Enforce flow: Onboarding -> Paywall -> Main App
   if (!hasCompletedOnboarding && location.pathname !== "/onboarding") {
     return <Navigate to="/onboarding" replace />;
   }
-
-  if (hasCompletedOnboarding && !isSubscribed && location.pathname !== "/paywall" && location.pathname !== "/onboarding") {
-    return <Navigate to="/paywall" replace />;
-  }
   
-  // Prevent users from going back to paywall or onboarding if already in the app properly
-  if (hasCompletedOnboarding && isSubscribed && (location.pathname === "/onboarding" || location.pathname === "/paywall")) {
+  if (hasCompletedOnboarding && (location.pathname === "/onboarding" || location.pathname === "/paywall")) {
      return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
 };
 
+// Page fade wrapper — opacity only (no layout thrash on Android)
+const PageFade = ({ children }: { children: React.ReactNode }) => {
+  const isAndroid = isNativePlatform() && getNativePlatform() === "android";
+
+  return (
+    <motion.div
+      initial={isAndroid ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: isAndroid ? 0 : 0.18, ease: "linear" }}
+      style={{ display: "contents" }}
+    >
+      {children}
+    </motion.div>
+  );
+};
+
+const AnimatedRoutes = () => {
+  const location = useLocation();
+  // Only animate the top-level auth flow routes, not in-app sub-routes
+  const topKey = location.pathname.startsWith("/") 
+    ? ["login","onboarding","paywall"].find(r => location.pathname === `/${r}`) ?? "app"
+    : "app";
+
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <React.Fragment key={topKey}>
+      <Routes location={location}>
+        <Route path="/login" element={<PageFade><Login /></PageFade>} />
+        <Route path="/onboarding" element={<AuthGuard><PageFade><Onboarding /></PageFade></AuthGuard>} />
+        <Route path="/paywall" element={<AuthGuard><Navigate to="/" replace /></AuthGuard>} />
+        <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
+          <Route index element={<Chat />} />
+          <Route path="breathe" element={<Breathe />} />
+          <Route path="intentions" element={<Intentions />} />
+          <Route path="confess" element={<Confession />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      </React.Fragment>
+    </AnimatePresence>
+  );
+};
+
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const [hasRenderedAppFrame, setHasRenderedAppFrame] = useState(false);
   const Router = isNativePlatform() ? HashRouter : BrowserRouter;
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const isAndroid = isNativePlatform() && getNativePlatform() === "android";
+    root.classList.toggle("native-android", isAndroid);
+    return () => root.classList.remove("native-android");
+  }, []);
 
   useEffect(() => {
     const prefersReducedMotion =
@@ -65,9 +111,10 @@ export default function App() {
       ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
       : false;
 
+    const isAndroid = isNativePlatform() && getNativePlatform() === "android";
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, prefersReducedMotion ? 250 : 800);
+    }, prefersReducedMotion ? 250 : isAndroid ? 350 : 800);
 
     return () => clearTimeout(timer);
   }, []);
@@ -78,7 +125,7 @@ export default function App() {
 
     frameOne = window.requestAnimationFrame(() => {
       frameTwo = window.requestAnimationFrame(() => {
-        void hideNativeSplashScreen();
+        setHasRenderedAppFrame(true);
       });
     });
 
@@ -88,6 +135,11 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!hasRenderedAppFrame || showSplash) return;
+    void hideNativeSplashScreen();
+  }, [hasRenderedAppFrame, showSplash]);
+
   return (
     <ThemeProvider>
       <MobileViewportProvider>
@@ -96,21 +148,7 @@ export default function App() {
             <ErrorBoundary>
               <Router>
                 <Suspense fallback={<FullScreenLoader />}>
-                  <Routes>
-                    <Route path="/login" element={<Login />} />
-
-                    {/* Guarded App Routes */}
-                    <Route path="/onboarding" element={<AuthGuard><Onboarding /></AuthGuard>} />
-                    <Route path="/paywall" element={<AuthGuard><Paywall /></AuthGuard>} />
-
-                    <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
-                      <Route index element={<Chat />} />
-                      <Route path="breathe" element={<Breathe />} />
-                      <Route path="intentions" element={<Intentions />} />
-                      <Route path="confess" element={<Confession />} />
-                    </Route>
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                  </Routes>
+                  <AnimatedRoutes />
                 </Suspense>
               </Router>
             </ErrorBoundary>

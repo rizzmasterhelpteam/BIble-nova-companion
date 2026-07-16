@@ -5,10 +5,12 @@ import { Check, Star, AlertCircle, ShieldCheck } from "lucide-react";
 import { AppLogo } from "../components/AppLogo";
 import { motion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
-import { isNativePlatform } from "../lib/native/platform";
+import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { apiFetch } from "../lib/apiClient";
+import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import {
+  getConfiguredPlanIdForProduct,
   getCurrentOffering,
   openSubscriptionManagement,
   purchasePackage as purchaseNativePackage,
@@ -18,11 +20,27 @@ import {
 
 type Plan = "monthly" | "yearly";
 
+type NativePurchaseTransaction = {
+  productIdentifier?: string;
+  orderId?: string;
+  purchaseToken?: string;
+};
+
+type NativeSubscriptionSyncResponse = {
+  subscription?: {
+    source?: string;
+    productId?: string;
+    planId?: string;
+  };
+  error?: string;
+};
+
 export default function Paywall() {
   useDocumentTitle("Subscribe | Bible Nova Companion");
   const { isCompactPhone, isShortPhone } = useMobileViewport();
   const shouldTopAlign = isShortPhone;
-  const nativeStoreAvailable = isNativePlatform();
+  const nativeStoreAvailable =
+    isNativePlatform() && getNativePlatform() === "android";
   const [selectedPlan, setSelectedPlan] = useState<Plan>("yearly");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,23 +52,15 @@ export default function Paywall() {
   const [iapReady, setIapReady] = useState(false);
   const [isLoadingOffering, setIsLoadingOffering] = useState(nativeStoreAvailable);
   const [iapLoadError, setIapLoadError] = useState<string | null>(null);
-  const { session, subscribe, user } = useAuth();
+  const { isSubscribed, session, subscribe, user } = useAuth();
   const navigate = useNavigate();
-  const subscribeTimeoutRef = useRef<number | null>(null);
-  const errorTimeoutRef = useRef<number | null>(null);
   const yearlyRef = useRef<HTMLButtonElement | null>(null);
   const monthlyRef = useRef<HTMLButtonElement | null>(null);
 
-  const clearTimers = () => {
-    if (subscribeTimeoutRef.current) window.clearTimeout(subscribeTimeoutRef.current);
-    if (errorTimeoutRef.current) window.clearTimeout(errorTimeoutRef.current);
-    subscribeTimeoutRef.current = null;
-    errorTimeoutRef.current = null;
-  };
-
   useEffect(() => {
-    return () => clearTimers();
-  }, []);
+    if (!isSubscribed) return;
+    navigate("/", { replace: true });
+  }, [isSubscribed, navigate]);
 
   useEffect(() => {
     if (!nativeStoreAvailable) return;
@@ -137,52 +147,93 @@ export default function Paywall() {
   const canSubscribe =
     !isLoading &&
     !isLoadingOffering &&
-    (!nativeStoreAvailable || Boolean(selectedNativePackage));
+    nativeStoreAvailable &&
+    Boolean(selectedNativePackage);
   const selectedPlanLabel =
-    nativeStoreAvailable && selectedNativePackage
+    selectedNativePackage
       ? selectedNativePackage.product.title
       : selectedPlan === "yearly"
       ? "Yearly"
       : "Monthly";
 
   const handleSubscribe = async () => {
-    clearTimers();
     setError(null);
     if (!canSubscribe) return;
     setIsLoading(true);
 
-    if (nativeStoreAvailable) {
-      try {
-        if (!selectedNativePackage) {
-          throw new Error(
-            iapReady
-              ? "This plan is not available in the native store yet."
-              : "In-app purchases are not configured yet. Add IAP product IDs/base plans and store products.",
-          );
-        }
-
-        await purchaseNativePackage(selectedNativePackage);
-        subscribe();
-        navigate("/");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Purchase could not be completed.");
-      } finally {
-        setIsLoading(false);
+    try {
+      if (!selectedNativePackage) {
+        throw new Error(
+          iapReady
+            ? "This plan is not available in Google Play yet."
+            : "Google Play subscriptions are not configured yet. Add the product IDs, base plans, and Play Console products.",
+        );
       }
-      return;
+
+      const purchase = await purchaseNativePackage(selectedNativePackage);
+      await syncNativeSubscriptionForAccount(
+        purchase,
+        selectedNativePackage.androidBasePlanId,
+      );
+      navigate("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Purchase could not be completed.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getFreshAccessToken = async () => {
+    if (!isSupabaseConfigured) return session?.access_token || null;
+
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      console.warn("Could not refresh session before syncing subscription:", error.message);
     }
 
-    subscribeTimeoutRef.current = window.setTimeout(() => {
-      clearTimers();
-      subscribe();
-      navigate("/");
-    }, 1500);
+    return data.session?.access_token || session?.access_token || null;
+  };
 
-    errorTimeoutRef.current = window.setTimeout(() => {
-      clearTimers();
-      setError("Something held this up. Please try again.");
-      setIsLoading(false);
-    }, 6000);
+  const syncNativeSubscriptionForAccount = async (
+    purchase: NativePurchaseTransaction,
+    planId?: string,
+  ) => {
+    if (!user) {
+      throw new Error("Sign in with Google or email before linking Google Play premium.");
+    }
+
+    const accessToken = await getFreshAccessToken();
+    if (!accessToken) {
+      throw new Error("Your session expired. Please sign in again before linking Google Play premium.");
+    }
+
+    const productId = purchase.productIdentifier?.trim();
+    if (!productId) {
+      throw new Error("The native purchase was missing its product ID.");
+    }
+
+    const response = await apiFetch("/api/subscription/native-sync", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        productId,
+        planId,
+        orderId: purchase.orderId?.trim() || undefined,
+        purchaseToken: purchase.purchaseToken?.trim() || undefined,
+        platform: "android",
+      }),
+    });
+    const data = (await response.json().catch(() => ({}))) as NativeSubscriptionSyncResponse;
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not link this subscription to your account.");
+    }
+
+    subscribe("native_google_play");
+    return data.subscription;
   };
 
   const handleRedeemPromoCode = async () => {
@@ -238,8 +289,19 @@ export default function Paywall() {
     setIsLoading(true);
 
     try {
-      await restorePurchases();
-      subscribe();
+      const purchases = await restorePurchases();
+      const restoredPurchase =
+        (purchases.find((purchase) => Boolean((purchase as NativePurchaseTransaction).productIdentifier)) ||
+          purchases[0]) as NativePurchaseTransaction | undefined;
+
+      if (!restoredPurchase?.productIdentifier) {
+        throw new Error("Could not determine which subscription to restore.");
+      }
+
+      await syncNativeSubscriptionForAccount(
+        restoredPurchase,
+        getConfiguredPlanIdForProduct(restoredPurchase.productIdentifier),
+      );
       navigate("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not restore purchases.");
@@ -282,11 +344,12 @@ export default function Paywall() {
     "Priority access to new teachings",
   ];
 
-  const planSummary =
-    selectedPlan === "yearly"
-      ? "Best value for a steady long-term practice."
-      : "A flexible monthly option with a short free trial.";
-  const promoButtonLabel = "Have a promo code?";
+  const showAndroidBillingUnavailable = !nativeStoreAvailable;
+  const planSummary = showAndroidBillingUnavailable
+    ? "Google Play billing is available in the Android app."
+    : selectedPlan === "yearly"
+    ? "Best value for a steady long-term practice."
+    : "A flexible monthly option with a short free trial.";
 
   return (
     <div
@@ -303,38 +366,72 @@ export default function Paywall() {
       </div>
 
       <div
-        className={cn(
-          "relative z-10 flex min-h-full w-full flex-1 flex-col items-center p-4 sm:py-12",
-          shouldTopAlign ? "justify-start" : "justify-center",
-        )}
+        className="relative z-10 flex min-h-full w-full flex-1 flex-col items-center justify-start p-4 sm:py-12"
       >
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
           className={cn(
-            "app-panel w-full max-w-sm rounded-[2rem]",
+            "app-panel shrink-0 w-full max-w-md rounded-[2rem]",
             !shouldTopAlign && "my-auto",
             isCompactPhone ? "p-5" : "p-6 sm:p-7",
           )}
         >
-          <div className={cn("flex justify-center", isShortPhone ? "mb-4" : "mb-8")}>
-            <div className={cn("app-logo-badge flex items-center justify-center overflow-hidden rounded-full ring-1 ring-white/10", isShortPhone ? "h-12 w-12" : "h-16 w-16")}>
+          <div className={cn("flex justify-center", isShortPhone ? "mb-4" : "mb-6")}>
+            <div
+              className={cn(
+                "app-badge-glow flex items-center justify-center overflow-hidden rounded-full ring-2 ring-white/10",
+                isShortPhone ? "h-14 w-14" : "h-18 w-18"
+              )}
+              style={{ width: isShortPhone ? "3.5rem" : "4.5rem", height: isShortPhone ? "3.5rem" : "4.5rem" }}
+            >
               <AppLogo className="h-full w-full object-cover" />
             </div>
           </div>
 
           <div className={cn("text-center", isShortPhone ? "mb-5" : "mb-6 sm:mb-8")}>
             <span className={cn("app-accent-badge mb-4 inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-widest", isShortPhone && "mb-3")}>
-              Your path is ready
+              Full access
             </span>
             <h1 className={cn("app-heading mb-3 pb-1 font-serif leading-[1.24]", isShortPhone ? "text-[1.85rem]" : isCompactPhone ? "text-[2rem]" : "text-3xl")}>
-              Unlock your spiritual journey
+              Continue your reflection practice
             </h1>
             <p className={cn("app-muted px-2 font-light", isShortPhone && "text-[14px] leading-relaxed")}>
-              Commit to your growth with full access to Bible Nova Companion.
+              Unlimited spiritual guidance, prayer support, and private tools in one calm Android experience.
             </p>
           </div>
 
+          <div
+            className={cn("mb-4 rounded-card border px-4 py-3", isShortPhone ? "text-[13px]" : "text-sm")}
+            style={{
+              background: "color-mix(in srgb, var(--app-card-soft) 88%, transparent)",
+              borderColor: "var(--app-card-border)",
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" style={{ color: "var(--app-success)" }} />
+              <p className="app-muted leading-relaxed">
+                Google Play handles subscriptions, renewals, restores, and any store-managed offers for the Android app.
+              </p>
+            </div>
+          </div>
+
+          {showAndroidBillingUnavailable ? (
+            <div
+              className="mb-4 flex items-start gap-3 rounded-card px-4 py-4 text-sm"
+              style={{
+                background: "color-mix(in srgb, var(--app-card-strong) 90%, var(--bg-base) 10%)",
+                border: "1px solid var(--app-card-border)",
+                color: "var(--app-text)",
+              }}
+            >
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" style={{ color: "var(--app-accent-strong)" }} />
+              <p className="leading-relaxed">
+                Premium purchase is available only in the Android app through Google Play. Sign in on Android with this account to subscribe, restore access, or manage billing.
+              </p>
+            </div>
+          ) : (
           <div role="radiogroup" aria-label="Subscription plan" className={cn("mb-4 grid grid-cols-2", isCompactPhone ? "gap-3" : "gap-4")}>
             <button
               ref={monthlyRef}
@@ -344,7 +441,7 @@ export default function Paywall() {
               tabIndex={selectedPlan === "monthly" ? 0 : -1}
               onClick={() => setSelectedPlan("monthly")}
               onKeyDown={handlePlanKey}
-              className={cn("touch-target relative flex flex-col items-center justify-center rounded-card border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-4")}
+              className={cn("touch-target relative flex min-h-[9.5rem] flex-col items-stretch justify-between rounded-card border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-4")}
               style={{
                 background: selectedPlan === "monthly" ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                 borderColor:
@@ -354,17 +451,24 @@ export default function Paywall() {
                 boxShadow: selectedPlan === "monthly" ? "0 16px 34px rgba(0,0,0,0.08)" : "none",
               }}
             >
-              <div className="absolute -top-3 left-1/2 flex -translate-x-1/2 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-md" style={{ background: "var(--app-heading)" }}>
-                3 days free
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="app-muted text-[11px] font-semibold uppercase tracking-wider">
+                    Monthly
+                  </div>
+                  <div className="app-heading mt-1 break-words text-[13px] font-medium leading-tight">
+                    {monthlyTitle}
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider" style={{ background: "var(--app-card-soft)", color: "var(--app-text-muted)" }}>
+                  Flexible
+                </span>
               </div>
-              <div className="app-muted mb-2 text-xs font-medium uppercase tracking-wider">
-                {monthlyTitle}
-              </div>
-              <div className={cn("app-heading font-serif", isCompactPhone ? "text-[1.65rem]" : "text-2xl")}>{monthlyPrice}</div>
-              <div className="app-muted mt-1 text-center text-[10px]">
-                /month
-                <br />
-                after trial
+              <div>
+                <div className={cn("app-heading break-words font-serif leading-none", isCompactPhone ? "text-[1.5rem]" : "text-2xl")}>{monthlyPrice}</div>
+                <div className="app-muted mt-2 text-[11px] leading-snug">
+                  Billed monthly after any store trial.
+                </div>
               </div>
             </button>
 
@@ -376,27 +480,45 @@ export default function Paywall() {
               tabIndex={selectedPlan === "yearly" ? 0 : -1}
               onClick={() => setSelectedPlan("yearly")}
               onKeyDown={handlePlanKey}
-              className={cn("touch-target relative flex flex-col items-center justify-center rounded-card border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-4")}
+              className={cn("touch-target relative flex min-h-[9.5rem] flex-col items-stretch justify-between rounded-card border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-4")}
               style={{
                 background: selectedPlan === "yearly" ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                 borderColor:
                   selectedPlan === "yearly"
                     ? "color-mix(in srgb, var(--app-accent) 36%, transparent)"
                     : "var(--app-card-border)",
-                boxShadow: selectedPlan === "yearly" ? "0 16px 34px rgba(0,0,0,0.08)" : "none",
+                boxShadow: selectedPlan === "yearly"
+                  ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 18%, transparent), 0 16px 34px rgba(0,0,0,0.08)"
+                  : "none",
               }}
             >
-              <div className="app-primary-button absolute -top-3 left-1/2 flex -translate-x-1/2 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-md">
-                <Star className="w-3 h-3" fill="currentColor" />
-                Popular
+              {selectedPlan === "yearly" && (
+                <div
+                  className="absolute top-0 left-0 right-0 h-0.5 rounded-t-card"
+                  style={{ background: "var(--app-accent-gradient)" }}
+                />
+              )}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="app-accent text-[11px] font-semibold uppercase tracking-wider">
+                    Yearly
+                  </div>
+                  <div className="app-heading mt-1 break-words text-[13px] font-medium leading-tight">
+                    {yearlyTitle}
+                  </div>
+                </div>
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-white" style={{ background: "var(--app-accent-gradient)" }}>
+                  <Star className="h-3 w-3" fill="currentColor" />
+                  Popular
+                </span>
               </div>
-              <div className="app-accent mb-2 text-xs font-medium uppercase tracking-wider">
-                {yearlyTitle}
+              <div>
+                <div className={cn("app-heading break-words font-serif leading-none", isCompactPhone ? "text-[1.5rem]" : "text-2xl")}>{yearlyPrice}</div>
+                <div className="app-muted mt-2 text-[11px] leading-snug">Best value for steady use.</div>
               </div>
-              <div className={cn("app-heading font-serif", isCompactPhone ? "text-[1.65rem]" : "text-2xl")}>{yearlyPrice}</div>
-              <div className="app-muted mt-1 text-xs">/year ($7.50/mo)</div>
             </button>
           </div>
+          )}
 
           {error && (
             <div
@@ -443,29 +565,33 @@ export default function Paywall() {
             </div>
           )}
 
-          <button
-            onClick={handleSubscribe}
-            disabled={!canSubscribe}
-            aria-busy={isLoading}
-            className={cn("touch-target app-primary-button mb-4 flex w-full items-center justify-center gap-2 rounded-pill font-medium text-white transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "py-3.5" : "py-4")}
-          >
-            {isLoading ? (
-              <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : isLoadingOffering ? (
-              "Loading store..."
-            ) : nativeSelectedPlanUnavailable ? (
-              "Plan unavailable"
-            ) : (
-              `Continue with ${selectedPlanLabel}`
-            )}
-          </button>
+          {nativeStoreAvailable && (
+            <button
+              onClick={handleSubscribe}
+              disabled={!canSubscribe}
+              aria-busy={isLoading}
+              className={cn("touch-target app-primary-button mb-4 flex w-full items-center justify-center gap-2 rounded-pill font-medium text-white transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "py-3.5" : "py-4")}
+            >
+              {isLoading ? (
+                <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : isLoadingOffering ? (
+                "Loading Google Play..."
+              ) : nativeSelectedPlanUnavailable ? (
+                "Plan unavailable"
+              ) : (
+                `Continue with ${selectedPlanLabel}`
+              )}
+            </button>
+          )}
 
           <div className={cn("app-success-panel flex items-start gap-3 rounded-card px-4 py-3", isShortPhone ? "mb-4" : "mb-6")}>
             <ShieldCheck className="mt-0.5 h-4 w-4" style={{ color: "var(--app-success)" }} />
             <div>
               <p className="text-sm app-heading">{planSummary}</p>
               <p className="app-muted mt-1 text-[11px]">
-                You can change plans later in a real billing setup.
+                {nativeStoreAvailable
+                  ? "Manage or restore eligible subscriptions from this screen."
+                  : "Billing is managed in the Android app through Google Play."}
               </p>
             </div>
           </div>
@@ -478,7 +604,7 @@ export default function Paywall() {
               }}
               className="touch-target app-ghost-button w-full rounded-pill py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
             >
-              {promoButtonLabel}
+              Have a promo code?
             </button>
             {nativeStoreAvailable && (
               <>
@@ -499,18 +625,29 @@ export default function Paywall() {
               </>
             )}
             <p className="app-muted px-2 text-center text-[11px] leading-relaxed">
-              Promo codes are tied to your signed-in Google or email account so the 15-day trial follows you across devices.
+              {nativeStoreAvailable
+                ? "Google Play manages subscription renewals, restores, and any store-level offers outside the app."
+                : "Open this account on Android to subscribe or restore premium through Google Play."}
             </p>
           </div>
 
           <div className={cn("space-y-3", isShortPhone ? "mb-5" : "mb-6 sm:mb-8")}>
-            {features.map((feature) => (
-              <div key={feature} className="flex items-center gap-3">
-                <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)" }}>
+            {features.map((feature, index) => (
+              <motion.div
+                key={feature}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.04 * index, duration: 0.2 }}
+                className="flex items-center gap-3"
+              >
+                <div
+                  className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full"
+                  style={{ background: "var(--app-accent-soft)", border: "1px solid color-mix(in srgb, var(--app-accent) 25%, transparent)" }}
+                >
                   <Check className="w-3 h-3 app-accent" strokeWidth={3} />
                 </div>
                 <span className="text-sm font-medium app-heading">{feature}</span>
-              </div>
+              </motion.div>
             ))}
           </div>
 
@@ -543,24 +680,21 @@ export default function Paywall() {
 
             <div className="space-y-3">
               <p className="app-muted text-sm leading-relaxed">
-                Enter your promo code below. The free trial is attached to your signed-in
-                Google or email account, not just this device.
+                Enter your promo code below. The free trial is attached to your signed-in Google or email account, not just this device.
               </p>
               <p className="app-muted text-sm leading-relaxed">
                 Current launch code: <span className="app-heading font-medium">GETNOW</span> for 15 days of full access.
               </p>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={promoCode}
-                  onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
-                  placeholder="Enter promo code"
-                  autoCapitalize="characters"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  className="app-input w-full rounded-card px-4 py-3.5 text-[15px] uppercase tracking-[0.16em] transition-all"
-                />
-              </div>
+              <input
+                type="text"
+                value={promoCode}
+                onChange={(event) => setPromoCode(event.target.value.toUpperCase())}
+                placeholder="Enter promo code"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                className="app-input w-full rounded-card px-4 py-3.5 text-[15px] uppercase tracking-[0.16em] transition-all"
+              />
               {promoStatus && (
                 <div
                   className="rounded-card px-4 py-3 text-sm"

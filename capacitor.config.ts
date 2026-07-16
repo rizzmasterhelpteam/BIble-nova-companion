@@ -25,6 +25,14 @@ const config: CapacitorConfig = {
       resize: KeyboardResize.Native,
       resizeOnFullScreen: true,
     },
+    SocialLogin: {
+      providers: {
+        google: true,
+        facebook: false,
+        apple: true,
+        twitter: false,
+      },
+    },
   },
 };
 
