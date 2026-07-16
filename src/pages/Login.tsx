@@ -7,7 +7,6 @@ import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { signInWithGoogleNative } from "../lib/native/auth";
 import { isNativePlatform } from "../lib/native/platform";
-import { storageGet } from "../lib/webStorage";
 
 type LegalView = "terms" | "privacy";
 
@@ -76,7 +75,7 @@ export default function Login() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [legalView, setLegalView] = useState<LegalView | null>(null);
   const navigate = useNavigate();
-  const { user, isGuest, isLoading: isAuthLoading, hasCompletedOnboarding, loginAsGuest } = useAuth();
+  const { user, isGuest, isLoading: isAuthLoading, hasCompletedOnboarding } = useAuth();
   const shouldTopAlign = isShortPhone || isKeyboardOpen;
   const authTitle = mode === "login" ? "Sign in" : "Create account";
   const authSubtitle = mode === "login"
@@ -180,18 +179,6 @@ export default function Login() {
     }
   };
 
-  const handleGuestAccess = async () => {
-    if (isLoading || isAuthLoading) return;
-    setError(null);
-    const guestCompletedOnboarding = storageGet("onboardingComplete_guest") === "true";
-    try {
-      await loginAsGuest();
-      navigate(guestCompletedOnboarding ? "/" : "/onboarding", { replace: true });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Guest mode is temporarily unavailable.");
-    }
-  };
-
   return (
     <div
       className="app-screen-scroll w-full relative flex flex-col"
@@ -234,19 +221,6 @@ export default function Login() {
             <p className="app-muted mt-2 text-sm leading-relaxed">{authSubtitle}</p>
           </div>
 
-          <div
-            className="mb-5 flex items-start gap-3 rounded-card border px-4 py-3 text-sm"
-            style={{
-              borderColor: "var(--app-card-border)",
-              background: "var(--app-card-soft)",
-            }}
-          >
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 app-accent" />
-            <p className="app-muted leading-relaxed">
-              Sign in securely with Google or email, or continue as a guest with local-only progress.
-            </p>
-          </div>
-
           <div className={cn("w-full", isShortPhone ? "space-y-4" : "space-y-5")}>
         {!isSupabaseConfigured && (
           <div className="app-panel rounded-card px-4 py-4 text-center text-sm leading-relaxed" style={{ color: "var(--app-accent)" }}>
@@ -275,16 +249,6 @@ export default function Login() {
             <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
           </svg>
           <span className="font-semibold">Continue with Google</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={handleGuestAccess}
-          disabled={isLoading || isAuthLoading}
-          className="touch-target app-secondary-button flex w-full items-center justify-center gap-3 rounded-card px-4 py-4 transition-all disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-[0.98]"
-        >
-          <ShieldCheck className="h-5 w-5" />
-          <span className="font-semibold">Continue as Guest</span>
         </button>
 
         <div className="relative flex items-center">
