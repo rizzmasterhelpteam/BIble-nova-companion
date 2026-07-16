@@ -30,6 +30,7 @@ Set these in Vercel for the environments you deploy to:
 - `SUPABASE_SERVICE_ROLE_KEY` only needed for signed-in account deletion
 - `GEMINI_API_KEY` only needed for `/api/generate`
 - `VITE_API_BASE_URL` required in native mobile builds, set to your Vercel site URL
+- `CAPACITOR_SERVER_URL` controls the web app loaded by the native wrapper; it defaults to `https://biblecompanion.vercel.app`
 - `VITE_GOOGLE_PLAY_PUBLIC_KEY` optional Google Play monetization RSA public key for Android billing or verification integrations
 - `VITE_IAP_MONTHLY_PRODUCT_ID` and `VITE_IAP_YEARLY_PRODUCT_ID` required for native subscription IAP
 - `VITE_IAP_MONTHLY_BASE_PLAN_ID` and `VITE_IAP_YEARLY_BASE_PLAN_ID` required for Android subscription IAP (Google Play base plans)
@@ -45,6 +46,7 @@ This app is configured with Capacitor for Android and iOS.
 - Open Xcode: `npm run ios:open` (requires macOS)
 
 For mobile builds, set `VITE_API_BASE_URL` to the deployed Vercel URL so native requests call `/api/*` on Vercel instead of the local WebView origin.
+The native wrapper loads `CAPACITOR_SERVER_URL` directly, so web UI deployments at that URL appear in installed apps without rebuilding the native shell. This requires an internet connection and the URL must remain stable.
 For native Google sign-in on mobile:
 
 - Set `VITE_GOOGLE_WEB_CLIENT_ID` for Android.

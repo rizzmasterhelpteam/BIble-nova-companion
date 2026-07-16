@@ -1,11 +1,18 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 import { KeyboardResize } from "@capacitor/keyboard";
+import dotenv from "dotenv";
+
+dotenv.config({ path: ".env.local" });
+dotenv.config();
+
+const remoteAppUrl = process.env.CAPACITOR_SERVER_URL?.trim() || "https://biblecompanion.vercel.app";
 
 const config: CapacitorConfig = {
   appId: "com.biblenovacompanion.app",
   appName: "Bible Nova Companion",
   webDir: "dist",
   server: {
+    url: remoteAppUrl,
     androidScheme: "https",
   },
   plugins: {
