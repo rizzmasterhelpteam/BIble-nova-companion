@@ -140,9 +140,24 @@ const getConfiguredProductIds = () => {
     .filter((value): value is string => Boolean(value));
 };
 
+export const getConfiguredProductIdForIdentifier = (identifier: string) => {
+  const normalizedIdentifier = identifier.trim();
+  if (!normalizedIdentifier) return undefined;
+
+  const match = Object.values(getSubscriptionConfigs()).find(
+    (entry) =>
+      entry.productId === normalizedIdentifier ||
+      entry.androidBasePlanId === normalizedIdentifier,
+  );
+
+  return match?.productId;
+};
+
 export const getConfiguredPlanIdForProduct = (productId: string) => {
   const configs = getSubscriptionConfigs();
-  const match = Object.values(configs).find((entry) => entry.productId === productId);
+  const match = Object.values(configs).find(
+    (entry) => entry.productId === productId || entry.androidBasePlanId === productId,
+  );
   return match?.androidBasePlanId;
 };
 
@@ -150,7 +165,7 @@ const assertValidSubscriptionPurchase = (
   purchase: Transaction,
   aPackage: SubscriptionPackage,
 ) => {
-  if (purchase.productIdentifier !== aPackage.productId) {
+  if (getConfiguredProductIdForIdentifier(purchase.productIdentifier) !== aPackage.productId) {
     throw new Error("The completed purchase did not match the selected subscription.");
   }
 
@@ -267,7 +282,8 @@ export async function restorePurchases() {
 
   const hasMatchingActivePurchase = purchases.some(
     (purchase) =>
-      activeProductIds.includes(purchase.productIdentifier) && isActivePurchase(purchase),
+      activeProductIds.includes(getConfiguredProductIdForIdentifier(purchase.productIdentifier) || "") &&
+      isActivePurchase(purchase),
   );
 
   if (!hasMatchingActivePurchase) {
@@ -294,7 +310,8 @@ export async function hasActiveSubscription() {
 
   return purchases.some(
     (purchase) =>
-      activeProductIds.includes(purchase.productIdentifier) && isActivePurchase(purchase),
+      activeProductIds.includes(getConfiguredProductIdForIdentifier(purchase.productIdentifier) || "") &&
+      isActivePurchase(purchase),
   );
 }
 

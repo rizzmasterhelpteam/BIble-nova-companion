@@ -10,6 +10,7 @@ import { useMobileViewport } from "../context/MobileViewportContext";
 import { apiFetch } from "../lib/apiClient";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import {
+  getConfiguredProductIdForIdentifier,
   getConfiguredPlanIdForProduct,
   getCurrentOffering,
   openSubscriptionManagement,
@@ -170,6 +171,7 @@ export default function Paywall() {
       await syncNativeSubscriptionForAccount(
         purchase,
         selectedNativePackage.androidBasePlanId,
+        selectedNativePackage.productId,
       );
       navigate("/");
     } catch (err) {
@@ -193,6 +195,7 @@ export default function Paywall() {
   const syncNativeSubscriptionForAccount = async (
     purchase: NativePurchaseTransaction,
     planId?: string,
+    expectedProductId?: string,
   ) => {
     if (!user) {
       throw new Error("Sign in with Google or email before linking Google Play premium.");
@@ -203,7 +206,9 @@ export default function Paywall() {
       throw new Error("Your session expired. Please sign in again before linking Google Play premium.");
     }
 
-    const productId = purchase.productIdentifier?.trim();
+    const productId = purchase.productIdentifier
+      ? getConfiguredProductIdForIdentifier(purchase.productIdentifier) || purchase.productIdentifier.trim()
+      : expectedProductId?.trim();
     if (!productId) {
       throw new Error("The native purchase was missing its product ID.");
     }
@@ -246,9 +251,15 @@ export default function Paywall() {
         throw new Error("Could not determine which subscription to restore.");
       }
 
+      const restoredProductId = getConfiguredProductIdForIdentifier(restoredPurchase.productIdentifier);
+      if (!restoredProductId) {
+        throw new Error("The restored purchase does not match a configured subscription.");
+      }
+
       await syncNativeSubscriptionForAccount(
         restoredPurchase,
-        getConfiguredPlanIdForProduct(restoredPurchase.productIdentifier),
+        getConfiguredPlanIdForProduct(restoredProductId),
+        restoredProductId,
       );
       navigate("/");
     } catch (err) {
