@@ -58,7 +58,7 @@ For mobile builds, set `VITE_API_BASE_URL` to the deployed Vercel URL so native 
 The native wrapper uses bundled web assets in release builds, so UI changes require rebuilding the APK/IPA. API requests still use the deployed Vercel URL via `VITE_API_BASE_URL`, and the app shows a recoverable error page if bundled assets fail to load.
 For native Google sign-in on mobile:
 
-- Set `VITE_GOOGLE_WEB_CLIENT_ID` for Android.
+- `VITE_GOOGLE_WEB_CLIENT_ID` is an optional Android override; a public Bible Nova client ID is included as the clean-build fallback.
 - Set `VITE_GOOGLE_IOS_CLIENT_ID` for iOS.
 - `npm run cap:sync` now derives the iOS reversed client ID URL scheme from `VITE_GOOGLE_IOS_CLIENT_ID` and writes it into `ios/App/App/Info.plist`.
 - In Supabase Auth -> Google provider, add the client IDs for every platform you support. This app still uses Supabase OAuth on the web, so keep the normal web Google OAuth configuration for browser builds.

@@ -2,7 +2,13 @@ import { SocialLogin } from "@capgo/capacitor-social-login";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../supabase";
 import { getNativePlatform, isNativePlatform } from "./platform";
 
-const googleWebClientId = import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID?.trim() || "";
+// Google OAuth client IDs are public identifiers and are embedded in native
+// binaries. Keep the environment override for deployments, but retain the
+// configured Bible Nova client ID for clean-checkout and web-wrapper builds
+// where .env.local is intentionally not committed.
+const googleWebClientId =
+  import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID?.trim() ||
+  "703657955310-qp8chkn81ln736tqo9lev0mj7vo69ui7.apps.googleusercontent.com";
 const googleIOSClientId = import.meta.env.VITE_GOOGLE_IOS_CLIENT_ID?.trim() || "";
 const googleIOSServerClientId =
   import.meta.env.VITE_GOOGLE_IOS_SERVER_CLIENT_ID?.trim() || googleWebClientId;
