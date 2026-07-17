@@ -98,12 +98,71 @@ const validateGoogleIdToken = (idToken: string, expectedNonceDigest: string) => 
 
 const shouldRetryNativeGoogleSignIn = (error: unknown) => {
   const code = isObject(error) && typeof error.code === "string" ? error.code : "";
-  if (code === "USER_CANCELLED") {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+
+  if (code === "USER_CANCELLED" || message.includes("cancel")) {
     return false;
   }
 
-  const message = error instanceof Error ? error.message.toLowerCase() : "";
-  return message.includes("nonce") || message.includes("audience") || message.includes("token");
+  return (
+    message.includes("nonce") ||
+    message.includes("audience") ||
+    message.includes("token") ||
+    message.includes("credential") ||
+    message.includes("authorize") ||
+    message.includes("access token") ||
+    message.includes("developer_error")
+  );
+};
+
+const getNativeGoogleLoginOptions = (nonceDigest: string, retryWithFreshPrompt: boolean) => {
+  const platform = getNativePlatform();
+
+  return {
+    scopes: ["email", "profile"],
+    nonce: nonceDigest,
+    ...(platform === "android"
+      ? {
+          // Use Credential Manager's account picker path. This matches Supabase's
+          // native Android guidance and also supports accounts that have not
+          // previously authorized this app on the device.
+          style: "bottom" as const,
+          filterByAuthorizedAccounts: false,
+          autoSelectEnabled: false,
+          forcePrompt: retryWithFreshPrompt,
+          forceRefreshToken: retryWithFreshPrompt,
+        }
+      : { forcePrompt: retryWithFreshPrompt }),
+  };
+};
+
+const getNativeGoogleErrorMessage = (error: unknown) => {
+  const code = isObject(error) && typeof error.code === "string" ? error.code : "";
+  const message = error instanceof Error ? error.message : "";
+  const details = `${code} ${message}`.toLowerCase();
+
+  if (details.includes("cancel")) {
+    return "Google sign-in was cancelled.";
+  }
+
+  if (
+    getNativePlatform() === "android" &&
+    (details.includes("developer_error") ||
+      /\b(?:status|error|code)\s*[:#-]?\s*10\b/.test(details))
+  ) {
+    return "Google sign-in is not enabled for this Android build. Register this build's SHA-1 certificate for com.biblenovacompanion.app in the Google OAuth Android client, then rebuild and reinstall the app.";
+  }
+
+  if (
+    details.includes("no credential") ||
+    details.includes("no credentials") ||
+    details.includes("play services") ||
+    details.includes("credential manager")
+  ) {
+    return "Google sign-in could not find a usable Google account on this device. Update Google Play services, make sure a Google account is signed in, and try again.";
+  }
+
+  return message || "Google sign-in failed. Please try again.";
 };
 
 const createNoncePair = async () => {
@@ -114,22 +173,16 @@ const createNoncePair = async () => {
 
 const loginWithNativeGoogleToken = async (retryWithFreshPrompt: boolean) => {
   const { rawNonce, nonceDigest } = await createNoncePair();
-  const platform = getNativePlatform();
   const login = await SocialLogin.login({
     provider: "google",
-    options: {
-      scopes: ["email", "profile"],
-      nonce: nonceDigest,
-      ...(platform === "android" ? { forceRefreshToken: retryWithFreshPrompt } : {}),
-      ...(platform === "ios" ? { forcePrompt: retryWithFreshPrompt } : {}),
-    },
+    options: getNativeGoogleLoginOptions(nonceDigest, retryWithFreshPrompt),
   });
 
   if (login.result.responseType !== "online") {
     throw new Error("Google native sign-in returned an unsupported response type.");
   }
 
-  const { idToken, accessToken } = login.result;
+  const { idToken } = login.result;
   if (!idToken) {
     throw new Error("Google native sign-in did not return an ID token.");
   }
@@ -139,7 +192,6 @@ const loginWithNativeGoogleToken = async (retryWithFreshPrompt: boolean) => {
   const { error } = await supabase.auth.signInWithIdToken({
     provider: "google",
     token: idToken,
-    access_token: accessToken?.token || undefined,
     nonce: rawNonce,
   });
 
@@ -213,9 +265,13 @@ export const signInWithGoogleNative = async () => {
       await SocialLogin.logout({ provider: "google" }).catch(() => undefined);
       await loginWithNativeGoogleToken(true);
     }
-  })().finally(() => {
-    nativeGoogleSignInPromise = null;
-  });
+  })()
+    .catch((error) => {
+      throw new Error(getNativeGoogleErrorMessage(error));
+    })
+    .finally(() => {
+      nativeGoogleSignInPromise = null;
+    });
 
   return nativeGoogleSignInPromise;
 };
