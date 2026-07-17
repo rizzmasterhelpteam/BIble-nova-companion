@@ -70,9 +70,10 @@ const ConnectivityNotice = () => {
 };
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
-  const { user, isLoading, hasCompletedOnboarding } = useAuth();
+  const { user, isLoading, hasCompletedOnboarding, isSubscribed } = useAuth();
   const location = useLocation();
   const hasActiveIdentity = Boolean(user);
+  const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
   
   if (isLoading) {
     return <FullScreenLoader />;
@@ -85,9 +86,25 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   if (!hasCompletedOnboarding && location.pathname !== "/onboarding") {
     return <Navigate to="/onboarding" replace />;
   }
-  
-  if (hasCompletedOnboarding && location.pathname === "/onboarding") {
-     return <Navigate to="/" replace />;
+
+  // The native Android app must have an active entitlement before entering
+  // the main experience. The web app remains accessible because its current
+  // billing flow is Android-only.
+  if (
+    isAndroidNative &&
+    hasCompletedOnboarding &&
+    !isSubscribed &&
+    location.pathname !== "/paywall"
+  ) {
+    return <Navigate to="/paywall" replace />;
+  }
+
+  if (
+    hasCompletedOnboarding &&
+    (location.pathname === "/onboarding" ||
+      (location.pathname === "/paywall" && isSubscribed))
+  ) {
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
