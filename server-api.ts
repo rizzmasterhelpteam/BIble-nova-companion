@@ -81,6 +81,15 @@ type VerifiedGooglePlaySubscription = {
   expiryTime: string;
 };
 
+type GooglePlayErrorResponse = {
+  error?: {
+    code?: number;
+    message?: string;
+    status?: string;
+    errors?: Array<{ reason?: string }>;
+  };
+};
+
 export type NativeSubscriptionSyncPayload = {
   productId?: string;
   planId?: string;
@@ -142,10 +151,29 @@ const verifyGooglePlaySubscription = async (
       latestSuccessfulOrderId?: string;
       offerDetails?: { basePlanId?: string };
     }>;
-  };
+  } & GooglePlayErrorResponse;
 
   if (!response.ok) {
-    throw new Error("Google Play could not verify this purchase.");
+    const reason = data.error?.errors?.[0]?.reason;
+    console.error("Google Play subscription verification rejected:", {
+      httpStatus: response.status,
+      apiStatus: data.error?.status,
+      reason,
+      message: data.error?.message?.slice(0, 240),
+      packageName: GOOGLE_PLAY_PACKAGE_NAME,
+      productId,
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      throw new Error("Google Play API access was denied for the subscription verifier.");
+    }
+    if (response.status === 404) {
+      throw new Error("Google Play could not find this purchase for Bible Nova Companion.");
+    }
+    if (response.status === 429 || response.status >= 500) {
+      throw new Error("Google Play purchase verification is temporarily unavailable.");
+    }
+    throw new Error("Google Play rejected this purchase during verification.");
   }
 
   const lineItem = data.lineItems?.find((item) => item.productId === productId);
@@ -160,7 +188,43 @@ const verifyGooglePlaySubscription = async (
   }
 
   if (data.acknowledgementState !== "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED") {
-    throw new Error("This Google Play subscription has not been acknowledged.");
+    const acknowledgementEndpoint = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(GOOGLE_PLAY_PACKAGE_NAME)}/purchases/subscriptions/${encodeURIComponent(productId)}/tokens/${encodeURIComponent(purchaseToken)}:acknowledge`;
+    const acknowledgementResponse = await fetch(acknowledgementEndpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    });
+
+    if (!acknowledgementResponse.ok) {
+      const acknowledgementError = (await acknowledgementResponse.json().catch(() => ({}))) as GooglePlayErrorResponse;
+      console.error("Google Play subscription acknowledgement rejected:", {
+        httpStatus: acknowledgementResponse.status,
+        apiStatus: acknowledgementError.error?.status,
+        reason: acknowledgementError.error?.errors?.[0]?.reason,
+        message: acknowledgementError.error?.message?.slice(0, 240),
+        packageName: GOOGLE_PLAY_PACKAGE_NAME,
+        productId,
+      });
+
+      // The native billing client may finish its own asynchronous acknowledgement
+      // while the backend request is in flight. Re-read once before treating that
+      // harmless race as a failure.
+      const refreshedResponse = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const refreshedData = (await refreshedResponse.json().catch(() => ({}))) as {
+        acknowledgementState?: string;
+      };
+      if (
+        !refreshedResponse.ok ||
+        refreshedData.acknowledgementState !== "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED"
+      ) {
+        throw new Error("This Google Play subscription could not be acknowledged.");
+      }
+    }
   }
 
   const verifiedOrderId = lineItem.latestSuccessfulOrderId;
@@ -410,4 +474,34 @@ export async function syncNativeSubscription(
   }
 
   return nextSubscription;
+}
+
+export function getNativeSubscriptionClientErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.includes("API access was denied")) {
+    return "Google Play verification permission is missing. Grant the service account access to orders and subscriptions in Play Console, then try again.";
+  }
+  if (message.includes("could not find this purchase")) {
+    return "Google Play could not find this purchase. Install Bible Nova Companion from a Play testing or production track and purchase with an authorized tester account.";
+  }
+  if (message.includes("temporarily unavailable")) {
+    return "Google Play verification is temporarily unavailable. Please try again shortly.";
+  }
+  if (message.includes("not active")) {
+    return message;
+  }
+  if (message.includes("could not be acknowledged")) {
+    return "Google Play verified the purchase but could not acknowledge it. Please use Restore Purchases shortly.";
+  }
+  if (message.includes("does not match")) {
+    return "This Google Play purchase does not match the selected Bible Nova subscription.";
+  }
+  if (message.includes("Could not verify the signed-in user") || message.includes("Missing active session")) {
+    return message;
+  }
+  if (message.includes("link_subscription_entitlement") || message.includes("persist the verified")) {
+    return "The verified subscription could not be linked to your account. Please try Restore Purchases shortly.";
+  }
+  return "Google Play could not verify and link this subscription. Please try Restore Purchases or contact support.";
 }

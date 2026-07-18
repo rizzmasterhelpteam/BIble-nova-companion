@@ -31,26 +31,48 @@ const normalizeChatMessage = (message: unknown) => {
   return { role: "user" as const, content };
 };
 
-const getChatProvider = () => {
+type ChatProvider = {
+  name: "groq" | "grok";
+  apiKey: string;
+  apiUrl: string;
+  model: string;
+};
+
+class ChatProviderError extends Error {
+  readonly statusCode?: number;
+  readonly providerName: ChatProvider["name"];
+
+  constructor(message: string, providerName: ChatProvider["name"], statusCode?: number) {
+    super(message);
+    this.name = "ChatProviderError";
+    this.providerName = providerName;
+    this.statusCode = statusCode;
+  }
+}
+
+const getChatProviders = (): ChatProvider[] => {
+  const providers: ChatProvider[] = [];
   const groqApiKey = process.env.GROQ_API_KEY?.trim();
   if (groqApiKey) {
-    return {
+    providers.push({
+      name: "groq",
       apiKey: groqApiKey,
       apiUrl: "https://api.groq.com/openai/v1/chat/completions",
       model: process.env.GROQ_MODEL?.trim() || DEFAULT_GROQ_MODEL,
-    };
+    });
   }
 
   const grokApiKey = process.env.GROK_API_KEY?.trim();
   if (grokApiKey) {
-    return {
+    providers.push({
+      name: "grok",
       apiKey: grokApiKey,
       apiUrl: "https://api.x.ai/v1/chat/completions",
       model: process.env.GROK_MODEL?.trim() || "grok-3-mini",
-    };
+    });
   }
 
-  return null;
+  return providers;
 };
 
 const trimContent = (content: string) => {
@@ -93,8 +115,8 @@ const buildModelMessages = (messages: ChatMessage[]) => {
 };
 
 export async function createChatCompletion(messages: ChatMessage[], shadowNotes?: string) {
-  const provider = getChatProvider();
-  if (!provider) {
+  const providers = getChatProviders();
+  if (!providers.length) {
     throw new Error("API key is missing. Please configure it in settings.");
   }
 
@@ -143,48 +165,66 @@ Safety & Security Boundaries:
 
   formattedMessages.unshift({ role: "system", content: finalSystemPrompt });
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), CHAT_REQUEST_TIMEOUT_MS);
-  let response: Response;
+  let lastError: unknown;
+  for (const provider of providers) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CHAT_REQUEST_TIMEOUT_MS);
 
-  try {
-    response = await fetch(provider.apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${provider.apiKey}`,
-      },
-      body: JSON.stringify({
+    try {
+      const response = await fetch(provider.apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${provider.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: provider.model,
+          messages: formattedMessages,
+          temperature: 0.72,
+          max_tokens: MAX_OUTPUT_TOKENS,
+        }),
+        signal: controller.signal,
+      });
+      const rawData = await response.text();
+      let data: any;
+
+      try {
+        data = JSON.parse(rawData);
+      } catch {
+        throw new ChatProviderError(
+          `Non-JSON response from ${provider.name} (${response.status}).`,
+          provider.name,
+          response.status,
+        );
+      }
+
+      if (!response.ok) {
+        throw new ChatProviderError(
+          data.error?.message || `Provider request failed with HTTP ${response.status}.`,
+          provider.name,
+          response.status,
+        );
+      }
+
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new ChatProviderError("Provider returned an empty response.", provider.name, response.status);
+      }
+      return content;
+    } catch (error) {
+      lastError = error;
+      console.error("Chat provider attempt failed:", {
+        provider: provider.name,
         model: provider.model,
-        messages: formattedMessages,
-        temperature: 0.72,
-        max_tokens: MAX_OUTPUT_TOKENS,
-      }),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  const rawData = await response.text();
-  let data;
-
-  try {
-    data = JSON.parse(rawData);
-  } catch {
-    throw new Error(`Non-JSON response from API (${response.status}): ${rawData.slice(0, 100)}...`);
-  }
-
-  if (!response.ok) {
-    if (data.error?.message) {
-      throw new Error(data.error.message);
+        statusCode: error instanceof ChatProviderError ? error.statusCode : undefined,
+        message: error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240),
+      });
+    } finally {
+      clearTimeout(timeoutId);
     }
-    throw new Error(`Failed to fetch from LLM API: ${response.status}. Details: ${JSON.stringify(data)}`);
   }
 
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Empty or unexpected response from LLM API");
-  return content;
+  throw lastError instanceof Error ? lastError : new Error("All configured reflection providers failed.");
 }
 
 export function getClientErrorMessage(error: unknown) {
@@ -200,6 +240,10 @@ export function getClientErrorMessage(error: unknown) {
 
   if (message.includes("429") || message.toLowerCase().includes("rate limit")) {
     return "The reflection service is busy. Please wait a moment and try again.";
+  }
+
+  if (error instanceof ChatProviderError && error.statusCode && error.statusCode >= 500) {
+    return "The reflection service is temporarily unavailable. Please try again shortly.";
   }
 
   return "The reflection service could not complete that request. Please try again.";

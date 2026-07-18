@@ -1,0 +1,28 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createChatCompletion } from "../chat-api";
+
+describe("chat provider reliability", () => {
+  beforeEach(() => {
+    process.env.GROQ_API_KEY = "test-groq-key";
+    process.env.GROK_API_KEY = "test-grok-key";
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    delete process.env.GROQ_API_KEY;
+    delete process.env.GROK_API_KEY;
+    vi.unstubAllGlobals();
+  });
+
+  it("falls back to the next configured provider", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "temporary failure" } }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: "Peace be with you." } }] }), { status: 200 }));
+
+    await expect(createChatCompletion([{ role: "user", content: "Help me pray." }])).resolves.toBe(
+      "Peace be with you.",
+    );
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});

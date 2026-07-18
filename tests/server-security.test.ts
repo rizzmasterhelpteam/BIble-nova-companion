@@ -13,7 +13,7 @@ import {
   HttpError,
   requireAuthenticatedRequest,
 } from "../server-security";
-import { getApiStatus } from "../server-api";
+import { getApiStatus, getNativeSubscriptionClientErrorMessage } from "../server-api";
 
 describe("server security", () => {
   beforeEach(() => {
@@ -80,5 +80,21 @@ describe("server security", () => {
 
     delete process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON;
     expect(getApiStatus().nativeSubscriptionSyncReady).toBe(false);
+  });
+
+  it("never formats subscription failures as reflection-service errors", () => {
+    expect(
+      getNativeSubscriptionClientErrorMessage(
+        new Error("Google Play API access was denied for the subscription verifier."),
+      ),
+    ).toContain("Play Console");
+    expect(getNativeSubscriptionClientErrorMessage(new Error("unknown subscription error"))).not.toContain(
+      "reflection",
+    );
+    expect(
+      getNativeSubscriptionClientErrorMessage(
+        new Error("This Google Play subscription could not be acknowledged."),
+      ),
+    ).toContain("Restore Purchases");
   });
 });

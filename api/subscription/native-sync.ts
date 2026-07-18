@@ -1,4 +1,4 @@
-import { getClientErrorMessage, syncNativeSubscription } from "../../server-api.js";
+import { getNativeSubscriptionClientErrorMessage, syncNativeSubscription } from "../../server-api.js";
 import { enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../../server-security.js";
 
 const setCorsHeaders = (res: any) => {
@@ -32,6 +32,8 @@ export default async function handler(req: any, res: any) {
     console.error("Vercel API native subscription sync error:", error);
     const details = getHttpErrorDetails(error);
     if (details.retryAfterSeconds) res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
-    res.status(details.statusCode === 500 ? 400 : details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
+    res.status(details.statusCode === 500 ? 400 : details.statusCode).json({
+      error: details.statusCode === 500 ? getNativeSubscriptionClientErrorMessage(error) : details.message,
+    });
   }
 }
