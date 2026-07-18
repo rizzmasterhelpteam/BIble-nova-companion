@@ -261,8 +261,16 @@ export const signInWithGoogleNative = async () => {
   nativeGoogleSignInPromise = (async () => {
     await initializeNativeGoogleAuth();
 
+    // Credential Manager can silently reuse the last Google identity for this
+    // app. Clear that state before starting Android sign-in so the account
+    // chooser includes every Google account available on the device.
+    const forceAccountSelection = getNativePlatform() === "android";
+    if (forceAccountSelection) {
+      await SocialLogin.logout({ provider: "google" }).catch(() => undefined);
+    }
+
     try {
-      await loginWithNativeGoogleToken(false);
+      await loginWithNativeGoogleToken(forceAccountSelection);
     } catch (error) {
       if (!shouldRetryNativeGoogleSignIn(error)) {
         throw error;

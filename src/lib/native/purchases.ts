@@ -7,6 +7,21 @@ type SubscriptionConfig = {
   androidBasePlanId?: string;
 };
 
+// These are public Google Play identifiers, not secrets. Keep them as a
+// fallback because Vite replaces VITE_* values at build time and a remote web
+// bundle without those variables would otherwise make every native plan look
+// unconfigured.
+const DEFAULT_ANDROID_SUBSCRIPTION_CONFIG: Record<SubscriptionPlan, Required<SubscriptionConfig>> = {
+  monthly: {
+    productId: "biblenova",
+    androidBasePlanId: "monthly",
+  },
+  yearly: {
+    productId: "biblenovayearly",
+    androidBasePlanId: "yearlyoffer",
+  },
+};
+
 export type SubscriptionPackage = {
   plan: SubscriptionPlan;
   product: Product;
@@ -71,12 +86,20 @@ const normalizeConfigValue = (value?: string) => {
 
 const getSubscriptionConfigs = () => ({
   monthly: {
-    productId: normalizeConfigValue(import.meta.env.VITE_IAP_MONTHLY_PRODUCT_ID),
-    androidBasePlanId: normalizeConfigValue(import.meta.env.VITE_IAP_MONTHLY_BASE_PLAN_ID),
+    productId:
+      normalizeConfigValue(import.meta.env.VITE_IAP_MONTHLY_PRODUCT_ID) ||
+      DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.monthly.productId,
+    androidBasePlanId:
+      normalizeConfigValue(import.meta.env.VITE_IAP_MONTHLY_BASE_PLAN_ID) ||
+      DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.monthly.androidBasePlanId,
   },
   yearly: {
-    productId: normalizeConfigValue(import.meta.env.VITE_IAP_YEARLY_PRODUCT_ID),
-    androidBasePlanId: normalizeConfigValue(import.meta.env.VITE_IAP_YEARLY_BASE_PLAN_ID),
+    productId:
+      normalizeConfigValue(import.meta.env.VITE_IAP_YEARLY_PRODUCT_ID) ||
+      DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.yearly.productId,
+    androidBasePlanId:
+      normalizeConfigValue(import.meta.env.VITE_IAP_YEARLY_BASE_PLAN_ID) ||
+      DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.yearly.androidBasePlanId,
   },
 });
 
