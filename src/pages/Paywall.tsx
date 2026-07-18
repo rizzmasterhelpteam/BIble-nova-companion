@@ -36,6 +36,10 @@ type NativeSubscriptionSyncResponse = {
   error?: string;
 };
 
+type ApiStatusResponse = {
+  nativeSubscriptionSyncReady?: boolean;
+};
+
 export default function Paywall() {
   useDocumentTitle("Subscribe | Bible Nova Companion");
   const { isCompactPhone, isShortPhone } = useMobileViewport();
@@ -53,6 +57,7 @@ export default function Paywall() {
   const [iapReady, setIapReady] = useState(false);
   const [isLoadingOffering, setIsLoadingOffering] = useState(nativeStoreAvailable);
   const [iapLoadError, setIapLoadError] = useState<string | null>(null);
+  const [subscriptionSyncReady, setSubscriptionSyncReady] = useState<boolean | null>(null);
   const { isSubscribed, session, subscribe, user } = useAuth();
   const navigate = useNavigate();
   const yearlyRef = useRef<HTMLButtonElement | null>(null);
@@ -110,6 +115,33 @@ export default function Paywall() {
   }, [nativeStoreAvailable]);
 
   useEffect(() => {
+    if (!nativeStoreAvailable) return;
+
+    let isMounted = true;
+    apiFetch("/api/status")
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as ApiStatusResponse;
+      })
+      .then((status) => {
+        if (!isMounted || !status || typeof status.nativeSubscriptionSyncReady !== "boolean") return;
+        setSubscriptionSyncReady(status.nativeSubscriptionSyncReady);
+        if (!status.nativeSubscriptionSyncReady) {
+          setIapLoadError(
+            "Premium purchases are temporarily unavailable while secure Google Play verification is being configured. Please try again later.",
+          );
+        }
+      })
+      .catch(() => {
+        // The purchase endpoint still returns a precise error if the API is unavailable.
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [nativeStoreAvailable]);
+
+  useEffect(() => {
     if (!nativeStoreAvailable || isLoadingOffering || iapPackages[selectedPlan]) return;
 
     if (iapPackages.yearly) {
@@ -137,18 +169,13 @@ export default function Paywall() {
     [iapPackages.yearly, isLoadingOffering, nativeStoreAvailable],
   );
 
-  const monthlyTitle = nativeStoreAvailable
-    ? iapPackages.monthly?.product.title || "Monthly"
-    : "Monthly";
-  const yearlyTitle = nativeStoreAvailable
-    ? iapPackages.yearly?.product.title || "Yearly"
-    : "Yearly";
   const nativeSelectedPlanUnavailable =
     nativeStoreAvailable && !isLoadingOffering && !selectedNativePackage;
   const canSubscribe =
     !isLoading &&
     !isLoadingOffering &&
     nativeStoreAvailable &&
+    subscriptionSyncReady !== false &&
     Boolean(selectedNativePackage);
   const selectedPlanLabel =
     selectedNativePackage
@@ -321,15 +348,13 @@ export default function Paywall() {
         <div className="app-orb app-orb-b bottom-[-18%] right-[-10%] h-[28rem] w-[28rem]" />
       </div>
 
-      <div
-        className="relative z-10 flex min-h-full w-full flex-1 flex-col items-center justify-start p-4 sm:py-12"
-      >
+      <div className="relative z-10 flex w-full flex-1 flex-col items-center justify-start p-4 sm:py-12">
         <motion.div
           initial={isPerformanceMode ? false : { opacity: 0, y: 4 }}
           animate={{ opacity: 1 }}
           transition={{ duration: isPerformanceMode ? 0 : 0.2, ease: "easeOut" }}
           className={cn(
-            "app-panel app-paywall-panel shrink-0 w-full max-w-lg rounded-[2rem]",
+            "app-panel app-paywall-panel shrink-0 w-full max-w-lg rounded-[1.75rem]",
             !shouldTopAlign && "sm:my-auto",
             isCompactPhone ? "p-5" : "p-6 sm:p-7",
           )}
@@ -348,10 +373,10 @@ export default function Paywall() {
 
           <div className={cn("text-center", isShortPhone ? "mb-5" : "mb-6")}>
             <span className={cn("app-accent-badge mb-3 inline-block rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]", isShortPhone && "mb-2")}>
-              Bible Nova Premium
+              Bible Nova Companion
             </span>
             <h1 className={cn("app-heading mb-3 pb-1 font-serif leading-[1.24]", isShortPhone ? "text-[1.85rem]" : isCompactPhone ? "text-[2rem]" : "text-3xl")}>
-              Make space for what matters.
+              Build a steadier rhythm.
             </h1>
             <p className={cn("app-muted px-2 font-light", isShortPhone && "text-[14px] leading-relaxed")}>
               Keep your prayer, reflection, and guidance practice close—without interruptions.
@@ -373,6 +398,8 @@ export default function Paywall() {
               </p>
             </div>
           ) : (
+          <div>
+            <p className="app-muted mb-3 text-center text-xs">Choose what fits your rhythm</p>
           <div role="radiogroup" aria-label="Subscription plan" className={cn("mb-5 grid grid-cols-2", isCompactPhone ? "gap-3" : "gap-4")}>
             <button
               ref={monthlyRef}
@@ -397,9 +424,6 @@ export default function Paywall() {
                   <div className="app-muted text-[11px] font-semibold uppercase tracking-wider">
                     Monthly
                   </div>
-                  <div className="app-heading mt-1 break-words text-[13px] font-medium leading-tight">
-                    {monthlyTitle}
-                  </div>
                 </div>
                 {selectedPlan === "monthly" && (
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent)" }}>
@@ -409,7 +433,7 @@ export default function Paywall() {
               </div>
               <div>
                 <div className={cn("app-heading break-words font-serif leading-none", isCompactPhone ? "text-[1.5rem]" : "text-2xl")}>{monthlyPrice}</div>
-                <div className="app-muted mt-2 text-[11px] leading-snug">Billed monthly</div>
+                <div className="app-muted mt-2 text-[11px] leading-snug">Flexible, billed monthly</div>
               </div>
             </button>
 
@@ -444,26 +468,18 @@ export default function Paywall() {
                   <div className="app-accent text-[11px] font-semibold uppercase tracking-wider">
                     Yearly
                   </div>
-                  <div className="app-heading mt-1 break-words text-[13px] font-medium leading-tight">
-                    {yearlyTitle}
-                  </div>
                 </div>
-                {selectedPlan === "yearly" ? (
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent)" }}>
-                    <Check className="h-3 w-3 text-white" strokeWidth={3} />
-                  </span>
-                ) : (
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-white" style={{ background: "var(--app-accent-gradient)" }}>
-                    <Star className="h-3 w-3" fill="currentColor" />
-                    Popular
-                  </span>
-                )}
+                <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider", selectedPlan === "yearly" ? "text-white" : "app-accent")} style={{ background: selectedPlan === "yearly" ? "var(--app-accent-gradient)" : "var(--app-accent-soft)" }}>
+                  {selectedPlan === "yearly" ? <Check className="h-3 w-3" strokeWidth={3} /> : <Star className="h-3 w-3" fill="currentColor" />}
+                  Best value
+                </span>
               </div>
               <div>
                 <div className={cn("app-heading break-words font-serif leading-none", isCompactPhone ? "text-[1.5rem]" : "text-2xl")}>{yearlyPrice}</div>
-                <div className="app-muted mt-2 text-[11px] leading-snug">One simple annual payment</div>
+                <div className="app-muted mt-2 text-[11px] leading-snug">A full year of steady support</div>
               </div>
             </button>
+          </div>
           </div>
           )}
 
@@ -510,7 +526,7 @@ export default function Paywall() {
                 "Loading Google Play..."
               ) : nativeSelectedPlanUnavailable ? (
                 "Plan unavailable"
-              ) : (`Start ${selectedPlanLabel}`)}
+              ) : (`Continue with ${selectedPlanLabel}`)}
             </button>
           )}
 
@@ -523,9 +539,9 @@ export default function Paywall() {
             </div>
           )}
 
-          <div className={cn("rounded-card border px-4 py-4", isShortPhone ? "mb-4" : "mb-5")} style={{ background: "var(--app-card-soft)", borderColor: "var(--app-card-border)" }}>
-            <p className="app-heading mb-3 text-sm font-semibold">Your Premium experience includes</p>
-            <div className="space-y-2.5">
+          <div className={cn("border-t pt-4", isShortPhone ? "mb-4" : "mb-5")} style={{ borderColor: "var(--app-card-border)" }}>
+            <p className="app-heading mb-3 text-center text-sm font-semibold">Everything you need to stay present</p>
+            <div className="space-y-2">
               {features.map((feature) => (
                 <div key={feature} className="flex items-center gap-2.5">
                   <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)", border: "1px solid color-mix(in srgb, var(--app-accent) 25%, transparent)" }}>

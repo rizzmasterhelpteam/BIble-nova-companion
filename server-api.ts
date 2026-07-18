@@ -14,6 +14,23 @@ export const hasPrayerApiKey = () => Boolean(process.env.GEMINI_API_KEY?.trim())
 
 export const hasSpeechApiKey = () => Boolean(process.env.GROQ_API_KEY?.trim());
 
+export const hasNativeSubscriptionSyncConfig = () => {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const rawGoogleCredentials = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?.trim();
+
+  if (!supabaseUrl || supabaseUrl.includes("placeholder.supabase.co") || !serviceRoleKey || !rawGoogleCredentials) {
+    return false;
+  }
+
+  try {
+    const credentials = JSON.parse(rawGoogleCredentials) as { client_email?: string; private_key?: string };
+    return Boolean(credentials.client_email && credentials.private_key);
+  } catch {
+    return false;
+  }
+};
+
 export async function fetchAvailableModels() {
   const apiKey = process.env.GROK_API_KEY?.trim();
   if (!apiKey) {
@@ -43,6 +60,7 @@ export const getApiStatus = () => ({
   modelsReady: hasModelsApiKey(),
   prayerReady: hasPrayerApiKey(),
   speechReady: hasSpeechApiKey(),
+  nativeSubscriptionSyncReady: hasNativeSubscriptionSyncConfig(),
 });
 
 type UserSubscriptionMetadata = {

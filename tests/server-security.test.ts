@@ -13,6 +13,7 @@ import {
   HttpError,
   requireAuthenticatedRequest,
 } from "../server-security";
+import { getApiStatus } from "../server-api";
 
 describe("server security", () => {
   beforeEach(() => {
@@ -68,5 +69,16 @@ describe("server security", () => {
   it("rejects oversized input with a client-safe HTTP error", () => {
     expect(() => assertStringLength("12345", 4, "Prompt")).toThrowError(HttpError);
     expect(() => assertStringLength("12345", 4, "Prompt")).toThrow("Prompt is invalid or too long.");
+  });
+
+  it("reports whether secure Google Play subscription linking is configured", () => {
+    process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON = JSON.stringify({
+      client_email: "play@example.iam.gserviceaccount.com",
+      private_key: "test-private-key",
+    });
+    expect(getApiStatus().nativeSubscriptionSyncReady).toBe(true);
+
+    delete process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON;
+    expect(getApiStatus().nativeSubscriptionSyncReady).toBe(false);
   });
 });
