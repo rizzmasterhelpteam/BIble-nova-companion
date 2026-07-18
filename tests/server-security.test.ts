@@ -35,6 +35,13 @@ describe("server security", () => {
     expect(key).not.toContain("203.0.113.44");
   });
 
+  it("uses the server-only service key as a safe fallback salt", () => {
+    delete process.env.RATE_LIMIT_IP_SALT;
+    const key = getRateLimitStorageKey("subscription-sync:ip:203.0.113.44");
+    expect(key).toMatch(/^subscription-sync:ip:[a-f0-9]{64}$/);
+    expect(key).not.toContain("203.0.113.44");
+  });
+
   it("uses the persistent RPC and rejects denied windows", async () => {
     rpcMock.mockResolvedValueOnce({ data: [{ allowed: true, retry_after_seconds: 0 }], error: null });
     await enforceRateLimits([{ key: "chat:user:user-1", limit: 30 }]);

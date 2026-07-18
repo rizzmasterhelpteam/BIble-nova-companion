@@ -84,9 +84,13 @@ export const requireAuthenticatedRequest = async (req: RequestLike) => {
 
 export const getRateLimitStorageKey = (key: string) => {
   if (!key.includes(":ip:")) return key;
-  const salt = process.env.RATE_LIMIT_IP_SALT;
+  // A dedicated salt is preferred, but the persistent limiter already
+  // requires the server-only service role. Falling back to it keeps IP keys
+  // non-reversible and prevents a missing optional env var from blocking
+  // critical authenticated flows such as subscription linking.
+  const salt = process.env.RATE_LIMIT_IP_SALT || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!salt) {
-    throw new HttpError("Rate limiting is not configured on the server.", 503);
+    throw new HttpError("Rate limiting requires server persistence configuration.", 503);
   }
   return `${key.slice(0, key.indexOf(":ip:") + 4)}${createHash("sha256")
     .update(`${salt}:${key.slice(key.indexOf(":ip:") + 4)}`)
