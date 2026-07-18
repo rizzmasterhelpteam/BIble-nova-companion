@@ -129,14 +129,11 @@ const getNativeGoogleLoginOptions = (nonceDigest: string, retryWithFreshPrompt: 
     nonce: nonceDigest,
     ...(platform === "android"
       ? {
-          // Use Credential Manager's account picker path. This matches Supabase's
-          // native Android guidance and also supports accounts that have not
-          // previously authorized this app on the device.
-          style: "bottom" as const,
-          filterByAuthorizedAccounts: false,
-          autoSelectEnabled: false,
-          forcePrompt: retryWithFreshPrompt,
-          forceRefreshToken: retryWithFreshPrompt,
+          // This is a user-initiated sign-in button, so use Credential
+          // Manager's explicit "Sign in with Google" flow. The bottom-sheet
+          // (GetGoogleIdOption) may only surface the last identity; this flow
+          // opens the full device Google-account chooser instead.
+          style: "standard" as const,
         }
       : { forcePrompt: retryWithFreshPrompt }),
   };

@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../server-security";
+import { enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../server-security.js";
 
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");

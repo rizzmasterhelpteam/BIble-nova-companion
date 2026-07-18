@@ -1,5 +1,5 @@
-import { getClientErrorMessage, syncNativeSubscription } from "../../server-api";
-import { enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../../server-security";
+import { getClientErrorMessage, syncNativeSubscription } from "../../server-api.js";
+import { enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../../server-security.js";
 
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");

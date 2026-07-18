@@ -1,4 +1,4 @@
-import { assertStringLength, enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../server-security";
+import { assertStringLength, enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../server-security.js";
 
 const API_BUILD_ID = "2026-05-11-speech-transcription";
 

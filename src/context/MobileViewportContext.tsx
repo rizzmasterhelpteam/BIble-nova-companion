@@ -273,11 +273,20 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
       queueViewportSync();
     };
 
+    // Scrolling a long chat can emit visualViewport scroll events every frame.
+    // The viewport state only needs that signal while the keyboard or a form
+    // control is active, so avoid layout reads during normal content scrolling.
+    const handleViewportScroll = () => {
+      if (keyboardOpen || isEditableElementFocused()) {
+        handleViewportChange();
+      }
+    };
+
     syncViewport();
     window.addEventListener("resize", handleViewportChange, { passive: true });
     window.addEventListener("orientationchange", handleViewportChange, { passive: true });
     window.visualViewport?.addEventListener("resize", handleViewportChange, { passive: true });
-    window.visualViewport?.addEventListener("scroll", handleViewportChange, { passive: true });
+    window.visualViewport?.addEventListener("scroll", handleViewportScroll, { passive: true });
 
     if (isNativePlatform()) {
       void Promise.all([
@@ -304,7 +313,7 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("orientationchange", handleViewportChange);
       window.visualViewport?.removeEventListener("resize", handleViewportChange);
-      window.visualViewport?.removeEventListener("scroll", handleViewportChange);
+      window.visualViewport?.removeEventListener("scroll", handleViewportScroll);
       void Promise.all(listenerHandles.map((handle) => handle.remove()));
     };
   }, []);

@@ -1,10 +1,10 @@
-import { createChatCompletion, getClientErrorMessage } from "../chat-api";
+import { createChatCompletion, getClientErrorMessage } from "../chat-api.js";
 import {
   assertStringLength,
   enforceRateLimits,
   getHttpErrorDetails,
   requireAuthenticatedRequest,
-} from "../server-security";
+} from "../server-security.js";
 
 const API_BUILD_ID = "2026-07-16-shared-chat-security";
 

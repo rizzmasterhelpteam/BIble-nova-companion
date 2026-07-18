@@ -302,17 +302,10 @@ export default function Paywall() {
   const features = [
     "Unlimited spiritual guidance",
     "Personalized prayer support",
-    "Deeper reflections and daily intentions",
-    "Ad-free sanctuary experience",
-    "Priority access to new teachings",
+    "Private reflections without ads",
   ];
 
   const showAndroidBillingUnavailable = !nativeStoreAvailable;
-  const planSummary = showAndroidBillingUnavailable
-    ? "Google Play billing is available in the Android app."
-    : selectedPlan === "yearly"
-    ? "Best value for a steady long-term practice."
-    : "A flexible monthly option with a short free trial.";
 
   return (
     <div
@@ -353,31 +346,16 @@ export default function Paywall() {
             </div>
           </div>
 
-          <div className={cn("text-center", isShortPhone ? "mb-5" : "mb-6 sm:mb-8")}>
-            <span className={cn("app-accent-badge mb-4 inline-block rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-widest", isShortPhone && "mb-3")}>
-              Full access
+          <div className={cn("text-center", isShortPhone ? "mb-5" : "mb-6")}>
+            <span className={cn("app-accent-badge mb-3 inline-block rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em]", isShortPhone && "mb-2")}>
+              Bible Nova Premium
             </span>
             <h1 className={cn("app-heading mb-3 pb-1 font-serif leading-[1.24]", isShortPhone ? "text-[1.85rem]" : isCompactPhone ? "text-[2rem]" : "text-3xl")}>
-              Continue your reflection practice
+              Make space for what matters.
             </h1>
             <p className={cn("app-muted px-2 font-light", isShortPhone && "text-[14px] leading-relaxed")}>
-              Unlimited spiritual guidance, prayer support, and private tools in one calm Android experience.
+              Keep your prayer, reflection, and guidance practice close—without interruptions.
             </p>
-          </div>
-
-          <div
-            className={cn("mb-4 rounded-card border px-4 py-3", isShortPhone ? "text-[13px]" : "text-sm")}
-            style={{
-              background: "color-mix(in srgb, var(--app-card-soft) 88%, transparent)",
-              borderColor: "var(--app-card-border)",
-            }}
-          >
-            <div className="flex items-start gap-3">
-              <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" style={{ color: "var(--app-success)" }} />
-              <p className="app-muted leading-relaxed">
-                Google Play handles subscriptions, renewals, restores, and any store-managed offers for the Android app.
-              </p>
-            </div>
           </div>
 
           {showAndroidBillingUnavailable ? (
@@ -395,7 +373,7 @@ export default function Paywall() {
               </p>
             </div>
           ) : (
-          <div role="radiogroup" aria-label="Subscription plan" className={cn("mb-4 grid grid-cols-2", isCompactPhone ? "gap-3" : "gap-4")}>
+          <div role="radiogroup" aria-label="Subscription plan" className={cn("mb-5 grid grid-cols-2", isCompactPhone ? "gap-3" : "gap-4")}>
             <button
               ref={monthlyRef}
               role="radio"
@@ -404,7 +382,7 @@ export default function Paywall() {
               tabIndex={selectedPlan === "monthly" ? 0 : -1}
               onClick={() => setSelectedPlan("monthly")}
               onKeyDown={handlePlanKey}
-              className={cn("touch-target relative flex min-h-[9.5rem] flex-col items-stretch justify-between rounded-card border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-4")}
+              className={cn("touch-target relative flex min-h-[8.75rem] flex-col items-stretch justify-between rounded-card border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-4")}
               style={{
                 background: selectedPlan === "monthly" ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                 borderColor:
@@ -423,15 +401,15 @@ export default function Paywall() {
                     {monthlyTitle}
                   </div>
                 </div>
-                <span className="shrink-0 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider" style={{ background: "var(--app-card-soft)", color: "var(--app-text-muted)" }}>
-                  Flexible
-                </span>
+                {selectedPlan === "monthly" && (
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent)" }}>
+                    <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                  </span>
+                )}
               </div>
               <div>
                 <div className={cn("app-heading break-words font-serif leading-none", isCompactPhone ? "text-[1.5rem]" : "text-2xl")}>{monthlyPrice}</div>
-                <div className="app-muted mt-2 text-[11px] leading-snug">
-                  Billed monthly after any store trial.
-                </div>
+                <div className="app-muted mt-2 text-[11px] leading-snug">Billed monthly</div>
               </div>
             </button>
 
@@ -443,7 +421,7 @@ export default function Paywall() {
               tabIndex={selectedPlan === "yearly" ? 0 : -1}
               onClick={() => setSelectedPlan("yearly")}
               onKeyDown={handlePlanKey}
-              className={cn("touch-target relative flex min-h-[9.5rem] flex-col items-stretch justify-between rounded-card border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-4")}
+              className={cn("touch-target relative flex min-h-[8.75rem] flex-col items-stretch justify-between rounded-card border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-4")}
               style={{
                 background: selectedPlan === "yearly" ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                 borderColor:
@@ -470,14 +448,20 @@ export default function Paywall() {
                     {yearlyTitle}
                   </div>
                 </div>
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-white" style={{ background: "var(--app-accent-gradient)" }}>
-                  <Star className="h-3 w-3" fill="currentColor" />
-                  Popular
-                </span>
+                {selectedPlan === "yearly" ? (
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent)" }}>
+                    <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                  </span>
+                ) : (
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-white" style={{ background: "var(--app-accent-gradient)" }}>
+                    <Star className="h-3 w-3" fill="currentColor" />
+                    Popular
+                  </span>
+                )}
               </div>
               <div>
                 <div className={cn("app-heading break-words font-serif leading-none", isCompactPhone ? "text-[1.5rem]" : "text-2xl")}>{yearlyPrice}</div>
-                <div className="app-muted mt-2 text-[11px] leading-snug">Best value for steady use.</div>
+                <div className="app-muted mt-2 text-[11px] leading-snug">One simple annual payment</div>
               </div>
             </button>
           </div>
@@ -526,68 +510,52 @@ export default function Paywall() {
                 "Loading Google Play..."
               ) : nativeSelectedPlanUnavailable ? (
                 "Plan unavailable"
-              ) : (
-                `Continue with ${selectedPlanLabel}`
-              )}
+              ) : (`Start ${selectedPlanLabel}`)}
             </button>
           )}
 
-          <div className={cn("app-success-panel flex items-start gap-3 rounded-card px-4 py-3", isShortPhone ? "mb-4" : "mb-6")}>
-            <ShieldCheck className="mt-0.5 h-4 w-4" style={{ color: "var(--app-success)" }} />
-            <div>
-              <p className="text-sm app-heading">{planSummary}</p>
-              <p className="app-muted mt-1 text-[11px]">
-                {nativeStoreAvailable
-                  ? "Manage or restore eligible subscriptions from this screen."
-                  : "Billing is managed in the Android app through Google Play."}
+          {nativeStoreAvailable && (
+            <div className="mb-5 flex items-center justify-center gap-2 text-center">
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--app-success)" }} />
+              <p className="app-muted text-[11px] leading-relaxed">
+                Secure payment through Google Play. Cancel anytime in Google Play.
               </p>
+            </div>
+          )}
+
+          <div className={cn("rounded-card border px-4 py-4", isShortPhone ? "mb-4" : "mb-5")} style={{ background: "var(--app-card-soft)", borderColor: "var(--app-card-border)" }}>
+            <p className="app-heading mb-3 text-sm font-semibold">Your Premium experience includes</p>
+            <div className="space-y-2.5">
+              {features.map((feature) => (
+                <div key={feature} className="flex items-center gap-2.5">
+                  <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)", border: "1px solid color-mix(in srgb, var(--app-accent) 25%, transparent)" }}>
+                    <Check className="w-3 h-3 app-accent" strokeWidth={3} />
+                  </div>
+                  <span className="app-heading text-sm font-medium">{feature}</span>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="mb-4 grid grid-cols-1 gap-2">
+          <div className="mb-4 grid grid-cols-1 gap-1">
             {nativeStoreAvailable && (
               <>
               <button
                 onClick={handleRestorePurchases}
                 disabled={isLoading}
-                className="touch-target app-ghost-button w-full rounded-pill py-3 text-sm font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+                className="touch-target app-ghost-button w-full rounded-pill py-2.5 text-sm font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
               >
                 Restore purchases
               </button>
               <button
                 onClick={handleManageSubscriptions}
                 disabled={isLoading}
-                className="touch-target app-ghost-button w-full rounded-pill py-3 text-sm font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+                className="touch-target app-ghost-button w-full rounded-pill py-2.5 text-sm font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
               >
                 Manage subscriptions
               </button>
               </>
             )}
-            <p className="app-muted px-2 text-center text-[11px] leading-relaxed">
-              {nativeStoreAvailable
-                ? "Google Play manages subscription renewals, restores, and any store-level offers outside the app."
-                : "Open this account on Android to subscribe or restore premium through Google Play."}
-            </p>
-          </div>
-
-          <div className={cn("space-y-3", isShortPhone ? "mb-5" : "mb-6 sm:mb-8")}>
-            {features.map((feature, index) => (
-              <motion.div
-                key={feature}
-                initial={isPerformanceMode ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: isPerformanceMode ? 0 : 0.04 * index, duration: isPerformanceMode ? 0 : 0.16 }}
-                className="flex items-center gap-3"
-              >
-                <div
-                  className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full"
-                  style={{ background: "var(--app-accent-soft)", border: "1px solid color-mix(in srgb, var(--app-accent) 25%, transparent)" }}
-                >
-                  <Check className="w-3 h-3 app-accent" strokeWidth={3} />
-                </div>
-                <span className="text-sm font-medium app-heading">{feature}</span>
-              </motion.div>
-            ))}
           </div>
 
           <p className="app-muted px-4 text-center text-[11px] leading-relaxed">

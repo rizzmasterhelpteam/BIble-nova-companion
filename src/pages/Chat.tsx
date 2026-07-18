@@ -97,6 +97,165 @@ const loadApiStatus = () => {
   return apiStatusPromise;
 };
 
+type ChatMessageProps = {
+  isAndroidApp: boolean;
+  isCompactPhone: boolean;
+  message: Message;
+  onSpeak: (message: Message) => void;
+  speakingMessageId: string | null;
+  voiceSupported: boolean;
+};
+
+const ChatMessage = React.memo(function ChatMessage({
+  isAndroidApp,
+  isCompactPhone,
+  message,
+  onSpeak,
+  speakingMessageId,
+  voiceSupported,
+}: ChatMessageProps) {
+  const isError = message.tone === "error";
+
+  return (
+    <motion.div
+      initial={isAndroidApp ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: isAndroidApp ? 0 : 0.2, ease: "easeOut" }}
+      className={cn(
+        "flex flex-col w-full",
+        message.role === "user" ? "items-end" : "items-start",
+      )}
+    >
+      {message.role === "ai" && (
+        <div className="flex w-full max-w-full min-w-0 items-start gap-3">
+          <div
+            className="w-[30px] h-[30px] mt-0.5 flex-shrink-0 rounded-full border flex items-center justify-center"
+            style={
+              isError
+                ? {
+                    background: "var(--app-danger-soft)",
+                    borderColor: "color-mix(in srgb, var(--app-danger) 25%, transparent)",
+                    color: "var(--app-danger)",
+                  }
+                : {
+                    background: "var(--app-accent-soft)",
+                    borderColor: "color-mix(in srgb, var(--app-accent) 25%, transparent)",
+                    color: "var(--app-accent)",
+                  }
+            }
+          >
+            {isError ? (
+              <AlertCircle className="w-[14px] h-[14px]" />
+            ) : (
+              <AppLogo alt="" className="h-[14px] w-[14px] rounded-full object-cover" />
+            )}
+          </div>
+
+          <div className="relative flex min-w-0 flex-1 flex-col gap-2">
+            {!isError && voiceSupported && (
+              <button
+                type="button"
+                onClick={() => onSpeak(message)}
+                className="flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] transition-all"
+                style={{
+                  background:
+                    speakingMessageId === message.id
+                      ? "color-mix(in srgb, var(--app-accent-soft) 92%, transparent)"
+                      : "color-mix(in srgb, var(--app-card-soft) 82%, transparent)",
+                  borderColor:
+                    speakingMessageId === message.id
+                      ? "color-mix(in srgb, var(--app-accent) 28%, transparent)"
+                      : "color-mix(in srgb, var(--app-card-border) 55%, transparent)",
+                  color:
+                    speakingMessageId === message.id
+                      ? "var(--app-accent)"
+                      : "var(--app-text-muted)",
+                }}
+              >
+                {speakingMessageId === message.id ? (
+                  <><Square className="h-3.5 w-3.5 fill-current" />Stop voice</>
+                ) : (
+                  <><Volume2 className="h-3.5 w-3.5" />Father voice</>
+                )}
+              </button>
+            )}
+            <div
+              className={cn(
+                "break-words whitespace-pre-wrap text-[16px] leading-[1.8] font-serif font-light",
+                isError ? "rounded-[1.5rem] border px-4 py-3" : "",
+              )}
+              style={
+                isError
+                  ? {
+                      color: "var(--app-danger)",
+                      background: "var(--app-danger-soft)",
+                      borderColor: "color-mix(in srgb, var(--app-danger) 18%, transparent)",
+                    }
+                  : { color: "var(--app-text)" }
+              }
+            >
+              {message.content}
+            </div>
+
+            {message.reference && (
+              <motion.div
+                initial={isAndroidApp ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: isAndroidApp ? 0 : 0.15 }}
+                className="mt-1"
+              >
+                <div
+                  className="rounded-[1.25rem] border p-4 shadow-sm"
+                  style={{
+                    background: "color-mix(in srgb, var(--app-card-soft) 85%, transparent)",
+                    borderColor: "color-mix(in srgb, var(--app-accent) 20%, transparent)",
+                  }}
+                >
+                  <p className="app-muted mb-3 text-[12px] italic font-serif opacity-80">
+                    A reading for contemplation.
+                  </p>
+                  <div
+                    className="w-full rounded-xl px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.2em] shadow-[inset_0_1px_0_color-mix(in_srgb,white_15%,transparent)]"
+                    style={{
+                      background: "linear-gradient(135deg, color-mix(in srgb, var(--app-accent-soft) 80%, transparent), transparent)",
+                      color: "var(--app-accent)",
+                    }}
+                  >
+                    <span className="app-heading px-1 font-serif normal-case tracking-normal">
+                      {message.reference}
+                    </span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {message.role === "user" && (
+        <div
+          className={cn(
+            "break-words whitespace-pre-wrap rounded-[1.5rem] rounded-tr-[0.5rem] border text-[15px] font-light leading-relaxed",
+            isCompactPhone ? "max-w-[90%] px-5 py-3.5" : "max-w-[85%] px-6 py-4",
+          )}
+          style={{
+            background: "color-mix(in srgb, var(--app-card-strong) 92%, transparent)",
+            color: "var(--app-heading)",
+            borderColor: "color-mix(in srgb, var(--app-card-border) 60%, transparent)",
+            boxShadow: [
+              "inset 0 1px 0 0 color-mix(in srgb, white 14%, transparent)",
+              "inset 0 0 0 0.5px color-mix(in srgb, white 6%, transparent)",
+              "0 8px 24px rgba(0,0,0,0.08)",
+            ].join(", "),
+          }}
+        >
+          {message.content}
+        </div>
+      )}
+    </motion.div>
+  );
+});
+
 export default function Chat() {
   useDocumentTitle("Bible Nova Companion");
   const location = useLocation();
@@ -485,7 +644,7 @@ export default function Chat() {
     }
   };
 
-  const handleSpeakMessage = async (message: Message) => {
+  const handleSpeakMessage = useCallback(async (message: Message) => {
     if (
       message.role !== "ai" ||
       message.tone === "error" ||
@@ -508,7 +667,7 @@ export default function Chat() {
         error instanceof Error ? error.message : "Voice playback could not start on this device.",
       );
     }
-  };
+  }, [speakingMessageId, voiceSupported]);
 
   const toggleRecording = async () => {
     if (isRecording) {
@@ -639,159 +798,17 @@ export default function Chat() {
         )}
 
         <AnimatePresence initial={false}>
-          {messages.map((message) => {
-            const isError = message.tone === "error";
-
-            return (
-              <motion.div
-                key={message.id}
-                initial={isAndroidApp ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: isAndroidApp ? 0 : 0.2, ease: "easeOut" }}
-                className={cn(
-                  "flex flex-col w-full",
-                  message.role === "user" ? "items-end" : "items-start",
-                )}
-              >
-                {message.role === "ai" && (
-                  <div className="flex w-full max-w-full min-w-0 items-start gap-3">
-                    <div
-                      className={cn(
-                        "w-[30px] h-[30px] mt-0.5 flex-shrink-0 rounded-full border flex items-center justify-center",
-                      )}
-                      style={
-                        isError
-                          ? {
-                              background: "var(--app-danger-soft)",
-                              borderColor: "color-mix(in srgb, var(--app-danger) 25%, transparent)",
-                              color: "var(--app-danger)",
-                            }
-                          : {
-                              background: "var(--app-accent-soft)",
-                              borderColor: "color-mix(in srgb, var(--app-accent) 25%, transparent)",
-                              color: "var(--app-accent)",
-                            }
-                      }
-                    >
-                      {isError ? (
-                        <AlertCircle className="w-[14px] h-[14px]" />
-                      ) : (
-                        <AppLogo alt="" className="h-[14px] w-[14px] rounded-full object-cover" />
-                      )}
-                    </div>
-
-                    <div className="relative flex min-w-0 flex-1 flex-col gap-2">
-                      {!isError && voiceSupported && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void handleSpeakMessage(message);
-                          }}
-                          className="flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] transition-all"
-                          style={{
-                            background:
-                              speakingMessageId === message.id
-                                ? "color-mix(in srgb, var(--app-accent-soft) 92%, transparent)"
-                                : "color-mix(in srgb, var(--app-card-soft) 82%, transparent)",
-                            borderColor:
-                              speakingMessageId === message.id
-                                ? "color-mix(in srgb, var(--app-accent) 28%, transparent)"
-                                : "color-mix(in srgb, var(--app-card-border) 55%, transparent)",
-                            color:
-                              speakingMessageId === message.id
-                                ? "var(--app-accent)"
-                                : "var(--app-text-muted)",
-                          }}
-                        >
-                          {speakingMessageId === message.id ? (
-                            <>
-                              <Square className="h-3.5 w-3.5 fill-current" />
-                              Stop voice
-                            </>
-                          ) : (
-                            <>
-                              <Volume2 className="h-3.5 w-3.5" />
-                              Father voice
-                            </>
-                          )}
-                        </button>
-                      )}
-                      <div
-                        className={cn(
-                          "break-words whitespace-pre-wrap text-[16px] leading-[1.8] font-serif font-light",
-                          isError ? "rounded-[1.5rem] border px-4 py-3" : "",
-                        )}
-                        style={
-                          isError
-                            ? {
-                                color: "var(--app-danger)",
-                                background: "var(--app-danger-soft)",
-                                borderColor: "color-mix(in srgb, var(--app-danger) 18%, transparent)",
-                              }
-                            : { color: "var(--app-text)" }
-                        }
-                      >
-                        {message.content}
-                      </div>
-
-                      {message.reference && (
-                        <motion.div
-                          initial={isAndroidApp ? false : { opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ delay: isAndroidApp ? 0 : 0.15 }}
-                          className="mt-1"
-                        >
-                          <div
-                            className="rounded-[1.25rem] border p-4 shadow-sm"
-                            style={{
-                              background: "color-mix(in srgb, var(--app-card-soft) 85%, transparent)",
-                              borderColor: "color-mix(in srgb, var(--app-accent) 20%, transparent)",
-                            }}
-                          >
-                            <p className="app-muted mb-3 text-[12px] italic font-serif opacity-80">
-                              A reading for contemplation.
-                            </p>
-                            <div
-                              className="w-full rounded-xl px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.2em] shadow-[inset_0_1px_0_color-mix(in_srgb,white_15%,transparent)]"
-                              style={{
-                                background: "linear-gradient(135deg, color-mix(in srgb, var(--app-accent-soft) 80%, transparent), transparent)",
-                                color: "var(--app-accent)",
-                              }}
-                            >
-                              <span className="app-heading px-1 font-serif normal-case tracking-normal">
-                                {message.reference}
-                              </span>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {message.role === "user" && (
-                  <div
-                    className={cn(
-                      "break-words whitespace-pre-wrap rounded-[1.5rem] rounded-tr-[0.5rem] border text-[15px] font-light leading-relaxed",
-                      isCompactPhone ? "max-w-[90%] px-5 py-3.5" : "max-w-[85%] px-6 py-4",
-                    )}
-                    style={{
-                      background: "color-mix(in srgb, var(--app-card-strong) 92%, transparent)",
-                      color: "var(--app-heading)",
-                      borderColor: "color-mix(in srgb, var(--app-card-border) 60%, transparent)",
-                      boxShadow: [
-                        "inset 0 1px 0 0 color-mix(in srgb, white 14%, transparent)",
-                        "inset 0 0 0 0.5px color-mix(in srgb, white 6%, transparent)",
-                        "0 8px 24px rgba(0,0,0,0.08)",
-                      ].join(", "),
-                    }}
-                  >
-                    {message.content}
-                  </div>
-                )}
-              </motion.div>
-            );
-          })}
+          {messages.map((message) => (
+            <ChatMessage
+              key={message.id}
+              isAndroidApp={isAndroidApp}
+              isCompactPhone={isCompactPhone}
+              message={message}
+              onSpeak={handleSpeakMessage}
+              speakingMessageId={speakingMessageId}
+              voiceSupported={voiceSupported}
+            />
+          ))}
         </AnimatePresence>
 
         {isTyping && (

@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { JWT } from "google-auth-library";
-import { hasChatApiKey } from "./chat-api";
+import { hasChatApiKey } from "./chat-api.js";
 export {
   createChatCompletion,
   getClientErrorMessage,
   hasChatApiKey,
-} from "./chat-api";
+} from "./chat-api.js";
 
 export const hasModelsApiKey = () => Boolean(process.env.GROK_API_KEY?.trim());
 

@@ -1,4 +1,4 @@
-import { fetchAvailableModels, getClientErrorMessage } from "../server-api";
+import { fetchAvailableModels, getClientErrorMessage } from "../server-api.js";
 
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
