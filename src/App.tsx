@@ -51,7 +51,8 @@ const ConnectivityNotice = () => {
       className="fixed inset-x-3 bottom-3 z-[120] flex items-center justify-between gap-3 rounded-card border px-4 py-3 shadow-xl"
       role="alert"
       style={{
-        background: "var(--app-panel-strong)",
+        backgroundColor: "var(--app-surface-elevated)",
+        backgroundImage: "var(--app-shell-highlight)",
         borderColor: "var(--app-card-border)",
         color: "var(--app-text)",
       }}

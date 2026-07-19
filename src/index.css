@@ -27,6 +27,9 @@
   :root {
     --bg-base: #f6efe3;
     --text-base: #251c14;
+    --app-surface-solid: #fffdf8;
+    --app-surface-elevated: #fffefa;
+    --app-surface-muted: #f7efe4;
 
     --app-page-bg:
       radial-gradient(circle at 0% 0%, rgba(215, 173, 96, 0.25), transparent 32%),
@@ -98,6 +101,9 @@
   :root.dark[data-design="cathedral"] {
     --bg-base: #120e0a;
     --text-base: #f7f0e5;
+    --app-surface-solid: #17110c;
+    --app-surface-elevated: #1d160f;
+    --app-surface-muted: #211911;
     --app-page-bg:
       radial-gradient(circle at 0% 0%, rgba(196, 147, 61, 0.18), transparent 34%),
       radial-gradient(circle at 100% 100%, rgba(47, 104, 88, 0.14), transparent 36%),
@@ -141,6 +147,9 @@
   :root.light[data-design="nocturne"] {
     --bg-base: #edf3fb;
     --text-base: #101827;
+    --app-surface-solid: #f8fbff;
+    --app-surface-elevated: #ffffff;
+    --app-surface-muted: #edf3fb;
     --app-page-bg:
       radial-gradient(circle at 0% 0%, rgba(111, 214, 255, 0.22), transparent 32%),
       radial-gradient(circle at 100% 100%, rgba(40, 76, 128, 0.12), transparent 34%),
@@ -189,6 +198,9 @@
   :root.dark[data-design="nocturne"] {
     --bg-base: #050b14;
     --text-base: #ebf2ff;
+    --app-surface-solid: #080e18;
+    --app-surface-elevated: #0c1420;
+    --app-surface-muted: #101b2a;
     --app-page-bg:
       radial-gradient(circle at 0% 0%, rgba(111, 214, 255, 0.12), transparent 30%),
       radial-gradient(circle at 100% 100%, rgba(58, 83, 124, 0.16), transparent 34%),
@@ -232,6 +244,9 @@
   :root.light[data-design="atelier"] {
     --bg-base: #fbf1ea;
     --text-base: #301d1d;
+    --app-surface-solid: #fffaf6;
+    --app-surface-elevated: #fffdfb;
+    --app-surface-muted: #faede4;
     --app-page-bg:
       radial-gradient(circle at 0% 0%, rgba(216, 166, 127, 0.25), transparent 32%),
       radial-gradient(circle at 100% 100%, rgba(143, 59, 69, 0.12), transparent 35%),
@@ -280,6 +295,9 @@
   :root.dark[data-design="atelier"] {
     --bg-base: #150d0f;
     --text-base: #faefea;
+    --app-surface-solid: #1b1014;
+    --app-surface-elevated: #23151a;
+    --app-surface-muted: #291a20;
     --app-page-bg:
       radial-gradient(circle at 0% 0%, rgba(185, 107, 103, 0.14), transparent 30%),
       radial-gradient(circle at 100% 100%, rgba(120, 47, 57, 0.18), transparent 36%),
@@ -391,8 +409,9 @@
 
 @layer utilities {
   .glass {
-    background: var(--app-card-bg);
-    backdrop-filter: blur(22px);
+    background-color: var(--app-surface-solid);
+    background-image: var(--app-shell-highlight);
+    backdrop-filter: none;
     border: 1px solid var(--app-card-border);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
   }
@@ -408,6 +427,7 @@
 
   .bible-card {
     background: linear-gradient(135deg, var(--app-card-strong) 0%, var(--app-card-bg) 100%);
+    background-color: var(--app-surface-solid);
     border: 1px solid var(--app-card-border);
   }
 
@@ -437,6 +457,7 @@
 
   .app-shell {
     background: var(--app-shell-bg);
+    background-color: var(--app-surface-solid);
     border: 1px solid var(--app-shell-border);
     box-shadow: var(--app-shell-shadow);
     min-height: 0;
@@ -490,19 +511,21 @@
   }
 
   .app-panel {
-    background: var(--app-card-bg);
+    background-color: var(--app-surface-solid);
+    background-image: var(--app-shell-highlight);
     border: 1px solid var(--app-card-border);
     box-shadow: 0 14px 34px rgba(12, 12, 18, 0.06);
   }
 
   .app-panel-strong {
-    background: color-mix(in srgb, var(--bg-base) 14%, var(--app-card-strong) 86%);
+    background-color: var(--app-surface-elevated);
+    background-image: var(--app-shell-highlight);
     border: 1px solid var(--app-card-border);
     box-shadow: 0 22px 52px rgba(12, 12, 18, 0.14);
   }
 
   .app-panel-soft {
-    background: var(--app-card-soft);
+    background-color: var(--app-surface-muted);
     border: 1px solid var(--app-card-border);
   }
 
@@ -609,11 +632,11 @@
   }
 
   .app-nav-shell {
-    background: var(--app-nav-bg);
+    background-color: var(--app-surface-solid);
+    background-image: var(--app-shell-highlight);
     border: 1px solid var(--app-card-border);
     box-shadow: 0 18px 46px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.08);
-    /* backdrop-filter kept only on desktop; stripped on mobile below */
-    backdrop-filter: blur(20px);
+    backdrop-filter: none;
   }
 
   .app-divider {
@@ -633,15 +656,16 @@
   }
 
   .app-success-panel {
-    background: var(--app-success-soft);
+    background-color: var(--app-surface-solid);
+    background-image: linear-gradient(135deg, color-mix(in srgb, var(--app-success) 8%, transparent), transparent 68%);
     border: 1px solid color-mix(in srgb, var(--app-success) 22%, transparent);
     color: var(--app-text);
   }
 
   .app-paywall-panel {
     border: 1px solid var(--app-card-border);
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--app-card-strong) 96%, transparent), var(--app-card-bg));
+    background-color: var(--app-surface-elevated);
+    background-image: var(--app-shell-highlight);
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
@@ -688,7 +712,8 @@
   }
 
   .sanctuary-surface {
-    background: var(--app-shell-bg);
+    background-color: var(--app-surface-elevated);
+    background-image: var(--app-shell-bg);
     border: 1px solid var(--app-shell-border);
     box-shadow: 0 22px 56px rgba(18, 12, 8, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
@@ -699,12 +724,14 @@
     overflow: hidden;
     border: 1px solid color-mix(in srgb, var(--app-accent) 30%, transparent);
     border-radius: 1.35rem;
-    background: color-mix(in srgb, var(--app-card-strong) 86%, transparent);
+    background-color: var(--app-surface-muted);
+    background-image: var(--app-shell-highlight);
     box-shadow: 0 16px 38px color-mix(in srgb, var(--app-accent) 20%, transparent);
   }
 
   .sanctuary-option {
-    background: color-mix(in srgb, var(--app-card-strong) 60%, transparent);
+    background-color: var(--app-surface-solid);
+    background-image: var(--app-shell-highlight);
     border: 1px solid var(--app-card-border);
     color: var(--app-text);
     transition: border-color 160ms ease, background-color 160ms ease, transform 150ms ease;
@@ -712,7 +739,8 @@
 
   .sanctuary-option[aria-checked="true"] {
     border-color: color-mix(in srgb, var(--app-accent) 48%, transparent);
-    background: color-mix(in srgb, var(--app-accent-soft) 72%, var(--app-card-strong));
+    background-color: var(--app-surface-muted);
+    background-image: linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 12%, transparent), transparent 66%);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-accent) 12%, transparent);
   }
 
@@ -739,6 +767,7 @@
     background:
       linear-gradient(145deg, color-mix(in srgb, var(--app-accent-soft) 55%, transparent), transparent 58%),
       color-mix(in srgb, var(--app-card-strong) 92%, var(--bg-base) 8%);
+    background-color: var(--app-surface-muted);
     border: 1px solid color-mix(in srgb, var(--app-accent) 18%, var(--app-card-border));
   }
 
@@ -753,10 +782,12 @@
     padding-top: 0.75rem;
     padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.25rem);
     background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--app-card-strong) 95%, transparent) 28%);
+    background-color: var(--app-surface-elevated);
   }
 
   .app-danger-panel {
-    background: var(--app-danger-soft);
+    background-color: var(--app-surface-solid);
+    background-image: linear-gradient(135deg, color-mix(in srgb, var(--app-danger) 8%, transparent), transparent 68%);
     border: 1px solid color-mix(in srgb, var(--app-danger) 22%, transparent);
     color: var(--app-danger);
   }
@@ -770,6 +801,7 @@
     background:
       linear-gradient(180deg, color-mix(in srgb, var(--app-card-strong) 92%, transparent), color-mix(in srgb, var(--app-card-bg) 86%, transparent)),
       linear-gradient(135deg, color-mix(in srgb, var(--app-accent-soft) 58%, transparent), transparent 58%);
+    background-color: var(--app-surface-solid);
     border: 1px solid var(--app-card-border);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.06);
   }
@@ -1115,6 +1147,8 @@
   }
 
   .app-settings-sheet {
+    background-color: var(--app-surface-elevated);
+    background-image: var(--app-shell-highlight);
     overscroll-behavior-y: contain;
     scrollbar-gutter: stable;
   }
@@ -1148,7 +1182,16 @@
   .native-android .app-panel,
   .native-android .app-panel-strong,
   .native-android .app-nav-shell {
-    background: color-mix(in srgb, var(--bg-base) 22%, var(--app-card-strong) 78%);
+    background-color: var(--app-surface-solid);
+    background-image: var(--app-shell-highlight);
+  }
+
+  .native-android .app-panel-strong,
+  .native-android .app-settings-sheet,
+  .native-android .app-paywall-panel,
+  .native-android .sanctuary-surface {
+    background-color: var(--app-surface-elevated);
+    background-image: var(--app-shell-highlight);
   }
 
   .native-android .app-overlay {

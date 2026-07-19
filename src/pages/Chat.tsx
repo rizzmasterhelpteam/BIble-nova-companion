@@ -686,7 +686,8 @@ export default function Chat() {
           isCompactPhone ? "min-h-[80px] px-4 py-3" : "min-h-[88px] px-5 py-4 sm:px-6",
         )}
         style={{
-          background: "color-mix(in srgb, var(--app-shell-bg) 80%, transparent)",
+          backgroundColor: "var(--app-surface-solid)",
+          backgroundImage: "var(--app-shell-highlight)",
           borderColor: "color-mix(in srgb, var(--app-divider) 50%, transparent)",
           boxShadow: "0 4px 24px rgba(0,0,0,0.08), inset 0 -1px 0 color-mix(in srgb, var(--app-divider) 40%, transparent)",
         }}
@@ -736,7 +737,8 @@ export default function Chat() {
               isShortPhone ? "rounded-[1.75rem] p-4" : isCompactPhone ? "rounded-[2rem] p-5" : "rounded-[2.5rem] p-6",
             )}
             style={{
-              background: "color-mix(in srgb, var(--app-card-bg) 75%, transparent)",
+              backgroundColor: "var(--app-surface-solid)",
+              backgroundImage: "var(--app-shell-highlight)",
               borderColor: "color-mix(in srgb, var(--app-card-border) 60%, transparent)",
             }}
           >
@@ -843,8 +845,8 @@ export default function Chat() {
           isCompactPhone ? "px-4 pb-safe pt-3" : "px-5 pb-safe pt-3 sm:px-6",
         )}
         style={{
-          background:
-            "linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 82%, transparent) 0%, var(--bg-base) 100%)",
+          backgroundColor: "var(--bg-base)",
+          backgroundImage: "linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 92%, transparent) 0%, var(--bg-base) 100%)",
         }}
       >
         <div className="mx-auto w-full max-w-xl">
@@ -880,7 +882,8 @@ export default function Chat() {
               isCompactPhone ? "pl-3.5" : "pl-4",
             )}
             style={{
-              background: "color-mix(in srgb, var(--app-nav-bg) 90%, transparent)",
+              backgroundColor: "var(--app-surface-solid)",
+              backgroundImage: "var(--app-shell-highlight)",
               borderColor: "color-mix(in srgb, var(--app-card-border) 80%, transparent)",
               boxShadow: "0 12px 36px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.06)",
             }}
