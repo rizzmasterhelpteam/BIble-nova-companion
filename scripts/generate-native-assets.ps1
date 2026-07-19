@@ -69,6 +69,75 @@ function Write-Icon {
   }
 }
 
+function Write-TransparentIcon {
+  param(
+    [System.Drawing.Image]$SourceImage,
+    [string]$Destination,
+    [int]$Size,
+    [double]$Scale = 0.82
+  )
+
+  $bitmap = New-Bitmap -Width $Size -Height $Size
+  $graphics = New-Graphics -Bitmap $bitmap
+  $transparentSource = New-Object System.Drawing.Bitmap($SourceImage)
+
+  try {
+    $graphics.Clear([System.Drawing.Color]::Transparent)
+
+    $queue = New-Object 'System.Collections.Generic.Queue[System.Drawing.Point]'
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]'
+    $backgroundPixels = New-Object 'System.Collections.Generic.List[System.Drawing.Point]'
+
+    for ($x = 0; $x -lt $transparentSource.Width; $x++) {
+      $queue.Enqueue([System.Drawing.Point]::new($x, 0))
+      $queue.Enqueue([System.Drawing.Point]::new($x, $transparentSource.Height - 1))
+    }
+    for ($y = 0; $y -lt $transparentSource.Height; $y++) {
+      $queue.Enqueue([System.Drawing.Point]::new(0, $y))
+      $queue.Enqueue([System.Drawing.Point]::new($transparentSource.Width - 1, $y))
+    }
+
+    while ($queue.Count -gt 0) {
+      $point = $queue.Dequeue()
+      if ($point.X -lt 0 -or $point.X -ge $transparentSource.Width -or $point.Y -lt 0 -or $point.Y -ge $transparentSource.Height) {
+        continue
+      }
+
+      $key = "$($point.X),$($point.Y)"
+      if (-not $seen.Add($key)) {
+        continue
+      }
+
+      $pixel = $transparentSource.GetPixel($point.X, $point.Y)
+      if ($pixel.R -lt 220 -or $pixel.G -lt 220 -or $pixel.B -lt 220) {
+        continue
+      }
+
+      $backgroundPixels.Add($point)
+      $queue.Enqueue([System.Drawing.Point]::new($point.X - 1, $point.Y))
+      $queue.Enqueue([System.Drawing.Point]::new($point.X + 1, $point.Y))
+      $queue.Enqueue([System.Drawing.Point]::new($point.X, $point.Y - 1))
+      $queue.Enqueue([System.Drawing.Point]::new($point.X, $point.Y + 1))
+    }
+
+    foreach ($point in $backgroundPixels) {
+      $pixel = $transparentSource.GetPixel($point.X, $point.Y)
+      $transparentSource.SetPixel($point.X, $point.Y, [System.Drawing.Color]::FromArgb(0, $pixel.R, $pixel.G, $pixel.B))
+    }
+
+    $scaled = [int][Math]::Round($Size * $Scale)
+    $offset = [int][Math]::Round(($Size - $scaled) / 2)
+    $graphics.DrawImage($transparentSource, $offset, $offset, $scaled, $scaled)
+
+    Save-Png -Bitmap $bitmap -Destination $Destination
+  }
+  finally {
+    $transparentSource.Dispose()
+    $graphics.Dispose()
+    $bitmap.Dispose()
+  }
+}
+
 function Write-Splash {
   param(
     [System.Drawing.Image]$SourceImage,
@@ -76,7 +145,7 @@ function Write-Splash {
     [int]$Width,
     [int]$Height,
     [double]$Scale = 0.34,
-    [string]$Background = "#111827"
+    [string]$Background = "#050B14"
   )
 
   $bitmap = New-Bitmap -Width $Width -Height $Height
@@ -132,25 +201,38 @@ try {
     Write-Icon -SourceImage $sourceImage -Destination (Join-Path $root $target.Path) -Size $target.Size
   }
 
-  $splashTargets = @(
-    @{ Path = "ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732.png"; Width = 2732; Height = 2732 },
-    @{ Path = "ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732-1.png"; Width = 2732; Height = 2732 },
-    @{ Path = "ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732-2.png"; Width = 2732; Height = 2732 },
-    @{ Path = "android/app/src/main/res/drawable/splash.png"; Width = 480; Height = 320 },
-    @{ Path = "android/app/src/main/res/drawable-land-mdpi/splash.png"; Width = 480; Height = 320 },
-    @{ Path = "android/app/src/main/res/drawable-land-hdpi/splash.png"; Width = 800; Height = 480 },
-    @{ Path = "android/app/src/main/res/drawable-land-xhdpi/splash.png"; Width = 1280; Height = 720 },
-    @{ Path = "android/app/src/main/res/drawable-land-xxhdpi/splash.png"; Width = 1600; Height = 960 },
-    @{ Path = "android/app/src/main/res/drawable-land-xxxhdpi/splash.png"; Width = 1920; Height = 1280 },
-    @{ Path = "android/app/src/main/res/drawable-port-mdpi/splash.png"; Width = 320; Height = 480 },
-    @{ Path = "android/app/src/main/res/drawable-port-hdpi/splash.png"; Width = 480; Height = 800 },
-    @{ Path = "android/app/src/main/res/drawable-port-xhdpi/splash.png"; Width = 720; Height = 1280 },
-    @{ Path = "android/app/src/main/res/drawable-port-xxhdpi/splash.png"; Width = 960; Height = 1600 },
-    @{ Path = "android/app/src/main/res/drawable-port-xxxhdpi/splash.png"; Width = 1280; Height = 1920 }
-  )
+  $transparentSplashPath = Join-Path $root "android/app/src/main/res/drawable-nodpi/splash_icon.png"
+  Write-TransparentIcon `
+    -SourceImage $sourceImage `
+    -Destination $transparentSplashPath `
+    -Size 512
 
-  foreach ($target in $splashTargets) {
-    Write-Splash -SourceImage $sourceImage -Destination (Join-Path $root $target.Path) -Width $target.Width -Height $target.Height
+  $transparentSplashSource = [System.Drawing.Image]::FromFile($transparentSplashPath)
+
+  try {
+    $splashTargets = @(
+      @{ Path = "ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732.png"; Width = 2732; Height = 2732 },
+      @{ Path = "ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732-1.png"; Width = 2732; Height = 2732 },
+      @{ Path = "ios/App/App/Assets.xcassets/Splash.imageset/splash-2732x2732-2.png"; Width = 2732; Height = 2732 },
+      @{ Path = "android/app/src/main/res/drawable/splash.png"; Width = 480; Height = 320 },
+      @{ Path = "android/app/src/main/res/drawable-land-mdpi/splash.png"; Width = 480; Height = 320 },
+      @{ Path = "android/app/src/main/res/drawable-land-hdpi/splash.png"; Width = 800; Height = 480 },
+      @{ Path = "android/app/src/main/res/drawable-land-xhdpi/splash.png"; Width = 1280; Height = 720 },
+      @{ Path = "android/app/src/main/res/drawable-land-xxhdpi/splash.png"; Width = 1600; Height = 960 },
+      @{ Path = "android/app/src/main/res/drawable-land-xxxhdpi/splash.png"; Width = 1920; Height = 1280 },
+      @{ Path = "android/app/src/main/res/drawable-port-mdpi/splash.png"; Width = 320; Height = 480 },
+      @{ Path = "android/app/src/main/res/drawable-port-hdpi/splash.png"; Width = 480; Height = 800 },
+      @{ Path = "android/app/src/main/res/drawable-port-xhdpi/splash.png"; Width = 720; Height = 1280 },
+      @{ Path = "android/app/src/main/res/drawable-port-xxhdpi/splash.png"; Width = 960; Height = 1600 },
+      @{ Path = "android/app/src/main/res/drawable-port-xxxhdpi/splash.png"; Width = 1280; Height = 1920 }
+    )
+
+    foreach ($target in $splashTargets) {
+      Write-Splash -SourceImage $transparentSplashSource -Destination (Join-Path $root $target.Path) -Width $target.Width -Height $target.Height
+    }
+  }
+  finally {
+    $transparentSplashSource.Dispose()
   }
 }
 finally {
