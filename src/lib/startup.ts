@@ -74,6 +74,7 @@ const showFallbackRecovery = (stage: string) => {
   const retry = document.getElementById("startup-retry");
   const startupId = document.getElementById("startup-fallback-id");
 
+  fallback?.classList.add("startup-fallback-visible");
   fallback?.removeAttribute("hidden");
   fallback?.setAttribute("aria-busy", "false");
   if (message) {

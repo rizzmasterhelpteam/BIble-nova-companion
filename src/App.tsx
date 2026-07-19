@@ -26,7 +26,9 @@ const Login = lazy(() => import("./pages/Login"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const Paywall = lazy(() => import("./pages/Paywall"));
 
-const FullScreenLoader = () => <SplashScreen />;
+// Loading fallbacks reuse the splash artwork without starting another animation.
+// Only the app-level splash gets an entrance transition.
+const FullScreenLoader = () => <SplashScreen animated={false} />;
 
 const ConnectivityNotice = () => {
   const [isOffline, setIsOffline] = useState(
@@ -175,6 +177,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!hasRenderedAppFrame) return;
+
     const prefersReducedMotion =
       typeof window !== "undefined" && window.matchMedia
       ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -183,10 +187,10 @@ export default function App() {
     const isAndroid = isNativePlatform() && getNativePlatform() === "android";
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, prefersReducedMotion ? 250 : isAndroid ? 350 : 800);
+    }, prefersReducedMotion ? 180 : isAndroid ? 520 : 640);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [hasRenderedAppFrame]);
 
   useEffect(() => {
     let frameOne = 0;
@@ -206,11 +210,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!hasRenderedAppFrame || showSplash) return;
+    if (!hasRenderedAppFrame) return;
     void hideNativeSplashScreen().then(() => {
       startup.mark("native-splash-hidden");
     });
-  }, [hasRenderedAppFrame, showSplash]);
+  }, [hasRenderedAppFrame]);
 
   return (
     <ThemeProvider>
@@ -227,7 +231,7 @@ export default function App() {
           </AuthProvider>
         </HapticsProvider>
 
-        {showSplash && <SplashScreen key="splash" />}
+        {showSplash && <SplashScreen />}
         <ConnectivityNotice />
       </MobileViewportProvider>
     </ThemeProvider>

@@ -20,14 +20,18 @@
 
       #startup-fallback {
         box-sizing: border-box;
+        display: none;
         min-height: 100vh;
         min-height: 100dvh;
-        display: grid;
         place-items: center;
         padding: 2rem;
         color: #ebf2ff;
         font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
         text-align: center;
+      }
+
+      #startup-fallback.startup-fallback-visible {
+        display: grid;
       }
 
       .startup-fallback-card {
@@ -110,6 +114,7 @@
           const message = document.getElementById("startup-fallback-message");
           const retry = document.getElementById("startup-retry");
           const diagnosticId = document.getElementById("startup-fallback-id");
+          fallback?.classList.add("startup-fallback-visible");
           fallback?.removeAttribute("hidden");
           fallback?.setAttribute("aria-busy", "false");
           if (message) message.textContent = "Bible Nova could not start. Please retry.";
