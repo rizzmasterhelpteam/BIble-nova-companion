@@ -161,7 +161,7 @@ export default function Onboarding() {
           initial={isPerformanceMode ? false : { opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: isPerformanceMode ? 0 : 0.3, ease: "easeOut" }}
-          className="sanctuary-surface relative z-10 mx-auto my-auto w-full max-w-md rounded-[1.75rem] px-6 py-8 text-center sm:px-8 sm:py-10"
+          className="sanctuary-surface relative z-10 mx-auto my-auto w-full max-w-md rounded-[1.35rem] px-6 py-8 text-center sm:px-8 sm:py-10"
         >
           <div className="sanctuary-brand-mark mx-auto mb-6 h-20 w-20">
             <AppLogo className="h-full w-full object-cover" />
@@ -180,7 +180,7 @@ export default function Onboarding() {
           <button
             type="button"
             onClick={() => setHasStarted(true)}
-            className="touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            className="touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-[1rem] py-4 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             Personalize my space
             <Sparkles className="h-4.5 w-4.5" />
@@ -205,7 +205,7 @@ export default function Onboarding() {
           animate={{ opacity: 1 }}
           transition={{ duration: isPerformanceMode ? 0 : 0.22, ease: "easeOut" }}
           className={cn(
-            "sanctuary-surface shrink-0 relative z-10 w-full max-w-md rounded-[1.75rem]",
+            "sanctuary-surface shrink-0 relative z-10 w-full max-w-md rounded-[1.35rem]",
             !shouldTopAlign && "my-auto",
             isCompactPhone ? "p-5" : "p-6 sm:p-8",
           )}
@@ -240,7 +240,7 @@ export default function Onboarding() {
               <p className="app-muted text-sm leading-relaxed">Begin by naming the one thing that feels heaviest today. You do not need to solve it all at once.</p>
             </div>
 
-            <div className="rounded-card border p-4" style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}>
+            <div className="sanctuary-note">
               <div className="mb-2 flex items-center gap-2.5">
                 <span className="inline-flex h-7 w-7 items-center justify-center rounded-full" style={{ background: "color-mix(in srgb, var(--app-accent) 16%, transparent)", color: "var(--app-accent)" }}>
                   <Check className="h-4 w-4" strokeWidth={2.5} />
@@ -253,7 +253,7 @@ export default function Onboarding() {
 
           <button
             onClick={handleGetStarted}
-            className="touch-target app-primary-button flex w-full items-center justify-center rounded-card py-4 font-semibold text-white transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            className="touch-target app-primary-button flex w-full items-center justify-center rounded-[1rem] py-4 font-semibold text-white transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             Begin my first reflection
           </button>
@@ -298,7 +298,7 @@ export default function Onboarding() {
             animate={{ opacity: 1 }}
             exit={isPerformanceMode ? undefined : { opacity: 0 }}
             transition={{ duration: isPerformanceMode ? 0 : 0.12, ease: "linear" }}
-            className="sanctuary-surface flex-1 shrink-0 rounded-[1.75rem] px-5 py-6 sm:px-7 sm:py-8"
+            className="sanctuary-surface flex-1 shrink-0 rounded-[1.35rem] px-5 py-6 sm:px-7 sm:py-8"
           >
             <span className={cn("app-kicker text-xs font-semibold", isShortPhone ? "mb-3 inline-flex" : "mb-4 inline-flex")}>
               Question {currentStep + 1} of {questions.length}
@@ -311,7 +311,7 @@ export default function Onboarding() {
             </p>
 
             {currentStep === 0 && (
-              <div className="app-success-panel mb-5 flex items-start gap-2.5 rounded-card px-3.5 py-3 text-xs leading-relaxed">
+              <div className="sanctuary-trust mb-5">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--app-success)" }} />
                 <span>This helps personalize your reflections. You can update your preferences later.</span>
               </div>
@@ -326,7 +326,7 @@ export default function Onboarding() {
                     role="radio"
                     aria-checked={isSelected}
                     onClick={() => handleSelect(option.id)}
-                    className={`touch-target sanctuary-option w-full rounded-card text-left flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] ${isCompactPhone ? "p-4" : "p-5"}`}
+                    className={`touch-target sanctuary-option w-full rounded-[1rem] text-left flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] ${isCompactPhone ? "p-4" : "p-5"}`}
                   >
                     <div className="flex min-w-0 items-center gap-4">
                       {option.icon && (
@@ -363,7 +363,7 @@ export default function Onboarding() {
                 type="button"
                 onClick={handleContinue}
                 disabled={!answers[question.id]}
-                className="touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-semibold disabled:cursor-not-allowed disabled:opacity-45 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+                className="touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-[1rem] py-4 font-semibold disabled:cursor-not-allowed disabled:opacity-45 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
               >
                 {currentStep === questions.length - 1 ? "See my reflection space" : "Continue"}
                 <Sparkles className="h-4 w-4" />

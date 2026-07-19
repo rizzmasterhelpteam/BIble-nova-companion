@@ -350,7 +350,7 @@ export default function Paywall() {
           animate={{ opacity: 1 }}
           transition={{ duration: isPerformanceMode ? 0 : 0.2, ease: "easeOut" }}
           className={cn(
-            "sanctuary-surface shrink-0 w-full max-w-lg rounded-[1.75rem]",
+            "sanctuary-surface shrink-0 w-full max-w-lg rounded-[1.35rem]",
             !shouldTopAlign && "sm:my-auto",
             isCompactPhone ? "p-5" : "p-6 sm:p-7",
           )}
@@ -417,7 +417,7 @@ export default function Paywall() {
               tabIndex={selectedPlan === "monthly" ? 0 : -1}
               onClick={() => setSelectedPlan("monthly")}
               onKeyDown={handlePlanKey}
-              className={cn("touch-target relative order-2 flex min-h-[6.25rem] flex-col items-stretch justify-between rounded-card border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-4")}
+              className={cn("touch-target relative order-2 flex min-h-[6.25rem] flex-col items-stretch justify-between rounded-[1rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-4")}
               style={{
                 background: selectedPlan === "monthly" ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                 borderColor:
@@ -453,7 +453,7 @@ export default function Paywall() {
               tabIndex={selectedPlan === "yearly" ? 0 : -1}
               onClick={() => setSelectedPlan("yearly")}
               onKeyDown={handlePlanKey}
-              className={cn("touch-target relative order-1 flex min-h-[8rem] flex-col items-stretch justify-between rounded-card border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3.5" : "p-4")}
+              className={cn("touch-target relative order-1 flex min-h-[8rem] flex-col items-stretch justify-between rounded-[1rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3.5" : "p-4")}
               style={{
                 background: selectedPlan === "yearly" ? "var(--app-accent-soft)" : "var(--app-card-bg)",
                 borderColor:
@@ -527,7 +527,7 @@ export default function Paywall() {
                 onClick={handleSubscribe}
                 disabled={!canSubscribe}
                 aria-busy={isLoading}
-                className={cn("touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-card font-semibold text-white transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "py-3.5" : "py-4")}
+                className={cn("touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-[1rem] font-semibold text-white transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "py-3.5" : "py-4")}
               >
                 {isLoading ? (
                   <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />

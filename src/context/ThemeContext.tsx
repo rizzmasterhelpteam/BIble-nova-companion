@@ -45,7 +45,7 @@ export function ThemeProvider({
     };
 
     applyTheme(theme);
-    root.dataset.design = 'cathedral';
+    root.dataset.design = 'nocturne';
 
     if (theme !== 'system' || !mediaQuery) {
       return;

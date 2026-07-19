@@ -32,11 +32,11 @@ export function SplashScreen() {
             }}
           />
           <div className="sanctuary-brand-mark relative h-20 w-20">
-            <AppLogo alt="Bible Nova Companion" className="h-full w-full object-cover" />
+            <AppLogo alt="Bible Nova Companion" loading="eager" fetchPriority="high" className="h-full w-full object-cover" />
           </div>
         </motion.div>
 
-        <h1 className="app-heading font-serif text-[2.05rem] font-medium tracking-[0.02em]">
+        <h1 className="app-heading px-4 text-center font-serif text-[1.9rem] font-medium tracking-[0.02em] sm:text-[2.05rem]">
           Bible Nova Companion
         </h1>
         <p

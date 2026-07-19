@@ -238,7 +238,7 @@ export default function Login() {
       )}>
         <section
           className={cn(
-            "sanctuary-surface shrink-0 w-full rounded-[1.75rem] px-5 py-6 sm:px-7 sm:py-8",
+            "sanctuary-surface shrink-0 w-full rounded-[1.35rem] px-5 py-6 sm:px-7 sm:py-7",
             !shouldTopAlign && "my-auto",
           )}
           style={{ borderColor: "var(--app-card-border)" }}
@@ -271,7 +271,7 @@ export default function Login() {
         <button
           onClick={handleGoogleAuth}
           disabled={isLoading || !isSupabaseConfigured}
-          className="touch-target app-primary-button flex w-full items-center justify-center gap-3 rounded-card px-4 py-4 transition-all disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-[0.98]"
+          className="touch-target app-primary-button flex w-full items-center justify-center gap-3 rounded-[1rem] px-4 py-3.5 transition-all disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-[0.98]"
           style={{
             boxShadow: "0 8px 24px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.12)",
           }}
@@ -309,7 +309,7 @@ export default function Login() {
                 autoComplete="email"
                 enterKeyHint="next"
                 aria-label="Email address"
-                className="app-input w-full rounded-card py-3.5 pl-12 pr-4 text-[15px] transition-all"
+                className="app-input w-full rounded-[1rem] py-3.5 pl-12 pr-4 text-[15px] transition-all"
                 required
               />
             </div>
@@ -328,13 +328,13 @@ export default function Login() {
                 enterKeyHint="go"
                 aria-label="Password"
                 minLength={mode === "signup" ? 6 : undefined}
-                className="app-input w-full rounded-card py-3.5 pl-12 pr-12 text-[15px] transition-all"
+                className="app-input w-full rounded-[1rem] py-3.5 pl-12 pr-12 text-[15px] transition-all"
                 required
               />
               <button
                 type="button"
                 onClick={() => setShowPassword((value) => !value)}
-                className="app-ghost-button absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+                className="app-ghost-button absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-[1rem] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
                 aria-label={showPassword ? "Hide password" : "Show password"}
                 aria-pressed={showPassword}
               >
@@ -347,7 +347,7 @@ export default function Login() {
             type="submit"
             disabled={isLoading || !isSupabaseConfigured}
             aria-busy={isLoading}
-            className="touch-target app-secondary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
+            className="touch-target app-secondary-button flex w-full items-center justify-center gap-2 rounded-[1rem] py-3.5 font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
           >
             {isLoading ? (
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-current/25 border-t-current" />
@@ -360,7 +360,7 @@ export default function Login() {
           </button>
         </form>
 
-        <div className="app-success-panel flex items-start gap-2.5 rounded-card px-3.5 py-3 text-xs leading-relaxed">
+        <div className="sanctuary-trust">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--app-success)" }} />
           <span>Your reflections stay connected to your account and are never sold.</span>
         </div>
