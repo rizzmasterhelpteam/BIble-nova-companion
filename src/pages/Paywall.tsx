@@ -177,12 +177,7 @@ export default function Paywall() {
     nativeStoreAvailable &&
     subscriptionSyncReady !== false &&
     Boolean(selectedNativePackage);
-  const selectedPlanLabel =
-    selectedNativePackage
-      ? selectedNativePackage.product.title
-      : selectedPlan === "yearly"
-      ? "Yearly"
-      : "Monthly";
+  const selectedPlanLabel = selectedPlan === "yearly" ? "Yearly" : "Monthly";
 
   const handleSubscribe = async () => {
     setError(null);
@@ -329,7 +324,7 @@ export default function Paywall() {
   const features = [
     "Unlimited scripture-grounded reflections",
     "Personalized prayers and practical next steps",
-    "A private, ad-free space for your spiritual rhythm",
+    "A private, ad-free reflection space",
   ];
 
   const showAndroidBillingUnavailable = !nativeStoreAvailable;
@@ -385,13 +380,21 @@ export default function Paywall() {
 
           <div className={cn("app-paywall-panel mb-5 rounded-[1.25rem]", isShortPhone ? "p-3.5" : "p-4")}>
             <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="app-kicker text-[9px]">Inside Premium</p>
-              <Sparkles className="h-4 w-4 app-accent" aria-hidden="true" />
+              <div>
+                <p className="app-kicker text-[9px]">Premium includes</p>
+                <p className="app-muted mt-1 text-[11px]">A little more room for what you are carrying.</p>
+              </div>
+              <Sparkles className="h-4 w-4 shrink-0 app-accent" aria-hidden="true" />
             </div>
-            <p className="scripture-copy app-heading text-xl leading-snug">A quiet prompt, a fitting scripture, and a prayer shaped for what you’re carrying.</p>
-            <div className="app-muted mt-3 flex items-center gap-2 text-[11px]">
-              <Check className="h-3.5 w-3.5 app-accent" strokeWidth={2.5} />
-              Available whenever you need a moment to reset
+            <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
+              {features.map((feature) => (
+                <div key={feature} className="flex items-start gap-2">
+                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)", border: "1px solid color-mix(in srgb, var(--app-accent) 25%, transparent)" }}>
+                    <Check className="h-2.5 w-2.5 app-accent" strokeWidth={3} />
+                  </span>
+                  <span className="app-muted text-[11px] leading-snug">{feature}</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -418,7 +421,7 @@ export default function Paywall() {
               </div>
               <span className="app-soft shrink-0 text-[10px]">2 plans</span>
             </div>
-          <div role="radiogroup" aria-label="Subscription plan" className="mb-4 grid grid-cols-2 gap-2.5">
+          <div role="radiogroup" aria-label="Subscription plan" className="mb-4 flex flex-col gap-2 sm:grid sm:grid-cols-2">
             <button
               ref={monthlyRef}
               role="radio"
@@ -427,7 +430,7 @@ export default function Paywall() {
               tabIndex={selectedPlan === "monthly" ? 0 : -1}
               onClick={() => setSelectedPlan("monthly")}
               onKeyDown={handlePlanKey}
-              className={cn("touch-target app-paywall-plan relative order-2 flex min-h-[8rem] flex-col items-stretch justify-between rounded-[1rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-2.5" : "p-3")}
+              className={cn("touch-target app-paywall-plan relative order-2 flex min-h-[5.75rem] items-center justify-between gap-3 rounded-[1rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-3.5")}
               style={{
                 backgroundColor: selectedPlan === "monthly" ? "var(--app-surface-muted)" : "var(--app-surface-solid)",
                 backgroundImage: selectedPlan === "monthly" ? "linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 12%, transparent), transparent 72%)" : "none",
@@ -435,24 +438,23 @@ export default function Paywall() {
                   selectedPlan === "monthly"
                     ? "color-mix(in srgb, var(--app-accent) 36%, transparent)"
                     : "var(--app-card-border)",
-                boxShadow: selectedPlan === "monthly" ? "0 16px 34px rgba(0,0,0,0.08)" : "none",
+                boxShadow: selectedPlan === "monthly" ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 14%, transparent)" : "none",
               }}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="app-muted text-[11px] font-semibold uppercase tracking-wider">
-                    Monthly
-                  </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="app-heading text-sm font-semibold">Monthly</span>
+                  {selectedPlan === "monthly" && (
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent)" }}>
+                      <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                    </span>
+                  )}
                 </div>
-                {selectedPlan === "monthly" && (
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent)" }}>
-                    <Check className="h-3 w-3 text-white" strokeWidth={3} />
-                  </span>
-                )}
+                <p className="app-muted mt-1 text-[11px] leading-snug">Flexible, billed monthly</p>
               </div>
-              <div>
-                <div className={cn("app-heading break-words font-serif leading-none", isShortPhone ? "text-[1.35rem]" : isCompactPhone ? "text-[1.5rem]" : "text-2xl")}>{monthlyPrice}</div>
-                <div className="app-muted mt-2 text-[11px] leading-snug">Flexible, billed monthly</div>
+              <div className="shrink-0 text-right">
+                <div className={cn("app-heading break-words font-serif leading-none", isShortPhone ? "text-[1.4rem]" : "text-2xl")}>{monthlyPrice}</div>
+                <div className="app-soft mt-1 text-[10px]">per month</div>
               </div>
             </button>
 
@@ -464,7 +466,7 @@ export default function Paywall() {
               tabIndex={selectedPlan === "yearly" ? 0 : -1}
               onClick={() => setSelectedPlan("yearly")}
               onKeyDown={handlePlanKey}
-              className={cn("touch-target app-paywall-plan relative order-1 flex min-h-[8rem] flex-col items-stretch justify-between rounded-[1rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-2.5" : "p-3")}
+              className={cn("touch-target app-paywall-plan relative order-1 flex min-h-[5.75rem] items-center justify-between gap-3 rounded-[1rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-3.5")}
               style={{
                 backgroundColor: selectedPlan === "yearly" ? "var(--app-surface-muted)" : "var(--app-surface-solid)",
                 backgroundImage: selectedPlan === "yearly" ? "linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 12%, transparent), transparent 72%)" : "none",
@@ -473,30 +475,28 @@ export default function Paywall() {
                     ? "color-mix(in srgb, var(--app-accent) 36%, transparent)"
                     : "var(--app-card-border)",
                 boxShadow: selectedPlan === "yearly"
-                  ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 18%, transparent), 0 16px 34px rgba(0,0,0,0.08)"
+                  ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 18%, transparent)"
                   : "none",
               }}
             >
-              {selectedPlan === "yearly" && (
-                <div
-                  className="absolute top-0 left-0 right-0 h-0.5 rounded-t-card"
-                  style={{ background: "var(--app-accent-gradient)" }}
-                />
-              )}
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="app-accent text-[11px] font-semibold uppercase tracking-wider">
-                    Yearly · recommended
-                  </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="app-heading text-sm font-semibold">Yearly</span>
+                  <span className="app-accent-badge inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider">
+                    <Star className="h-3 w-3" fill="currentColor" />
+                    Best value
+                  </span>
+                  {selectedPlan === "yearly" && (
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent)" }}>
+                      <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                    </span>
+                  )}
                 </div>
-                <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider", selectedPlan === "yearly" ? "text-white" : "app-accent")} style={{ background: selectedPlan === "yearly" ? "var(--app-accent-gradient)" : "var(--app-accent-soft)" }}>
-                  {selectedPlan === "yearly" ? <Check className="h-3 w-3" strokeWidth={3} /> : <Star className="h-3 w-3" fill="currentColor" />}
-                  Best value
-                </span>
+                <p className="app-muted mt-1 text-[11px] leading-snug">The simplest value over a full year</p>
               </div>
-              <div>
-                <div className={cn("app-heading break-words font-serif leading-none", isShortPhone ? "text-[1.35rem]" : isCompactPhone ? "text-[1.5rem]" : "text-2xl")}>{yearlyPrice}</div>
-                <div className="app-muted mt-2 text-[11px] leading-snug">Best value over a full year.</div>
+              <div className="shrink-0 text-right">
+                <div className={cn("app-heading break-words font-serif leading-none", isShortPhone ? "text-[1.4rem]" : "text-2xl")}>{yearlyPrice}</div>
+                <div className="app-soft mt-1 text-[10px]">per year</div>
               </div>
             </button>
           </div>
@@ -558,51 +558,26 @@ export default function Paywall() {
             </div>
           )}
 
-          <div
-            className={cn("mb-4 rounded-[1.15rem] border", isShortPhone ? "px-3.5 py-3" : "px-4 py-3.5")}
-            style={{
-              backgroundColor: "var(--app-surface-solid)",
-              borderColor: "var(--app-card-border)",
-            }}
-          >
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="app-kicker text-[9px]">Included with Premium</p>
-              <Check className="h-4 w-4 app-accent" aria-hidden="true" />
-            </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {features.map((feature) => (
-                <div key={feature} className="flex items-start gap-2">
-                  <div className="mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)", border: "1px solid color-mix(in srgb, var(--app-accent) 25%, transparent)" }}>
-                    <Check className="h-2.5 w-2.5 app-accent" strokeWidth={3} />
-                  </div>
-                  <span className="app-muted text-[11px] leading-snug">{feature}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mb-4 flex items-center justify-center gap-2">
-            {nativeStoreAvailable && (
-              <>
+          {nativeStoreAvailable && (
+            <div className="mb-4 flex items-center justify-center gap-2">
               <button
                 onClick={handleRestorePurchases}
                 disabled={isLoading}
                 className="touch-target app-ghost-button flex-1 rounded-pill px-2 py-2.5 text-[12px] font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
               >
-                Restore purchases
+                Restore access
               </button>
               <button
                 onClick={handleManageSubscriptions}
                 disabled={isLoading}
                 className="touch-target app-ghost-button flex-1 rounded-pill px-2 py-2.5 text-[12px] font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
               >
-                Manage subscriptions
+                Manage billing
               </button>
-              </>
-            )}
-          </div>
+            </div>
+          )}
 
-          <p className="app-muted px-4 text-center text-[11px] leading-relaxed">
+          <p className="app-muted mx-auto max-w-sm px-2 text-center text-[10px] leading-relaxed">
             By subscribing, you agree to the Terms of Service and Privacy Policy. Subscriptions automatically renew unless canceled.
           </p>
         </motion.div>

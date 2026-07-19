@@ -666,7 +666,7 @@
     border: 1px solid var(--app-card-border);
     background-color: var(--app-surface-elevated);
     background-image: var(--app-shell-highlight);
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   .app-paywall-panel .app-badge-glow {
