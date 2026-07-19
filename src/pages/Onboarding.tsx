@@ -87,7 +87,8 @@ const getAnalysisSummary = (answers: Record<string, string>) => {
 
 export default function Onboarding() {
   useDocumentTitle("Welcome | Bible Nova Companion");
-  const { isCompactPhone, isShortPhone } = useMobileViewport();
+  const { isCompactPhone, isShortPhone: viewportShortPhone, visibleHeight } = useMobileViewport();
+  const isShortPhone = viewportShortPhone || (isCompactPhone && visibleHeight <= 840);
   const shouldTopAlign = isShortPhone;
   const prefersReducedMotion = useReducedMotion();
   const isPerformanceMode = Boolean(
