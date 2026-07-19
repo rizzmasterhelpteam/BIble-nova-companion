@@ -9,46 +9,41 @@ export function SplashScreen() {
 
   return (
     <motion.div
-      className="app-screen fixed inset-0 z-[100] flex w-full flex-col items-center justify-center overflow-hidden"
-      style={{ background: "var(--app-page-bg)" }}
+      className="app-screen sanctuary-screen fixed inset-0 z-[100] flex w-full flex-col items-center justify-center overflow-hidden"
       initial={false}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: reduceMotion ? 0.08 : 0.18, ease: "linear" }}
+      transition={{ duration: reduceMotion ? 0.08 : 0.22, ease: "easeOut" }}
     >
-      <div className="app-atmosphere absolute inset-0 z-0">
-        <div className="app-grid" />
-        <div className="app-orb app-orb-a left-[-12%] top-[-16%] h-[22rem] w-[22rem]" />
-        <div className="app-orb app-orb-b bottom-[-18%] right-[-12%] h-[24rem] w-[24rem]" />
-      </div>
+      <div className="sanctuary-atmosphere" />
 
       <div className="relative z-10 flex flex-col items-center">
         <motion.div
-          className="relative mb-7 flex h-28 w-28 items-center justify-center"
-          initial={reduceMotion ? false : { opacity: 0, scale: 0.92 }}
+          className="relative mb-6 flex h-28 w-28 items-center justify-center"
+          initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: 4 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: reduceMotion ? 0 : 0.24, ease: "easeOut" }}
+          transition={{ duration: reduceMotion ? 0 : 0.42, ease: [0.22, 1, 0.36, 1] }}
         >
           <div
-            className="absolute inset-1 rounded-[2rem]"
+            className="absolute inset-0 rounded-[2.2rem]"
             style={{
-              background: "color-mix(in srgb, var(--app-accent) 20%, transparent)",
-              boxShadow: "0 0 34px color-mix(in srgb, var(--app-accent) 22%, transparent)",
+              background: "color-mix(in srgb, var(--app-accent) 13%, transparent)",
+              boxShadow: "0 0 46px color-mix(in srgb, var(--app-accent) 24%, transparent)",
             }}
           />
-          <div className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-[1.5rem] border border-white/30 bg-white shadow-xl">
+          <div className="sanctuary-brand-mark relative h-20 w-20">
             <AppLogo alt="Bible Nova Companion" className="h-full w-full object-cover" />
           </div>
         </motion.div>
 
-        <h1 className="app-heading font-serif text-[2.15rem] font-normal tracking-wide">
-          Bible Nova
+        <h1 className="app-heading font-serif text-[2.05rem] font-medium tracking-[0.02em]">
+          Bible Nova Companion
         </h1>
         <p
-          className="mt-2 text-[10px] font-semibold uppercase tracking-[0.34em]"
+          className="mt-2 text-[10px] font-semibold uppercase tracking-[0.28em]"
           style={{ color: "var(--app-accent)" }}
         >
-          Companion
+          A quiet place to reflect
         </p>
       </div>
     </motion.div>

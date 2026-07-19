@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Check } from "lucide-react";
 import { ChristianCross } from "../components/ChristianCross";
+import { AppLogo } from "../components/AppLogo";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
@@ -43,12 +44,6 @@ const questions = [
     ],
   },
 ];
-
-const getSelectedLabel = (answers: Record<string, string>, questionId: string) => {
-  const question = questions.find((item) => item.id === questionId);
-  const selected = question?.options.find((option) => option.id === answers[questionId]);
-  return selected?.label || "Personal reflection";
-};
 
 const getAnalysisSummary = (answers: Record<string, string>) => {
   const reasonById = {
@@ -102,18 +97,10 @@ export default function Onboarding() {
   const [answers, setAnswers] = useState<Record<string, string>>(() =>
     storageGetJson<Record<string, string>>(STORAGE_KEY, {}),
   );
+  const [hasStarted, setHasStarted] = useState(() => Object.keys(answers).length > 0);
   const [showAnalysis, setShowAnalysis] = useState(false);
-  const [isAdvancing, setIsAdvancing] = useState(false);
-  const stepTimerRef = useRef<number | null>(null);
   const { completeOnboarding, updateShadowNotes } = useAuth();
   const navigate = useNavigate();
-
-  const clearStepTimer = () => {
-    if (stepTimerRef.current !== null) {
-      window.clearTimeout(stepTimerRef.current);
-      stepTimerRef.current = null;
-    }
-  };
 
   useEffect(() => {
     const initialStep = questions.findIndex((question) => !answers[question.id]);
@@ -130,47 +117,31 @@ export default function Onboarding() {
     storageSet(STORAGE_KEY, JSON.stringify(answers));
   }, [answers]);
 
-  useEffect(() => () => clearStepTimer(), []);
-
   const handleSelect = (optionId: string) => {
-    if (isAdvancing) return;
     const question = questions[currentStep];
-    const nextAnswers = { ...answers, [question.id]: optionId };
+    setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: optionId }));
+  };
 
-    clearStepTimer();
-    setAnswers(nextAnswers);
-
+  const handleContinue = () => {
+    if (!answers[questions[currentStep].id]) return;
     if (currentStep < questions.length - 1) {
-      const transitionDelay = isPerformanceMode ? 0 : 120;
-      setIsAdvancing(transitionDelay > 0);
-
-      if (transitionDelay === 0) {
-        setCurrentStep((prev) => Math.min(prev + 1, questions.length - 1));
-        return;
-      }
-
-      stepTimerRef.current = window.setTimeout(() => {
-        stepTimerRef.current = null;
-        setCurrentStep((prev) => Math.min(prev + 1, questions.length - 1));
-        setIsAdvancing(false);
-      }, transitionDelay);
+      setCurrentStep((prev) => Math.min(prev + 1, questions.length - 1));
       return;
     }
-
-    setIsAdvancing(false);
     setShowAnalysis(true);
   };
 
   const handleBack = () => {
-    clearStepTimer();
-    setIsAdvancing(false);
     if (showAnalysis) {
       setShowAnalysis(false);
       setCurrentStep(questions.length - 1);
       return;
     }
 
-    if (currentStep === 0) return;
+    if (currentStep === 0) {
+      setHasStarted(false);
+      return;
+    }
     setCurrentStep((prev) => prev - 1);
   };
 
@@ -182,30 +153,59 @@ export default function Onboarding() {
     window.requestAnimationFrame(() => navigate("/", { replace: true }));
   };
 
+  if (!hasStarted) {
+    return (
+      <div className="app-screen-scroll sanctuary-screen relative flex w-full flex-col px-4 py-6">
+        <div className="sanctuary-atmosphere" />
+        <motion.main
+          initial={isPerformanceMode ? false : { opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: isPerformanceMode ? 0 : 0.3, ease: "easeOut" }}
+          className="sanctuary-surface relative z-10 mx-auto my-auto w-full max-w-md rounded-[1.75rem] px-6 py-8 text-center sm:px-8 sm:py-10"
+        >
+          <div className="sanctuary-brand-mark mx-auto mb-6 h-20 w-20">
+            <AppLogo className="h-full w-full object-cover" />
+          </div>
+          <p className="app-kicker mb-3">A gentler beginning</p>
+          <h1 className="app-heading font-serif text-[2.35rem] leading-[1.12] sm:text-[2.65rem]">
+            A reflection space shaped around you.
+          </h1>
+          <p className="app-muted mx-auto mt-4 max-w-sm text-[15px] leading-7">
+            Answer three thoughtful questions so Bible Nova can meet you with the right tone, scripture, and next step.
+          </p>
+          <div className="sanctuary-preview my-7 rounded-[1.35rem] px-5 py-4 text-left">
+            <p className="app-kicker mb-2 text-[9px]">Your daily moment</p>
+            <p className="scripture-copy app-heading text-xl leading-snug">Pause. Name what you’re carrying. Receive one clear place to begin.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setHasStarted(true)}
+            className="touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+          >
+            Personalize my space
+            <Sparkles className="h-4.5 w-4.5" />
+          </button>
+          <p className="app-muted mt-4 text-[11px] leading-relaxed">Your answers are used only to personalize your experience.</p>
+        </motion.main>
+      </div>
+    );
+  }
+
   if (showAnalysis) {
     const analysis = getAnalysisSummary(answers);
-    const profileRows = [
-      { label: "What brings you here", value: getSelectedLabel(answers, "reason") },
-      { label: "Your focus", value: getSelectedLabel(answers, "goal") },
-      { label: "How we should guide you", value: getSelectedLabel(answers, "support") },
-    ];
 
     return (
       <div
-        className="app-screen-scroll w-full relative flex flex-col items-center justify-start px-4 py-4 scrollbar-hide"
+        className="app-screen-scroll sanctuary-screen w-full relative flex flex-col items-center justify-start px-4 py-5 scrollbar-hide"
       >
-        <div className="app-atmosphere">
-          <div className="app-grid" />
-          <div className="app-orb app-orb-a left-[-10%] top-[-20%] h-[26rem] w-[26rem]" />
-          <div className="app-orb app-orb-b bottom-[-18%] right-[-10%] h-[28rem] w-[28rem]" />
-        </div>
+        <div className="sanctuary-atmosphere" />
 
         <motion.div
           initial={isPerformanceMode ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: isPerformanceMode ? 0 : 0.22, ease: "easeOut" }}
           className={cn(
-            "app-panel shrink-0 relative z-10 w-full max-w-md rounded-[2rem]",
+            "sanctuary-surface shrink-0 relative z-10 w-full max-w-md rounded-[1.75rem]",
             !shouldTopAlign && "my-auto",
             isCompactPhone ? "p-5" : "p-6 sm:p-8",
           )}
@@ -220,8 +220,8 @@ export default function Onboarding() {
 
           <div className="mb-6 text-center">
             <p className="app-kicker mb-3">A space made for you</p>
-            <h2 className={cn("app-heading mb-4 pb-1 font-serif leading-[1.24]", isCompactPhone ? "text-[2rem]" : "text-3xl")}>
-              Your first reflection is ready.
+            <h2 className={cn("app-heading mb-4 pb-1 font-serif leading-[1.18]", isCompactPhone ? "text-[2rem]" : "text-[2.25rem]")}>
+              Your reflection space is ready.
             </h2>
             <p className="app-muted mx-auto max-w-sm text-[15px] leading-relaxed">
               {analysis.overview}
@@ -229,24 +229,15 @@ export default function Onboarding() {
           </div>
 
           <div className={cn("space-y-4", isShortPhone ? "mb-5" : "mb-7")}>
-            <div
-              className="rounded-card border px-4 py-4"
-              style={{ borderColor: "var(--app-card-border)", background: "color-mix(in srgb, var(--app-card-strong) 92%, transparent)" }}
-            >
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <p className="app-kicker text-[10px]">Your reflection profile</p>
-                <span className="rounded-pill px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ background: "var(--app-accent-soft)", color: "var(--app-accent)" }}>
-                  Setup complete
-                </span>
+            <div className="sanctuary-preview rounded-[1.35rem] px-5 py-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <p className="app-kicker text-[9px]">A glimpse of your space</p>
+                <span className="app-accent-badge rounded-pill px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.15em]">Personalized</span>
               </div>
-              <div className="space-y-3">
-                {profileRows.map((row) => (
-                  <div key={row.label} className="flex items-start justify-between gap-3 border-b pb-3 last:border-b-0 last:pb-0" style={{ borderColor: "var(--app-card-border)" }}>
-                    <p className="app-soft text-[11px] uppercase tracking-[0.16em]">{row.label}</p>
-                    <p className="app-heading max-w-[60%] text-right text-sm leading-relaxed">{row.value}</p>
-                  </div>
-                ))}
-              </div>
+              <p className="scripture-copy app-heading text-[1.4rem] leading-snug">“Be still, and know that I am God.”</p>
+              <p className="app-accent mt-1 text-[11px] font-semibold uppercase tracking-[0.14em]">Psalm 46:10</p>
+              <div className="app-divider my-4 border-t" />
+              <p className="app-muted text-sm leading-relaxed">Begin by naming the one thing that feels heaviest today. You do not need to solve it all at once.</p>
             </div>
 
             <div className="rounded-card border p-4" style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}>
@@ -254,7 +245,7 @@ export default function Onboarding() {
                 <span className="inline-flex h-7 w-7 items-center justify-center rounded-full" style={{ background: "color-mix(in srgb, var(--app-accent) 16%, transparent)", color: "var(--app-accent)" }}>
                   <Check className="h-4 w-4" strokeWidth={2.5} />
                 </span>
-                <p className="app-kicker text-[10px]">How we’ll support you</p>
+                <p className="app-kicker text-[10px]">Your next gentle step</p>
               </div>
               <p className="app-heading text-sm leading-relaxed">{analysis.appResponse}</p>
             </div>
@@ -262,7 +253,7 @@ export default function Onboarding() {
 
           <button
             onClick={handleGetStarted}
-            className="touch-target app-primary-button flex w-full items-center justify-center rounded-pill py-4 font-semibold text-white transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            className="touch-target app-primary-button flex w-full items-center justify-center rounded-card py-4 font-semibold text-white transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             Begin my first reflection
           </button>
@@ -276,29 +267,24 @@ export default function Onboarding() {
 
   return (
     <div
-      className="app-screen-scroll w-full relative flex flex-col overflow-x-hidden px-4"
+      className="app-screen-scroll sanctuary-screen w-full relative flex flex-col overflow-x-hidden px-4"
       style={{
         paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "1.25rem" : "2rem"})`,
         paddingBottom: `max(env(safe-area-inset-bottom, 0px), ${isShortPhone ? "1.5rem" : "2.25rem"})`,
       }}
     >
-      <div className="app-atmosphere">
-        <div className="app-grid" />
-        <div className="app-orb app-orb-a left-[-10%] top-[-20%] h-[26rem] w-[26rem]" />
-        <div className="app-orb app-orb-b bottom-[-18%] right-[-10%] h-[28rem] w-[28rem]" />
-      </div>
+      <div className="sanctuary-atmosphere" />
 
       <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col">
         <div className={cn("flex items-center justify-between", isShortPhone ? "mb-5" : "mb-7")}>
           <button
             onClick={handleBack}
-            disabled={currentStep === 0}
             className="touch-target app-ghost-button inline-flex items-center gap-2 rounded-pill px-3 py-2 text-sm disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             <ArrowLeft className="w-4 h-4" />
             Back
           </button>
-          <div className="flex items-center gap-1.5" aria-label={`${completedCount} of ${questions.length} questions completed`}>
+          <div className="flex items-center gap-1.5" role="progressbar" aria-valuemin={0} aria-valuemax={questions.length} aria-valuenow={completedCount} aria-label={`${completedCount} of ${questions.length} questions completed`}>
             {questions.map((item, index) => (
               <span key={item.id} className="h-1.5 w-6 rounded-full" style={{ background: index <= currentStep ? "var(--app-accent)" : "var(--app-card-border)" }} />
             ))}
@@ -312,8 +298,7 @@ export default function Onboarding() {
             animate={{ opacity: 1 }}
             exit={isPerformanceMode ? undefined : { opacity: 0 }}
             transition={{ duration: isPerformanceMode ? 0 : 0.12, ease: "linear" }}
-            className="flex-1 shrink-0 rounded-[2rem] border px-5 py-6 sm:px-6 sm:py-7"
-            style={{ borderColor: "var(--app-card-border)", background: "color-mix(in srgb, var(--app-card-strong) 96%, transparent)" }}
+            className="sanctuary-surface flex-1 shrink-0 rounded-[1.75rem] px-5 py-6 sm:px-7 sm:py-8"
           >
             <span className={cn("app-kicker text-xs font-semibold", isShortPhone ? "mb-3 inline-flex" : "mb-4 inline-flex")}>
               Question {currentStep + 1} of {questions.length}
@@ -325,25 +310,23 @@ export default function Onboarding() {
               Choose what feels most true right now. You can change your preferences later.
             </p>
 
-            <div className={cn(isCompactPhone ? "space-y-3" : "space-y-4")}>
+            {currentStep === 0 && (
+              <div className="app-success-panel mb-5 flex items-start gap-2.5 rounded-card px-3.5 py-3 text-xs leading-relaxed">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--app-success)" }} />
+                <span>This helps personalize your reflections. You can update your preferences later.</span>
+              </div>
+            )}
+
+            <div role="radiogroup" aria-label={question.title} className={cn(isCompactPhone ? "space-y-3" : "space-y-4")}>
               {question.options.map((option) => {
                 const isSelected = answers[question.id] === option.id;
                 return (
                   <button
                     key={option.id}
+                    role="radio"
+                    aria-checked={isSelected}
                     onClick={() => handleSelect(option.id)}
-                    disabled={isAdvancing}
-                    className={`touch-target w-full rounded-card border text-left flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] ${isCompactPhone ? "p-4" : "p-5"}`}
-                    style={{
-                      background: isSelected ? "var(--app-accent-soft)" : "var(--app-card-bg)",
-                      borderColor: isSelected
-                        ? "color-mix(in srgb, var(--app-accent) 38%, transparent)"
-                        : "var(--app-card-border)",
-                      boxShadow: isSelected
-                        ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 18%, transparent)"
-                        : undefined,
-                      transition: "background-color 150ms ease, border-color 150ms ease",
-                    }}
+                    className={`touch-target sanctuary-option w-full rounded-card text-left flex items-center justify-between focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] ${isCompactPhone ? "p-4" : "p-5"}`}
                   >
                     <div className="flex min-w-0 items-center gap-4">
                       {option.icon && (
@@ -373,6 +356,18 @@ export default function Onboarding() {
                   </button>
                 );
               })}
+            </div>
+
+            <div className="sanctuary-sticky-action mt-6">
+              <button
+                type="button"
+                onClick={handleContinue}
+                disabled={!answers[question.id]}
+                className="touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-semibold disabled:cursor-not-allowed disabled:opacity-45 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              >
+                {currentStep === questions.length - 1 ? "See my reflection space" : "Continue"}
+                <Sparkles className="h-4 w-4" />
+              </button>
             </div>
           </motion.div>
         </AnimatePresence>

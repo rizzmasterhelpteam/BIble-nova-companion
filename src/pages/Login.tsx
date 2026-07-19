@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Mail, Lock, ArrowRight, ShieldCheck, X } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Mail, Lock, ArrowRight, ShieldCheck, X, Eye, EyeOff } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
@@ -7,6 +7,7 @@ import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { signInWithGoogleNative } from "../lib/native/auth";
 import { isNativePlatform } from "../lib/native/platform";
+import { AppLogo } from "../components/AppLogo";
 
 type LegalView = "terms" | "privacy";
 
@@ -65,22 +66,51 @@ const legalDocuments: Record<LegalView, { title: string; updatedAt: string; sect
   },
 };
 
+const getCalmAuthError = (error: unknown, provider: "email" | "google") => {
+  if (!(error instanceof Error)) {
+    return provider === "google"
+      ? "Google sign-in could not be completed. Please try again."
+      : "We could not sign you in. Please check your details and try again.";
+  }
+
+  const message = error.message.toLowerCase();
+  if (message.includes("cancel") || message.includes("closed")) {
+    return "Sign-in was canceled. You can try again whenever you’re ready.";
+  }
+  if (message.includes("fetch") || message.includes("network")) {
+    return "We could not connect right now. Check your internet connection and try again.";
+  }
+  if (message.includes("invalid login") || message.includes("invalid credentials")) {
+    return "That email or password does not match. Please try again.";
+  }
+  if (message.includes("already registered")) {
+    return "An account already exists for this email. Try signing in instead.";
+  }
+
+  return provider === "google"
+    ? "Google sign-in could not be completed. Please try again."
+    : "We could not complete that request. Please try again.";
+};
+
 export default function Login() {
   useDocumentTitle("Sign in | Bible Nova Companion");
   const { isCompactPhone, isKeyboardOpen, isShortPhone } = useMobileViewport();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [legalView, setLegalView] = useState<LegalView | null>(null);
+  const legalDialogRef = useRef<HTMLElement>(null);
+  const legalTriggerRef = useRef<HTMLButtonElement | null>(null);
   const navigate = useNavigate();
   const { user, isLoading: isAuthLoading, hasCompletedOnboarding } = useAuth();
   const shouldTopAlign = isShortPhone || isKeyboardOpen;
   const authTitle = mode === "login" ? "Sign in" : "Create account";
   const authSubtitle = mode === "login"
-    ? "Continue your saved reflections and account access."
-    : "Save your reflections and continue across devices.";
+    ? "Return to a quiet space for scripture, prayer, and honest reflection."
+    : "Create your private reflection space and carry it with you.";
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -95,10 +125,39 @@ export default function Login() {
     if (!legalView) return;
 
     const originalOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.style.overflow = "hidden";
+    window.requestAnimationFrame(() => legalDialogRef.current?.focus());
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setLegalView(null);
+        return;
+      }
+
+      if (event.key !== "Tab" || !legalDialogRef.current) return;
+      const focusable: HTMLElement[] = [
+        ...legalDialogRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((element) => !element.hasAttribute("disabled"));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
 
     return () => {
       document.body.style.overflow = originalOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+      (legalTriggerRef.current ?? previouslyFocused)?.focus();
     };
   }, [legalView]);
 
@@ -129,15 +188,7 @@ export default function Login() {
         if (signInError) throw signInError;
       }
     } catch (err: unknown) {
-      if (err instanceof Error && err.message === "Failed to fetch") {
-        setError(
-          "Network error: Could not reach Supabase. Please confirm your VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY settings.",
-        );
-      } else if (err instanceof Error) {
-        setError(err.message || "An authentication error occurred.");
-      } else {
-        setError("An authentication error occurred.");
-      }
+      setError(getCalmAuthError(err, "email"));
     } finally {
       setIsLoading(false);
     }
@@ -165,15 +216,7 @@ export default function Login() {
         if (error) throw error;
       }
     } catch (err: unknown) {
-      if (err instanceof Error && err.message === "Failed to fetch") {
-        setError(
-          "Network error: Could not reach Supabase. Please confirm your VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY settings.",
-        );
-      } else if (err instanceof Error) {
-        setError(err.message || "An error occurred with Google sign-in.");
-      } else {
-        setError("An error occurred with Google sign-in.");
-      }
+      setError(getCalmAuthError(err, "google"));
     } finally {
       setIsLoading(false);
     }
@@ -181,17 +224,13 @@ export default function Login() {
 
   return (
     <div
-      className="app-screen-scroll w-full relative flex flex-col"
+      className="app-screen-scroll sanctuary-screen w-full relative flex flex-col"
       style={{
         paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "1rem" : "1.5rem"})`,
         paddingBottom: `max(env(safe-area-inset-bottom, 0px), ${isShortPhone ? "1rem" : "1.5rem"})`,
       }}
     >
-      <div className="app-atmosphere">
-        <div className="app-grid" />
-        <div className="app-orb app-orb-a left-[-8%] top-[-12%] h-[24rem] w-[24rem]" />
-        <div className="app-orb app-orb-b bottom-[-16%] right-[-8%] h-[26rem] w-[26rem]" />
-      </div>
+      <div className="sanctuary-atmosphere" />
 
       <div className={cn(
         "relative z-10 mx-auto flex w-full max-w-md flex-1 px-4 py-4 sm:px-6",
@@ -199,7 +238,7 @@ export default function Login() {
       )}>
         <section
           className={cn(
-            "app-panel shrink-0 w-full rounded-[2rem] border px-5 py-6 shadow-[0_24px_56px_rgba(0,0,0,0.12)] sm:px-6 sm:py-7",
+            "sanctuary-surface shrink-0 w-full rounded-[1.75rem] px-5 py-6 sm:px-7 sm:py-8",
             !shouldTopAlign && "my-auto",
           )}
           style={{ borderColor: "var(--app-card-border)" }}
@@ -207,18 +246,13 @@ export default function Login() {
           <div className="mb-6">
             {/* Brand mark */}
             <div className="mb-5 flex justify-center">
-              <div
-                className="flex h-14 w-14 items-center justify-center rounded-full"
-                style={{ background: "var(--app-accent-gradient)", boxShadow: "var(--app-accent-shadow)" }}
-              >
-                <svg viewBox="0 0 100 100" className="h-7 w-7 text-white">
-                  <path d="M44 10 h12 v22 h22 v12 h-22 v46 h-12 v-46 h-22 v-12 h22 z" fill="currentColor" />
-                </svg>
+              <div className="sanctuary-brand-mark h-16 w-16">
+                <AppLogo className="h-full w-full object-cover" />
               </div>
             </div>
-            <p className="app-kicker mb-2">Bible Nova Companion</p>
-            <h1 className={cn("app-heading leading-tight", isCompactPhone ? "text-[1.85rem]" : "text-[2rem]")}>{authTitle}</h1>
-            <p className="app-muted mt-2 text-sm leading-relaxed">{authSubtitle}</p>
+            <p className="app-kicker mb-2 text-center">Bible Nova Companion</p>
+            <h1 className={cn("app-heading text-center font-serif leading-tight", isCompactPhone ? "text-[2rem]" : "text-[2.25rem]")}>{authTitle}</h1>
+            <p className="app-muted mx-auto mt-2 max-w-sm text-center text-sm leading-relaxed">{authSubtitle}</p>
           </div>
 
           <div className={cn("w-full", isShortPhone ? "space-y-4" : "space-y-5")}>
@@ -237,7 +271,7 @@ export default function Login() {
         <button
           onClick={handleGoogleAuth}
           disabled={isLoading || !isSupabaseConfigured}
-          className="touch-target app-secondary-button flex w-full items-center justify-center gap-3 rounded-card px-4 py-4 transition-all disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-[0.98]"
+          className="touch-target app-primary-button flex w-full items-center justify-center gap-3 rounded-card px-4 py-4 transition-all disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-[0.98]"
           style={{
             boxShadow: "0 8px 24px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.12)",
           }}
@@ -286,7 +320,7 @@ export default function Login() {
               <input
                 id="login-password"
                 name="password"
-                type="password"
+                type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Password"
@@ -294,9 +328,18 @@ export default function Login() {
                 enterKeyHint="go"
                 aria-label="Password"
                 minLength={mode === "signup" ? 6 : undefined}
-                className="app-input w-full rounded-card py-3.5 pl-12 pr-4 text-[15px] transition-all"
+                className="app-input w-full rounded-card py-3.5 pl-12 pr-12 text-[15px] transition-all"
                 required
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((value) => !value)}
+                className="app-ghost-button absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
+              </button>
             </div>
           </div>
 
@@ -304,10 +347,10 @@ export default function Login() {
             type="submit"
             disabled={isLoading || !isSupabaseConfigured}
             aria-busy={isLoading}
-            className="touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-semibold text-white transition-all active:scale-[0.98] disabled:grayscale"
+            className="touch-target app-secondary-button flex w-full items-center justify-center gap-2 rounded-card py-4 font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
           >
             {isLoading ? (
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-current/25 border-t-current" />
             ) : (
               <>
                 {mode === "login" ? "Sign in" : "Create account"}
@@ -316,6 +359,11 @@ export default function Login() {
             )}
           </button>
         </form>
+
+        <div className="app-success-panel flex items-start gap-2.5 rounded-card px-3.5 py-3 text-xs leading-relaxed">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--app-success)" }} />
+          <span>Your reflections stay connected to your account and are never sold.</span>
+        </div>
 
         <p className="app-muted pt-2 text-center text-sm">
           {mode === "login" ? "Need an account?" : "Already have an account?"}
@@ -334,7 +382,10 @@ export default function Login() {
           By signing in or creating an account, you agree to our{" "}
           <button
             type="button"
-            onClick={() => setLegalView("terms")}
+            onClick={(event) => {
+              legalTriggerRef.current = event.currentTarget;
+              setLegalView("terms");
+            }}
             className="app-accent font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             Terms & Conditions
@@ -342,7 +393,10 @@ export default function Login() {
           and{" "}
           <button
             type="button"
-            onClick={() => setLegalView("privacy")}
+            onClick={(event) => {
+              legalTriggerRef.current = event.currentTarget;
+              setLegalView("privacy");
+            }}
             className="app-accent font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             Privacy Policy
@@ -362,10 +416,12 @@ export default function Login() {
             className="app-overlay absolute inset-0 backdrop-blur-sm"
           />
           <section
+            ref={legalDialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="legal-dialog-title"
-            className="app-panel-strong relative z-10 max-h-[82dvh] w-full max-w-md overflow-y-auto rounded-[2rem] border p-5 shadow-2xl scrollbar-hide sm:p-6"
+            tabIndex={-1}
+            className="sanctuary-surface relative z-10 max-h-[82dvh] w-full max-w-md overflow-y-auto rounded-[1.75rem] p-5 shadow-2xl scrollbar-hide sm:p-6 focus:outline-none"
             style={{ maxHeight: "calc(var(--app-visible-height) - 2rem)" }}
           >
             <div className="mb-5 flex items-start justify-between gap-4">

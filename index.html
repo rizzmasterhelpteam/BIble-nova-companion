@@ -7,15 +7,15 @@
     <title>Bible Nova Companion</title>
     <style>
       :root {
-        color-scheme: dark;
-        background: #050b14;
+        color-scheme: light dark;
+        background: #120e0a;
       }
 
       html,
       body {
         margin: 0;
         min-height: 100%;
-        background: #050b14;
+        background: #120e0a;
       }
 
       #startup-fallback {
@@ -25,8 +25,8 @@
         display: grid;
         place-items: center;
         padding: 2rem;
-        color: #ebf2ff;
-        font-family: ui-sans-serif, system-ui, sans-serif;
+        color: #f7f0e5;
+        font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
         text-align: center;
       }
 
@@ -36,9 +36,9 @@
         justify-items: center;
         gap: 0.8rem;
         padding: 2rem 1.5rem;
-        border: 1px solid rgba(111, 214, 255, 0.18);
+        border: 1px solid rgba(207, 170, 109, 0.18);
         border-radius: 1.5rem;
-        background: rgba(8, 14, 24, 0.92);
+        background: rgba(24, 18, 13, 0.94);
         box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
       }
 
@@ -56,7 +56,7 @@
       }
 
       .startup-fallback-card p {
-        color: #96a7c6;
+        color: #bca992;
         font-size: 0.9rem;
         line-height: 1.5;
       }
@@ -66,8 +66,8 @@
         padding: 0.65rem 1.25rem;
         border: 0;
         border-radius: 999px;
-        background: #1b9ed8;
-        color: #f5fbff;
+        background: #b88732;
+        color: #fffaf1;
         font: inherit;
         font-weight: 700;
         cursor: pointer;
@@ -85,7 +85,7 @@
         <div class="startup-fallback-card">
           <img class="startup-fallback-logo" src="/favicon.png" alt="Bible Nova Companion" />
           <h1>Bible Nova</h1>
-          <p id="startup-fallback-message">Starting securely…</p>
+          <p id="startup-fallback-message">Preparing your reflection space&hellip;</p>
           <button id="startup-retry" type="button" hidden onclick="window.location.reload()">Retry</button>
           <p id="startup-fallback-id" class="startup-fallback-id" hidden></p>
         </div>

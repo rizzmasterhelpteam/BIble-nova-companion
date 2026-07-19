@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;700&family=Syne:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Manrope:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
@@ -647,6 +647,94 @@
 
   .app-paywall-panel .app-badge-glow {
     box-shadow: 0 12px 30px color-mix(in srgb, var(--app-accent) 18%, transparent);
+  }
+
+  .sanctuary-screen {
+    isolation: isolate;
+    background:
+      radial-gradient(ellipse 52% 34% at 50% -4%, color-mix(in srgb, var(--app-accent) 24%, transparent), transparent 72%),
+      radial-gradient(ellipse 44% 30% at 102% 88%, color-mix(in srgb, var(--app-success) 10%, transparent), transparent 74%),
+      var(--app-page-bg);
+  }
+
+  .sanctuary-atmosphere {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .sanctuary-atmosphere::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: -11rem;
+    width: min(34rem, 92vw);
+    height: 28rem;
+    transform: translateX(-50%);
+    border-radius: 0 0 50% 50%;
+    border: 1px solid color-mix(in srgb, var(--app-accent) 13%, transparent);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--app-accent) 9%, transparent), transparent 72%);
+    box-shadow: inset 0 -28px 70px color-mix(in srgb, var(--app-accent) 5%, transparent);
+  }
+
+  .sanctuary-atmosphere::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.2;
+    background-image: radial-gradient(color-mix(in srgb, var(--app-heading) 18%, transparent) 0.55px, transparent 0.55px);
+    background-size: 5px 5px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.65), transparent 76%);
+  }
+
+  .sanctuary-surface {
+    background: color-mix(in srgb, var(--app-card-strong) 94%, var(--bg-base) 6%);
+    border: 1px solid color-mix(in srgb, var(--app-accent) 15%, var(--app-card-border));
+    box-shadow: 0 24px 64px rgba(18, 12, 8, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  }
+
+  .sanctuary-brand-mark {
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--app-accent) 30%, transparent);
+    border-radius: 1.35rem;
+    background: color-mix(in srgb, var(--app-card-strong) 86%, transparent);
+    box-shadow: 0 16px 38px color-mix(in srgb, var(--app-accent) 20%, transparent);
+  }
+
+  .sanctuary-option {
+    background: color-mix(in srgb, var(--app-card-strong) 60%, transparent);
+    border: 1px solid var(--app-card-border);
+    color: var(--app-text);
+    transition: border-color 160ms ease, background-color 160ms ease, transform 150ms ease;
+  }
+
+  .sanctuary-option[aria-checked="true"] {
+    border-color: color-mix(in srgb, var(--app-accent) 48%, transparent);
+    background: color-mix(in srgb, var(--app-accent-soft) 72%, var(--app-card-strong));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-accent) 12%, transparent);
+  }
+
+  .sanctuary-preview {
+    background:
+      linear-gradient(145deg, color-mix(in srgb, var(--app-accent-soft) 55%, transparent), transparent 58%),
+      color-mix(in srgb, var(--app-card-strong) 92%, var(--bg-base) 8%);
+    border: 1px solid color-mix(in srgb, var(--app-accent) 18%, var(--app-card-border));
+  }
+
+  .scripture-copy {
+    font-family: "Cormorant Garamond", ui-serif, Georgia, serif;
+  }
+
+  .sanctuary-sticky-action {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    padding-top: 0.75rem;
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.25rem);
+    background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--app-card-strong) 95%, transparent) 28%);
   }
 
   .app-danger-panel {
