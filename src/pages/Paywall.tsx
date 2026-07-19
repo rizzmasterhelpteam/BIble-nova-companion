@@ -522,7 +522,7 @@ export default function Paywall() {
           )}
 
           {nativeStoreAvailable && (
-            <div className="sanctuary-sticky-action mb-4">
+            <div className="sanctuary-action mb-4">
               <button
                 onClick={handleSubscribe}
                 disabled={!canSubscribe}

@@ -358,7 +358,7 @@ export default function Onboarding() {
               })}
             </div>
 
-            <div className="sanctuary-sticky-action mt-6">
+            <div className="sanctuary-action mt-6">
               <button
                 type="button"
                 onClick={handleContinue}

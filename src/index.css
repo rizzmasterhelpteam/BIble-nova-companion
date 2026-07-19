@@ -775,14 +775,8 @@
     font-family: "Cormorant Garamond", ui-serif, Georgia, serif;
   }
 
-  .sanctuary-sticky-action {
-    position: sticky;
-    bottom: 0;
-    z-index: 5;
-    padding-top: 0.75rem;
+  .sanctuary-action {
     padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.25rem);
-    background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--app-card-strong) 95%, transparent) 28%);
-    background-color: var(--app-surface-elevated);
   }
 
   .app-danger-panel {
