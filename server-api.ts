@@ -228,14 +228,7 @@ const verifyGooglePlaySubscription = async (
   }
 
   const verifiedOrderId = lineItem.latestSuccessfulOrderId;
-  if (payload.orderId && verifiedOrderId && payload.orderId !== verifiedOrderId) {
-    throw new Error("The purchase order does not match Google Play.");
-  }
-
   const verifiedPlanId = lineItem.offerDetails?.basePlanId;
-  if (payload.planId && verifiedPlanId && payload.planId !== verifiedPlanId) {
-    throw new Error("The purchase plan does not match Google Play.");
-  }
 
   return {
     productId,

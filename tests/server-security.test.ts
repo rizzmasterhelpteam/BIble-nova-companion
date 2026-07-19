@@ -88,13 +88,7 @@ describe("server security", () => {
         new Error("Google Play API access was denied for the subscription verifier."),
       ),
     ).toContain("Play Console");
-    expect(getNativeSubscriptionClientErrorMessage(new Error("unknown subscription error"))).not.toContain(
-      "reflection",
-    );
-    expect(
-      getNativeSubscriptionClientErrorMessage(
-        new Error("This Google Play subscription could not be acknowledged."),
-      ),
-    ).toContain("Restore Purchases");
+    expect(getNativeSubscriptionClientErrorMessage(new Error("unknown subscription error"))).not.toContain("reflection");
+    expect(getNativeSubscriptionClientErrorMessage(new Error("This Google Play subscription could not be acknowledged."))).toContain("Restore Purchases");
   });
 });
