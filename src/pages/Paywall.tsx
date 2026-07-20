@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Check, Star, AlertCircle, ShieldCheck, Sparkles, HeartHandshake, Zap, Lock } from "lucide-react";
+import { Check, Star, AlertCircle, ShieldCheck, Sparkles, HeartHandshake, Zap, Lock, BookOpen } from "lucide-react";
 import { AppLogo } from "../components/AppLogo";
 import { motion, useReducedMotion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
