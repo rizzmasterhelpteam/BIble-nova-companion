@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Check, BookOpen } from "lucide-react";
+import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Check, BookOpen, ChevronRight, Wind } from "lucide-react";
 import { ChristianCross } from "../components/ChristianCross";
 import { AppLogo } from "../components/AppLogo";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
@@ -17,7 +17,7 @@ const questions = [
     id: "reason",
     title: "What brings you here today?",
     options: [
-      { id: "stress", label: "Managing stress and anxiety", icon: <Brain className="w-5 h-5" /> },
+      { id: "stress", label: "Managing stress and anxiety", icon: <Wind className="w-5 h-5" /> },
       { id: "purpose", label: "Seeking purpose and clarity", icon: <Sparkles className="w-5 h-5" /> },
       { id: "healing", label: "Emotional healing", icon: <Heart className="w-5 h-5" /> },
       { id: "faith", label: "Reconnecting with faith", icon: <ChristianCross className="w-5 h-5" /> },
@@ -40,7 +40,7 @@ const questions = [
       { id: "gentle", label: "Gentle comfort", icon: <Heart className="w-5 h-5" /> },
       { id: "honest", label: "Honest moral clarity", icon: <ShieldCheck className="w-5 h-5" /> },
       { id: "prayer", label: "Prayer and scripture", icon: <ChristianCross className="w-5 h-5" /> },
-      { id: "practical", label: "Simple practical steps", icon: <Sparkles className="w-5 h-5" /> },
+      { id: "practical", label: "Simple practical steps", icon: <Brain className="w-5 h-5" /> },
     ],
   },
 ];
@@ -89,7 +89,6 @@ export default function Onboarding() {
   useDocumentTitle("Welcome | Bible Nova Companion");
   const { isCompactPhone, isShortPhone: viewportShortPhone, visibleHeight, width } = useMobileViewport();
   const isShortPhone = viewportShortPhone || (isCompactPhone && visibleHeight <= 840);
-  const shouldTopAlign = isShortPhone;
   const prefersReducedMotion = useReducedMotion();
   const isPerformanceMode = Boolean(
     prefersReducedMotion || (isNativePlatform() && getNativePlatform() === "android"),
@@ -111,7 +110,6 @@ export default function Onboarding() {
       setShowAnalysis(true);
       return;
     }
-
     setCurrentStep(initialStep);
   }, []);
 
@@ -122,10 +120,16 @@ export default function Onboarding() {
   const handleSelect = (optionId: string) => {
     const question = questions[currentStep];
     setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: optionId }));
+    
+    // Auto-advance after a tiny delay for a premium feel
+    setTimeout(() => {
+      handleContinue(optionId);
+    }, 400);
   };
 
-  const handleContinue = () => {
-    if (!answers[questions[currentStep].id]) return;
+  const handleContinue = (overrideAnswer?: string) => {
+    const currentAnswer = overrideAnswer || answers[questions[currentStep].id];
+    if (!currentAnswer) return;
     if (currentStep < questions.length - 1) {
       setPrevStep(currentStep);
       setCurrentStep((prev) => Math.min(prev + 1, questions.length - 1));
@@ -140,7 +144,6 @@ export default function Onboarding() {
       setCurrentStep(questions.length - 1);
       return;
     }
-
     if (currentStep === 0) {
       setHasStarted(false);
       return;
@@ -157,76 +160,89 @@ export default function Onboarding() {
     window.requestAnimationFrame(() => navigate("/", { replace: true }));
   };
 
+  const BackgroundOrbs = () => (
+    <>
+      <motion.div
+        animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.4, 0.3], x: [0, 30, 0], y: [0, -40, 0] }}
+        transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+        className="absolute -top-[10%] -left-[10%] h-[500px] w-[500px] rounded-full bg-amber-500/10 blur-[100px] pointer-events-none"
+      />
+      <motion.div
+        animate={{ scale: [1, 1.3, 1], opacity: [0.2, 0.3, 0.2], x: [0, -30, 0], y: [0, 30, 0] }}
+        transition={{ duration: 18, repeat: Infinity, ease: "linear", delay: 2 }}
+        className="absolute top-[50%] -right-[10%] h-[600px] w-[600px] rounded-full bg-rose-500/10 blur-[120px] pointer-events-none"
+      />
+    </>
+  );
+
   // Staggered welcome screen
   if (!hasStarted) {
     const makeStagger = (delay: number) =>
       isPerformanceMode
         ? {}
         : {
-            initial: { opacity: 0, y: 14 },
+            initial: { opacity: 0, y: 20 },
             animate: { opacity: 1, y: 0 },
-            transition: { duration: 0.44, ease: [0.22, 1, 0.36, 1], delay },
+            transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1], delay },
           };
 
     return (
-      <div className={cn("app-screen-scroll sanctuary-screen relative flex w-full flex-col", isShortPhone ? "px-3 py-3" : "px-4 py-6")}>
-        <div className="sanctuary-atmosphere" />
-        <div
-          className={cn(
-            "sanctuary-surface relative z-10 mx-auto my-auto w-full max-w-md rounded-[1.35rem] text-center",
-            isShortPhone ? "px-4 py-5" : "px-6 py-8 sm:px-8 sm:py-10",
-          )}
-        >
+      <div className="relative min-h-screen w-full overflow-hidden bg-[#0F0F12] text-white flex flex-col justify-center items-center px-4 py-8">
+        <BackgroundOrbs />
+        
+        <div className="relative z-10 w-full max-w-md flex flex-col items-center text-center">
           {/* Logo — scale in */}
           <motion.div
-            className={cn("sanctuary-brand-mark mx-auto", isShortPhone ? "mb-4 h-16 w-16" : "mb-6 h-20 w-20")}
-            initial={isPerformanceMode ? false : { opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.52, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
+            className="mb-8 relative"
+            initial={isPerformanceMode ? false : { opacity: 0, scale: 0.5, rotate: -10 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            transition={{ type: "spring", stiffness: 200, damping: 20, delay: 0.1 }}
           >
-            <AppLogo className="h-full w-full object-cover" />
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
+              className="absolute -inset-4 rounded-full border border-amber-500/20 border-t-amber-500/60"
+            />
+            <div className="h-24 w-24 rounded-full overflow-hidden shadow-[0_0_50px_rgba(245,158,11,0.25)] bg-gradient-to-br from-[#1a1a1e] to-[#0F0F12] p-1.5 flex items-center justify-center">
+              <AppLogo className="h-full w-full object-cover rounded-full" />
+            </div>
           </motion.div>
 
-          <motion.p className={cn("app-kicker", isShortPhone ? "mb-2" : "mb-3")} {...makeStagger(0.18)}>A gentler beginning</motion.p>
+          <motion.div {...makeStagger(0.2)} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/70 text-xs font-semibold tracking-wider uppercase mb-5">
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+            Welcome to Bible Nova
+          </motion.div>
+          
           <motion.h1
-            className={cn("app-heading font-serif leading-[1.12]", isShortPhone ? "text-[2rem]" : "text-[2.35rem] sm:text-[2.65rem]")}
-            {...makeStagger(0.26)}
+            className="font-serif text-4xl sm:text-5xl leading-tight mb-4 tracking-tight bg-gradient-to-br from-white to-white/60 bg-clip-text text-transparent"
+            {...makeStagger(0.3)}
           >
-            A reflection space shaped around you.
+            A quieter place to return to.
           </motion.h1>
+          
           <motion.p
-            className={cn("app-muted mx-auto max-w-sm", isShortPhone ? "mt-3 text-[14px] leading-6" : "mt-4 text-[15px] leading-7")}
-            {...makeStagger(0.34)}
+            className="text-white/60 text-[15px] sm:text-[16px] leading-relaxed max-w-sm mb-10"
+            {...makeStagger(0.4)}
           >
-            Answer three thoughtful questions so Bible Nova can meet you with the right tone, scripture, and next step.
+            Answer three thoughtful questions to shape your personalized reflection space.
           </motion.p>
-
-          {/* Preview card */}
-          <motion.div
-            className={cn("sanctuary-preview rounded-[1.35rem] text-left", isShortPhone ? "my-4 px-4 py-3" : "my-7 px-5 py-4")}
-            {...makeStagger(0.44)}
-          >
-            <p className="app-kicker mb-2 text-[9px]">Your daily moment</p>
-            <p className="scripture-copy app-heading text-xl leading-snug">Pause. Name what you're carrying. Receive one clear place to begin.</p>
-          </motion.div>
 
           {/* CTA */}
-          <motion.button
-            type="button"
-            onClick={() => setHasStarted(true)}
-            className={cn("touch-target app-primary-button app-card-shimmer flex w-full items-center justify-center gap-2 rounded-[1rem] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "py-3.5" : "py-4")}
-            {...makeStagger(0.54)}
-          >
-            Personalize my space
-            <Sparkles className="h-4.5 w-4.5" />
-          </motion.button>
-
-          <motion.p
-            className={cn("app-muted leading-relaxed", isShortPhone ? "mt-3 text-[10px]" : "mt-4 text-[11px]")}
-            {...makeStagger(0.62)}
-          >
-            Your answers are used only to personalize your experience.
-          </motion.p>
+          <motion.div className="w-full" {...makeStagger(0.5)}>
+            <button
+              onClick={() => setHasStarted(true)}
+              className="relative w-full overflow-hidden group bg-gradient-to-r from-amber-500 to-amber-600 text-amber-950 font-bold text-lg rounded-[1.25rem] py-4 flex items-center justify-center gap-2 hover:from-amber-400 hover:to-amber-500 transition-all shadow-[0_8px_30px_rgba(245,158,11,0.3)] hover:shadow-[0_8px_40px_rgba(245,158,11,0.4)] hover:-translate-y-1"
+            >
+              <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
+              Begin Your Journey
+              <ChevronRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
+            </button>
+          </motion.div>
+          
+          <motion.div className="mt-6 flex items-center justify-center gap-2 text-white/30 text-xs" {...makeStagger(0.6)}>
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Your answers are private.</span>
+          </motion.div>
         </div>
       </div>
     );
@@ -236,90 +252,79 @@ export default function Onboarding() {
     const analysis = getAnalysisSummary(answers);
 
     return (
-      <div
-        className={cn("app-screen-scroll sanctuary-screen relative flex w-full flex-col items-center justify-start scrollbar-hide", isShortPhone ? "px-3 py-3" : "px-4 py-5")}
-      >
-        <div className="sanctuary-atmosphere" />
+      <div className="relative min-h-screen w-full overflow-hidden bg-[#0F0F12] text-white flex flex-col justify-center items-center px-4 py-6">
+        <BackgroundOrbs />
 
         <motion.div
-          initial={isPerformanceMode ? false : { opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: isPerformanceMode ? 0 : 0.22, ease: "easeOut" }}
-          className={cn(
-            "sanctuary-surface shrink-0 relative z-10 w-full max-w-md rounded-[1.35rem]",
-            !shouldTopAlign && "my-auto",
-            isShortPhone ? "p-4" : isCompactPhone ? "p-5" : "p-6 sm:p-8",
-          )}
+          initial={isPerformanceMode ? false : { opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          className="relative z-10 w-full max-w-md flex flex-col"
         >
           <button
             onClick={handleBack}
-            className={cn("app-ghost-button inline-flex items-center gap-2 rounded-pill px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "mb-3" : "mb-6")}
+            className="self-start inline-flex items-center gap-2 rounded-full px-4 py-2 bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white transition-colors text-sm font-medium mb-8"
           >
             <ArrowLeft className="w-4 h-4" />
             Back
           </button>
 
-          <div className={cn("text-center", isShortPhone ? "mb-4" : "mb-6")}>
-            <p className={cn("app-kicker", isShortPhone ? "mb-2" : "mb-3")}>A space made for you</p>
-            <h2 className={cn("app-heading pb-1 font-serif leading-[1.18]", isShortPhone ? "mb-3 text-[1.75rem]" : isCompactPhone ? "mb-4 text-[2rem]" : "mb-4 text-[2.25rem]")}>
-              Your reflection space is ready.
+          <div className="text-center mb-8">
+            <span className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-500/20 text-amber-500 mb-4 border border-amber-500/30">
+              <Check className="w-6 h-6" strokeWidth={3} />
+            </span>
+            <h2 className="font-serif text-3xl sm:text-4xl leading-tight mb-3 bg-gradient-to-br from-white to-white/60 bg-clip-text text-transparent">
+              Your space is ready.
             </h2>
-            <p className={cn("app-muted mx-auto max-w-sm", isShortPhone ? "text-[14px] leading-snug" : "text-[15px] leading-relaxed")}>
+            <p className="text-white/60 text-[15px] leading-relaxed max-w-sm mx-auto">
               {analysis.overview}
             </p>
           </div>
 
-          <div className={cn(isShortPhone ? "mb-4 space-y-3" : "mb-7 space-y-4")}>
+          <div className="space-y-4 mb-8">
             {/* Scripture preview */}
             <motion.div
-              className={cn("sanctuary-preview rounded-[1.35rem]", isShortPhone ? "px-4 py-4" : "px-5 py-5")}
-              initial={isPerformanceMode ? false : { opacity: 0, y: 8 }}
+              className="bg-gradient-to-br from-white/10 to-white/5 border border-white/10 rounded-[1.5rem] p-6 backdrop-blur-md relative overflow-hidden"
+              initial={isPerformanceMode ? false : { opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
             >
-              <div className={cn("flex items-center justify-between gap-3", isShortPhone ? "mb-3" : "mb-4")}>
-                <p className="app-kicker text-[9px]">A glimpse of your space</p>
-                <span className="app-accent-badge rounded-pill px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.15em]">Personalized</span>
+              <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
+                <BookOpen className="w-24 h-24 rotate-12" />
               </div>
-              <p className="scripture-copy app-heading text-[1.4rem] leading-snug">"Be still, and know that I am God."</p>
-              <p className="app-accent mt-1 text-[11px] font-semibold uppercase tracking-[0.14em]">Psalm 46:10</p>
-              <div className={cn("app-divider border-t", isShortPhone ? "my-3" : "my-4")} />
-              <p className={cn("app-muted leading-relaxed", isShortPhone ? "text-[13px]" : "text-sm")}>Begin by naming the one thing that feels heaviest today. You do not need to solve it all at once.</p>
+              <div className="flex items-center justify-between mb-4 relative z-10">
+                <span className="text-white/50 text-[10px] uppercase tracking-widest font-semibold">Glimpse</span>
+                <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider">Personalized</span>
+              </div>
+              <p className="font-serif text-[1.5rem] leading-snug mb-2 text-white/90 relative z-10">"Be still, and know that I am God."</p>
+              <p className="text-amber-500 text-[11px] font-bold uppercase tracking-widest relative z-10">Psalm 46:10</p>
             </motion.div>
 
-            {/* Next step — elevated accent card instead of plain border note */}
+            {/* Next step */}
             <motion.div
-              className="rounded-[1.25rem] p-4"
-              style={{
-                background: "linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 12%, transparent), color-mix(in srgb, var(--app-accent) 5%, transparent))",
-                border: "1px solid color-mix(in srgb, var(--app-accent) 28%, transparent)",
-              }}
-              initial={isPerformanceMode ? false : { opacity: 0, y: 8 }}
+              className="bg-gradient-to-br from-amber-500/15 to-transparent border border-amber-500/30 rounded-[1.5rem] p-5 relative overflow-hidden"
+              initial={isPerformanceMode ? false : { opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1], delay: 0.2 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
             >
-              <div className="mb-2.5 flex items-center gap-2.5">
-                <span
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full"
-                  style={{ background: "color-mix(in srgb, var(--app-accent) 18%, transparent)", color: "var(--app-accent)" }}
-                >
-                  <BookOpen className="h-4 w-4" strokeWidth={2} />
-                </span>
-                <p className="app-kicker text-[9.5px]">Your next gentle step</p>
+              <div className="flex items-center gap-3 mb-3 relative z-10">
+                <div className="bg-amber-500 text-amber-950 p-1.5 rounded-lg">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <span className="text-amber-400 text-[10px] font-bold uppercase tracking-widest">How we'll help</span>
               </div>
-              <p className="app-heading text-[14px] leading-relaxed">{analysis.appResponse}</p>
+              <p className="text-white/80 text-[14px] leading-relaxed relative z-10">{analysis.appResponse}</p>
             </motion.div>
           </div>
 
           <motion.button
             onClick={handleGetStarted}
-            className={cn("touch-target app-primary-button app-card-shimmer flex w-full items-center justify-center rounded-[1rem] font-semibold text-white transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "py-3.5" : "py-4")}
-            style={{ boxShadow: "var(--app-accent-shadow)" }}
-            initial={isPerformanceMode ? false : { opacity: 0, y: 6 }}
+            className="w-full bg-white text-black font-bold text-lg rounded-[1.25rem] py-4 flex items-center justify-center transition-all hover:bg-gray-100 shadow-[0_0_40px_rgba(255,255,255,0.15)] hover:shadow-[0_0_50px_rgba(255,255,255,0.25)] hover:-translate-y-1"
+            initial={isPerformanceMode ? false : { opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1], delay: 0.3 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
           >
-            Begin my first reflection
+            Enter Sanctuary
           </motion.button>
         </motion.div>
       </div>
@@ -328,168 +333,131 @@ export default function Onboarding() {
 
   const question = questions[currentStep];
   const completedCount = questions.filter((item) => Boolean(answers[item.id])).length;
-  const isFirstQuestion = currentStep === 0;
-  const fitFirstQuestionToViewport =
-    isFirstQuestion && width <= 768 && visibleHeight > 0 && visibleHeight <= 960;
+  const progressPercent = ((currentStep) / (questions.length - 1)) * 100;
 
   // Slide direction: forward = slide left in, backward = slide right in
   const isGoingForward = prevStep < currentStep;
   const slideVariants = {
-    initial: { opacity: 0, x: isGoingForward ? 24 : -24 },
-    animate: { opacity: 1, x: 0 },
-    exit: { opacity: 0, x: isGoingForward ? -24 : 24 },
+    initial: { opacity: 0, x: isGoingForward ? 40 : -40, scale: 0.95 },
+    animate: { opacity: 1, x: 0, scale: 1 },
+    exit: { opacity: 0, x: isGoingForward ? -40 : 40, scale: 0.95 },
   };
 
   return (
-    <div
-      className={cn(
-        fitFirstQuestionToViewport
-          ? "onboarding-question-screen sanctuary-screen relative flex w-full flex-col overflow-x-hidden"
-          : "app-screen-scroll sanctuary-screen relative flex w-full flex-col overflow-x-hidden",
-        fitFirstQuestionToViewport ? "px-2.5" : isShortPhone ? "px-3" : "px-4",
-      )}
-      style={{
-        paddingTop: `max(env(safe-area-inset-top, 0px), ${fitFirstQuestionToViewport ? "0.5rem" : isShortPhone ? "0.75rem" : "2rem"})`,
-        paddingBottom: `max(env(safe-area-inset-bottom, 0px), ${fitFirstQuestionToViewport ? "0.5rem" : isShortPhone ? "0.75rem" : "2.25rem"})`,
-      }}
-    >
-      <div className="sanctuary-atmosphere" />
+    <div className="relative min-h-screen w-full overflow-hidden bg-[#0F0F12] text-white flex flex-col pt-12 pb-8 px-4">
+      <BackgroundOrbs />
 
-      <div className="relative z-10 mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col">
+      <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col">
         {/* Header: back + progress */}
-        <div className={cn("flex shrink-0 items-center justify-between", fitFirstQuestionToViewport ? "mb-2" : isShortPhone ? "mb-3" : "mb-7")}>
+        <div className="flex items-center justify-between mb-8">
           <button
             onClick={handleBack}
-            className="touch-target app-ghost-button inline-flex items-center gap-2 rounded-pill px-3 py-2 text-sm disabled:pointer-events-none disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500"
+            aria-label="Go back"
           >
-            <ArrowLeft className="w-4 h-4" />
-            Back
+            <ArrowLeft className="w-5 h-5" />
           </button>
 
-          {/* Thicker progress dots with smooth active transition */}
-          <div
-            className="flex items-center gap-2"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={questions.length}
-            aria-valuenow={completedCount}
-            aria-label={`${completedCount} of ${questions.length} questions completed`}
-          >
-            {questions.map((item, index) => (
-              <motion.span
-                key={item.id}
-                className="block rounded-full"
-                animate={{
-                  width: index === currentStep ? "2rem" : "0.625rem",
-                  background: index <= currentStep ? "var(--app-accent)" : "var(--app-card-border)",
-                  opacity: index > currentStep ? 0.5 : 1,
-                }}
-                transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-                style={{ height: "0.5rem" }}
+          <div className="flex-1 max-w-[150px] ml-4">
+            <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+              <motion.div 
+                className="h-full bg-amber-500 rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${progressPercent}%` }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
               />
-            ))}
+            </div>
+            <div className="text-right mt-1.5">
+              <span className="text-[10px] text-white/40 font-semibold tracking-widest uppercase">
+                Step {currentStep + 1} of {questions.length}
+              </span>
+            </div>
           </div>
         </div>
 
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={currentStep}
-            variants={isPerformanceMode ? {} : slideVariants}
-            initial={isPerformanceMode ? false : "initial"}
-            animate="animate"
-            exit={isPerformanceMode ? undefined : "exit"}
-            transition={{ duration: isPerformanceMode ? 0 : 0.2, ease: [0.22, 1, 0.36, 1] }}
-            className={cn(
-              "sanctuary-surface flex min-h-0 flex-1 flex-col rounded-[1.35rem]",
-              fitFirstQuestionToViewport
-                ? "overflow-hidden px-3.5 py-3.5"
-                : isShortPhone
-                  ? "shrink-0 px-4 py-4"
-                  : "shrink-0 px-5 py-6 sm:px-7 sm:py-8",
-            )}
-          >
-            <span className={cn("app-kicker inline-flex text-xs font-semibold", fitFirstQuestionToViewport ? "mb-2 text-[10px] leading-none" : isShortPhone ? "mb-3" : "mb-4")}>
-              Question {currentStep + 1} of {questions.length}
-            </span>
-            <h1 className={cn("app-heading pb-1 font-serif", fitFirstQuestionToViewport ? "mb-2 text-[1.65rem] leading-[1.08]" : isShortPhone ? "mb-3 leading-[1.18] text-[1.75rem]" : isCompactPhone ? "mb-4 leading-[1.18] text-[2rem]" : "mb-4 leading-[1.18] text-3xl sm:text-4xl")}>
-              {question.title}
-            </h1>
-            <p className={cn("app-muted max-w-sm", fitFirstQuestionToViewport ? "mb-2.5 text-[13px] leading-[1.35]" : isShortPhone ? "mb-4 text-[14px] leading-snug" : "mb-10")}>
-              Choose what feels most true right now. You can change your preferences later.
-            </p>
+        <div className="flex-1 flex flex-col justify-center">
+          <AnimatePresence mode="wait" custom={isGoingForward}>
+            <motion.div
+              key={currentStep}
+              variants={isPerformanceMode ? {} : slideVariants}
+              initial={isPerformanceMode ? false : "initial"}
+              animate="animate"
+              exit={isPerformanceMode ? undefined : "exit"}
+              transition={{ type: "spring", stiffness: 260, damping: 25 }}
+              className="w-full"
+            >
+              <h1 className="font-serif text-3xl sm:text-4xl leading-tight mb-3 tracking-tight bg-gradient-to-br from-white to-white/70 bg-clip-text text-transparent">
+                {question.title}
+              </h1>
+              <p className="text-white/50 text-[14px] mb-8">
+                Choose what feels most true right now.
+              </p>
 
-            {currentStep === 0 && (
-              <div className={cn("sanctuary-trust", fitFirstQuestionToViewport ? "mb-2 pt-2 text-[10px] leading-[1.35]" : isShortPhone ? "mb-3 text-[11px]" : "mb-5")}>
-                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--app-success)" }} />
-                <span>This helps personalize your reflections. You can update your preferences later.</span>
-              </div>
-            )}
-
-            <div role="radiogroup" aria-label={question.title} className={cn(fitFirstQuestionToViewport ? "space-y-1.5" : isShortPhone ? "space-y-2" : isCompactPhone ? "space-y-3" : "space-y-4")}>
-              {question.options.map((option, optIdx) => {
-                const isSelected = answers[question.id] === option.id;
-                return (
-                  <motion.button
-                    key={option.id}
-                    role="radio"
-                    aria-checked={isSelected}
-                    onClick={() => handleSelect(option.id)}
-                    whileHover={isPerformanceMode ? {} : { scale: 1.012, y: -1 }}
-                    whileTap={isPerformanceMode ? {} : { scale: 0.985 }}
-                    className={cn("touch-target sanctuary-option flex w-full items-center justify-between rounded-[1rem] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", fitFirstQuestionToViewport ? "min-h-[48px] p-2" : isShortPhone ? "p-2.5" : isCompactPhone ? "p-4" : "p-5")}
-                    initial={isPerformanceMode ? false : { opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.22, ease: "easeOut", delay: optIdx * 0.055 }}
-                  >
-                    <div className={cn("flex min-w-0 items-center", fitFirstQuestionToViewport ? "gap-2.5" : isShortPhone ? "gap-3" : "gap-4")}>
-                      {option.icon && (
-                        <div
-                          className={cn("rounded-full transition-all duration-150", fitFirstQuestionToViewport ? "p-1.5" : isShortPhone ? "p-1.5" : "p-2")}
-                          style={{
-                            background: isSelected ? "color-mix(in srgb, var(--app-accent) 18%, transparent)" : "var(--app-card-soft)",
-                            color: isSelected ? "var(--app-accent)" : "var(--app-text-muted)",
-                          }}
-                        >
-                          {option.icon}
-                        </div>
+              <div role="radiogroup" aria-label={question.title} className="space-y-3">
+                {question.options.map((option, optIdx) => {
+                  const isSelected = answers[question.id] === option.id;
+                  return (
+                    <motion.button
+                      key={option.id}
+                      role="radio"
+                      aria-checked={isSelected}
+                      onClick={() => handleSelect(option.id)}
+                      whileHover={isPerformanceMode ? {} : { scale: 1.02 }}
+                      whileTap={isPerformanceMode ? {} : { scale: 0.98 }}
+                      className={cn(
+                        "w-full flex items-center justify-between p-4 sm:p-5 rounded-2xl text-left transition-all duration-300 border focus:outline-none focus:ring-2 focus:ring-amber-500 group overflow-hidden relative",
+                        isSelected 
+                          ? "bg-amber-500/10 border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.1)]" 
+                          : "bg-white/5 border-white/10 hover:bg-white/10"
                       )}
-                      <span
-                        className={cn("min-w-0 transition-all duration-150", fitFirstQuestionToViewport ? "text-[14px] leading-[1.2]" : isShortPhone ? "leading-snug text-[15px]" : isCompactPhone ? "leading-snug text-[16px]" : "leading-snug text-lg")}
-                        style={{
-                          color: isSelected ? "var(--app-accent)" : "var(--app-text)",
-                          fontWeight: isSelected ? 600 : 500,
-                        }}
-                      >
-                        {option.label}
-                      </span>
-                    </div>
-                    <span
-                      className={cn("flex shrink-0 items-center justify-center rounded-full border transition-all duration-150", fitFirstQuestionToViewport ? "h-5 w-5" : isShortPhone ? "h-5 w-5" : "h-6 w-6")}
-                      style={{
-                        borderColor: isSelected ? "var(--app-accent)" : "var(--app-card-border)",
-                        background: isSelected ? "var(--app-accent)" : "transparent",
-                      }}
+                      initial={isPerformanceMode ? false : { opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4, delay: optIdx * 0.08 }}
                     >
-                      {isSelected && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
-                    </span>
-                  </motion.button>
-                );
-              })}
-            </div>
-
-            <div className={cn("sanctuary-action", fitFirstQuestionToViewport ? "mt-auto pt-2" : isShortPhone ? "mt-4" : "mt-6")}>
-              <button
-                type="button"
-                onClick={handleContinue}
-                disabled={!answers[question.id]}
-                className={cn("touch-target app-primary-button app-card-shimmer flex w-full items-center justify-center gap-2 rounded-[1rem] font-semibold disabled:cursor-not-allowed disabled:opacity-45 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", fitFirstQuestionToViewport ? "py-3" : isShortPhone ? "py-3.5" : "py-4")}
-              >
-                {currentStep === questions.length - 1 ? "See my reflection space" : "Continue"}
-                <Sparkles className="h-4 w-4" />
-              </button>
-            </div>
-          </motion.div>
-        </AnimatePresence>
+                      {/* Active glow background */}
+                      {isSelected && (
+                        <motion.div 
+                          layoutId="active-bg"
+                          className="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-transparent pointer-events-none"
+                        />
+                      )}
+                      
+                      <div className="flex items-center gap-4 relative z-10">
+                        {option.icon && (
+                          <div
+                            className={cn(
+                              "p-2.5 rounded-xl transition-colors duration-300",
+                              isSelected ? "bg-amber-500 text-amber-950" : "bg-white/5 text-white/50 group-hover:text-white/80 group-hover:bg-white/10"
+                            )}
+                          >
+                            {option.icon}
+                          </div>
+                        )}
+                        <span
+                          className={cn(
+                            "text-[15px] sm:text-[16px] transition-colors duration-300",
+                            isSelected ? "text-amber-500 font-semibold" : "text-white/80 font-medium"
+                          )}
+                        >
+                          {option.label}
+                        </span>
+                      </div>
+                      
+                      <div
+                        className={cn(
+                          "flex shrink-0 items-center justify-center rounded-full border-2 transition-all duration-300 w-6 h-6 relative z-10",
+                          isSelected ? "border-amber-500 bg-amber-500" : "border-white/20 bg-transparent group-hover:border-white/40"
+                        )}
+                      >
+                        {isSelected && <Check className="w-3.5 h-3.5 text-amber-950" strokeWidth={4} />}
+                      </div>
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   );

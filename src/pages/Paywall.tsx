@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Check, Star, AlertCircle, ShieldCheck, Sparkles } from "lucide-react";
+import { Check, Star, AlertCircle, ShieldCheck, Sparkles, HeartHandshake, Zap, Lock } from "lucide-react";
 import { AppLogo } from "../components/AppLogo";
 import { motion, useReducedMotion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
@@ -48,8 +48,7 @@ export default function Paywall() {
   const isPerformanceMode = Boolean(
     prefersReducedMotion || (isNativePlatform() && getNativePlatform() === "android"),
   );
-  const nativeStoreAvailable =
-    isNativePlatform() && getNativePlatform() === "android";
+  const nativeStoreAvailable = isNativePlatform() && getNativePlatform() === "android";
   const [selectedPlan, setSelectedPlan] = useState<Plan>("yearly");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +69,6 @@ export default function Paywall() {
 
   useEffect(() => {
     if (!nativeStoreAvailable) return;
-
     let isMounted = true;
     setIsLoadingOffering(true);
     setIapLoadError(null);
@@ -116,7 +114,6 @@ export default function Paywall() {
 
   useEffect(() => {
     if (!nativeStoreAvailable) return;
-
     let isMounted = true;
     apiFetch("/api/status")
       .then(async (response) => {
@@ -132,10 +129,7 @@ export default function Paywall() {
           );
         }
       })
-      .catch(() => {
-        // The purchase endpoint still returns a precise error if the API is unavailable.
-      });
-
+      .catch(() => {});
     return () => {
       isMounted = false;
     };
@@ -143,7 +137,6 @@ export default function Paywall() {
 
   useEffect(() => {
     if (!nativeStoreAvailable || isLoadingOffering || iapPackages[selectedPlan]) return;
-
     if (iapPackages.yearly) {
       setSelectedPlan("yearly");
     } else if (iapPackages.monthly) {
@@ -152,7 +145,6 @@ export default function Paywall() {
   }, [iapPackages, isLoadingOffering, nativeStoreAvailable, selectedPlan]);
 
   const selectedNativePackage = iapPackages[selectedPlan];
-
   const monthlyPrice = useMemo(
     () =>
       nativeStoreAvailable
@@ -169,8 +161,7 @@ export default function Paywall() {
     [iapPackages.yearly, isLoadingOffering, nativeStoreAvailable],
   );
 
-  const nativeSelectedPlanUnavailable =
-    nativeStoreAvailable && !isLoadingOffering && !selectedNativePackage;
+  const nativeSelectedPlanUnavailable = nativeStoreAvailable && !isLoadingOffering && !selectedNativePackage;
   const canSubscribe =
     !isLoading &&
     !isLoadingOffering &&
@@ -183,7 +174,6 @@ export default function Paywall() {
     setError(null);
     if (!canSubscribe) return;
     setIsLoading(true);
-
     try {
       if (!selectedNativePackage) {
         throw new Error(
@@ -192,7 +182,6 @@ export default function Paywall() {
             : "Google Play subscriptions are not configured yet. Add the product IDs, base plans, and Play Console products.",
         );
       }
-
       const purchase = await purchaseNativePackage(selectedNativePackage);
       await syncNativeSubscriptionForAccount(
         purchase,
@@ -209,12 +198,10 @@ export default function Paywall() {
 
   const getFreshAccessToken = async () => {
     if (!isSupabaseConfigured) return session?.access_token || null;
-
     const { data, error } = await supabase.auth.getSession();
     if (error) {
       console.warn("Could not refresh session before syncing subscription:", error.message);
     }
-
     return data.session?.access_token || session?.access_token || null;
   };
 
@@ -226,19 +213,16 @@ export default function Paywall() {
     if (!user) {
       throw new Error("Sign in with Google or email before linking Google Play premium.");
     }
-
     const accessToken = await getFreshAccessToken();
     if (!accessToken) {
       throw new Error("Your session expired. Please sign in again before linking Google Play premium.");
     }
-
     const productId = purchase.productIdentifier
       ? getConfiguredProductIdForIdentifier(purchase.productIdentifier) || purchase.productIdentifier.trim()
       : expectedProductId?.trim();
     if (!productId) {
       throw new Error("The native purchase was missing its product ID.");
     }
-
     const response = await apiFetch("/api/subscription/native-sync", {
       method: "POST",
       headers: {
@@ -254,11 +238,9 @@ export default function Paywall() {
       }),
     });
     const data = (await response.json().catch(() => ({}))) as NativeSubscriptionSyncResponse;
-
     if (!response.ok) {
       throw new Error(data.error || "Could not link this subscription to your account.");
     }
-
     subscribe("native_google_play");
     return data.subscription;
   };
@@ -266,22 +248,18 @@ export default function Paywall() {
   const handleRestorePurchases = async () => {
     setError(null);
     setIsLoading(true);
-
     try {
       const purchases = await restorePurchases();
       const restoredPurchase =
         (purchases.find((purchase) => Boolean((purchase as NativePurchaseTransaction).productIdentifier)) ||
           purchases[0]) as NativePurchaseTransaction | undefined;
-
       if (!restoredPurchase?.productIdentifier) {
         throw new Error("Could not determine which subscription to restore.");
       }
-
       const restoredProductId = getConfiguredProductIdForIdentifier(restoredPurchase.productIdentifier);
       if (!restoredProductId) {
         throw new Error("The restored purchase does not match a configured subscription.");
       }
-
       await syncNativeSubscriptionForAccount(
         restoredPurchase,
         getConfiguredPlanIdForProduct(restoredProductId),
@@ -297,7 +275,6 @@ export default function Paywall() {
   const handleManageSubscriptions = async () => {
     setError(null);
     setIsLoading(true);
-
     try {
       await openSubscriptionManagement();
     } catch (err) {
@@ -322,9 +299,9 @@ export default function Paywall() {
   };
 
   const features = [
-    "Unlimited scripture-grounded reflections",
-    "Personalized prayers and practical next steps",
-    "A private, ad-free reflection space",
+    { text: "Unlimited scripture-grounded reflections", icon: <BookOpen className="w-5 h-5 text-amber-500" /> },
+    { text: "Personalized prayers & practical steps", icon: <HeartHandshake className="w-5 h-5 text-rose-500" /> },
+    { text: "A private, distraction-free space", icon: <Lock className="w-5 h-5 text-emerald-500" /> },
   ];
 
   const showAndroidBillingUnavailable = !nativeStoreAvailable;
@@ -334,277 +311,219 @@ export default function Paywall() {
     return "≈ $7.50/mo";
   }, [nativeStoreAvailable, iapPackages.yearly]);
 
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1 },
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 15 },
+    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
+  };
+
   return (
-    <div
-      className={cn("app-screen-scroll sanctuary-screen relative flex w-full flex-col overflow-x-hidden", isShortPhone && "px-3")}
-      style={{
-        paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "0.75rem" : "1.25rem"})`,
-        paddingBottom: `max(env(safe-area-inset-bottom, 0px), ${isShortPhone ? "0.75rem" : "1rem"})`,
-      }}
-    >
-      <div className="sanctuary-atmosphere" />
+    <div className="relative min-h-screen w-full overflow-hidden bg-[#0F0F12] text-white">
+      {/* Animated Background Orbs */}
+      <motion.div
+        animate={{
+          scale: [1, 1.2, 1],
+          opacity: [0.3, 0.5, 0.3],
+          x: [0, 50, 0],
+          y: [0, -30, 0],
+        }}
+        transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+        className="absolute -top-[20%] -left-[10%] h-[600px] w-[600px] rounded-full bg-amber-500/10 blur-[120px] pointer-events-none"
+      />
+      <motion.div
+        animate={{
+          scale: [1, 1.3, 1],
+          opacity: [0.2, 0.4, 0.2],
+          x: [0, -40, 0],
+          y: [0, 40, 0],
+        }}
+        transition={{ duration: 18, repeat: Infinity, ease: "linear", delay: 2 }}
+        className="absolute top-[40%] -right-[20%] h-[500px] w-[500px] rounded-full bg-rose-500/10 blur-[100px] pointer-events-none"
+      />
 
-      <div className={cn("relative z-10 flex w-full flex-1 flex-col items-center justify-start", isShortPhone ? "py-2" : "px-4 py-2 sm:py-10")}>
+      <div className={cn("relative z-10 flex w-full flex-col items-center justify-start px-4", isShortPhone ? "py-4" : "py-8 sm:py-12")}>
         <motion.div
-          initial={isPerformanceMode ? false : { opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: isPerformanceMode ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
-          className={cn(
-            "sanctuary-surface shrink-0 w-full max-w-lg rounded-[1.35rem]",
-            !shouldTopAlign && "sm:my-auto",
-            isShortPhone ? "p-4" : isCompactPhone ? "p-5" : "p-6 sm:p-7",
-          )}
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+          className="w-full max-w-md mx-auto"
         >
-          {/* Header */}
-          <div className={cn("flex items-center gap-3", isShortPhone ? "mb-4" : "mb-5")}>
-            <div
-              className={cn("sanctuary-brand-mark flex items-center justify-center overflow-hidden", isShortPhone ? "h-14 w-14" : "h-16 w-16")}
-            >
-              <AppLogo className="h-full w-full object-cover" />
+          {/* Header Section */}
+          <motion.div variants={itemVariants} className="flex flex-col items-center text-center mb-8">
+            <div className="relative mb-6">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+                className="absolute -inset-2 rounded-full border border-amber-500/30 border-t-amber-500/80"
+              />
+              <div className="h-20 w-20 rounded-full overflow-hidden shadow-[0_0_40px_rgba(245,158,11,0.3)] bg-gradient-to-br from-[#1a1a1e] to-[#0F0F12] p-1 flex items-center justify-center">
+                <AppLogo className="h-full w-full object-cover rounded-full" />
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="app-kicker text-[9px]">Bible Nova Premium</p>
-              <p className={cn("app-heading font-serif font-semibold leading-tight", isShortPhone ? "text-[1.1rem]" : "text-[1.25rem]")}>
-                Unlock the full experience
-              </p>
-            </div>
-            <span className="app-badge-glow shrink-0 rounded-full px-3 py-1 text-[9px] font-bold uppercase tracking-[0.14em]">
-              Premium
+            
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs font-bold tracking-widest uppercase mb-4">
+              <Sparkles className="w-3.5 h-3.5" />
+              Bible Nova Premium
             </span>
-          </div>
-
-          <div className={cn("text-left", isShortPhone ? "mb-4" : "mb-5")}>
-            <h1 className={cn("app-heading mb-2 pb-1 font-serif leading-[1.12]", isShortPhone ? "text-[1.8rem]" : isCompactPhone ? "text-[2rem]" : "text-3xl")}>
-              A quieter place to return to.
+            
+            <h1 className="text-3xl sm:text-4xl font-serif font-medium mb-3 tracking-tight bg-gradient-to-br from-white to-white/60 bg-clip-text text-transparent">
+              Deepen Your Journey
             </h1>
-            <p className={cn("app-muted max-w-md font-light", isShortPhone ? "text-[13px] leading-relaxed" : "text-[14px] leading-relaxed")}>
-              Scripture-grounded guidance, personalized prayer, and one clear next step whenever you need it.
+            <p className="text-white/60 text-[15px] leading-relaxed max-w-[300px]">
+              Unlock unlimited personalized reflections, prayers, and a distraction-free spiritual sanctuary.
             </p>
-          </div>
+          </motion.div>
 
-          <div className={cn("app-paywall-panel mb-5 rounded-[1.25rem]", isShortPhone ? "p-3.5" : "p-4")}>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="app-kicker text-[9px]">Premium includes</p>
-                <p className="app-muted mt-1 text-[11px]">A little more room for what you are carrying.</p>
-              </div>
-              <Sparkles className="h-4 w-4 shrink-0 app-accent" aria-hidden="true" />
-            </div>
-            <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
-              {features.map((feature) => (
-                <div key={feature} className="flex items-start gap-2">
-                  <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)", border: "1px solid color-mix(in srgb, var(--app-accent) 25%, transparent)" }}>
-                    <Check className="h-2.5 w-2.5 app-accent" strokeWidth={3} />
-                  </span>
-                  <span className="app-muted text-[11px] leading-snug">{feature}</span>
+          {/* Premium Features Grid */}
+          <motion.div variants={itemVariants} className="space-y-3 mb-8">
+            {features.map((feature, idx) => (
+              <div key={idx} className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-md">
+                <div className="flex-shrink-0 bg-white/5 p-2 rounded-xl">
+                  {feature.icon}
                 </div>
-              ))}
-            </div>
-          </div>
+                <p className="text-sm font-medium text-white/90">{feature.text}</p>
+              </div>
+            ))}
+          </motion.div>
 
-          {/* Social proof quote */}
-          <div
-            className={cn("rounded-[1.1rem] px-4 py-3.5", isShortPhone ? "mb-3" : "mb-4")}
-            style={{
-              background: "linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 7%, transparent), transparent)",
-              border: "1px solid color-mix(in srgb, var(--app-accent) 18%, transparent)",
-            }}
-          >
-            <p className="app-heading font-serif text-[1rem] leading-snug italic">
-              "Changed how I start my mornings."
-            </p>
-            <p className="app-muted mt-1.5 text-[11px] font-medium">— Sarah M., using Bible Nova daily</p>
-          </div>
-
-          {showAndroidBillingUnavailable ? (
-            <div
-              className="mb-4 flex items-start gap-3 rounded-[1.1rem] px-4 py-4 text-sm"
-              style={{
-                background: "color-mix(in srgb, var(--app-accent-soft) 55%, transparent)",
-                border: "1px solid color-mix(in srgb, var(--app-accent) 20%, transparent)",
-                color: "var(--app-text)",
-              }}
-            >
-              <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" style={{ color: "var(--app-accent)" }} />
-              <p className="leading-relaxed">
-                Premium is available in the Android app via Google Play. Sign in on Android with this account to subscribe or restore access.
+          {/* Social Proof */}
+          <motion.div variants={itemVariants} className="mb-8">
+            <div className="relative bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20 rounded-2xl p-5 overflow-hidden">
+              <div className="absolute top-0 right-0 p-4 opacity-10">
+                <Star className="w-16 h-16 text-amber-500 rotate-12" />
+              </div>
+              <p className="text-[17px] font-serif italic leading-relaxed text-white/90 relative z-10">
+                "Bible Nova completely changed how I start my mornings. The reflections feel incredibly personal."
               </p>
+              <div className="mt-3 flex items-center gap-2">
+                <div className="flex text-amber-400">
+                  {[...Array(5)].map((_, i) => <Star key={i} className="w-3.5 h-3.5 fill-current" />)}
+                </div>
+                <span className="text-xs text-white/50 font-medium">— Sarah M.</span>
+              </div>
             </div>
+          </motion.div>
+
+          {/* Android Unavailable Warning */}
+          {showAndroidBillingUnavailable ? (
+            <motion.div variants={itemVariants} className="mb-6 flex items-start gap-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4">
+              <ShieldCheck className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <p className="text-sm text-rose-100/80 leading-relaxed">
+                Premium subscriptions are currently managed via the Android app on Google Play. Please sign in on an Android device to subscribe or restore.
+              </p>
+            </motion.div>
           ) : (
-          <div>
-            <div className="mb-3 flex items-end justify-between gap-3">
-              <div>
-                <p className="app-kicker text-[9px]">Choose your rhythm</p>
-                <p className="app-muted mt-1 text-[11px]">Switch anytime from your account.</p>
-              </div>
-              <span className="app-soft shrink-0 text-[10px]">2 plans</span>
-            </div>
-          <div role="radiogroup" aria-label="Subscription plan" className="mb-4 flex flex-col gap-2 sm:grid sm:grid-cols-2">
-            <button
-              ref={monthlyRef}
-              role="radio"
-              aria-checked={selectedPlan === "monthly"}
-              disabled={nativeStoreAvailable && !iapPackages.monthly}
-              tabIndex={selectedPlan === "monthly" ? 0 : -1}
-              onClick={() => setSelectedPlan("monthly")}
-              onKeyDown={handlePlanKey}
-              className={cn("touch-target app-paywall-plan relative order-2 flex min-h-[5.75rem] items-center justify-between gap-3 rounded-[1rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-3.5")}
-              style={{
-                backgroundColor: selectedPlan === "monthly" ? "var(--app-surface-muted)" : "var(--app-surface-solid)",
-                backgroundImage: selectedPlan === "monthly" ? "linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 12%, transparent), transparent 72%)" : "none",
-                borderColor:
-                  selectedPlan === "monthly"
-                    ? "color-mix(in srgb, var(--app-accent) 36%, transparent)"
-                    : "var(--app-card-border)",
-                boxShadow: selectedPlan === "monthly" ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 14%, transparent)" : "none",
-              }}
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="app-heading text-sm font-semibold">Monthly</span>
-                  {selectedPlan === "monthly" && (
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent)" }}>
-                      <Check className="h-3 w-3 text-white" strokeWidth={3} />
-                    </span>
-                  )}
-                </div>
-                <p className="app-muted mt-1 text-[11px] leading-snug">Flexible, billed monthly</p>
-              </div>
-              <div className="shrink-0 text-right">
-                <div className={cn("app-heading break-words font-serif leading-none", isShortPhone ? "text-[1.4rem]" : "text-2xl")}>{monthlyPrice}</div>
-                <div className="app-soft mt-1 text-[10px]">per month</div>
-              </div>
-            </button>
-
-            <button
-              ref={yearlyRef}
-              role="radio"
-              aria-checked={selectedPlan === "yearly"}
-              disabled={nativeStoreAvailable && !iapPackages.yearly}
-              tabIndex={selectedPlan === "yearly" ? 0 : -1}
-              onClick={() => setSelectedPlan("yearly")}
-              onKeyDown={handlePlanKey}
-              className={cn("touch-target app-paywall-plan relative order-1 flex min-h-[6.25rem] items-center justify-between gap-3 rounded-[1rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-3.5")}
-              style={{
-                backgroundColor: selectedPlan === "yearly" ? "var(--app-surface-muted)" : "var(--app-surface-solid)",
-                backgroundImage: selectedPlan === "yearly"
-                  ? "linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 16%, transparent), transparent 68%)"
-                  : "none",
-                borderColor: selectedPlan === "yearly"
-                  ? "color-mix(in srgb, var(--app-accent) 52%, transparent)"
-                  : "var(--app-card-border)",
-                boxShadow: selectedPlan === "yearly"
-                  ? "0 0 0 1.5px color-mix(in srgb, var(--app-accent) 22%, transparent), 0 8px 24px color-mix(in srgb, var(--app-accent) 14%, transparent)"
-                  : "none",
-              }}
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="app-heading text-sm font-semibold">Yearly</span>
-                  <span className="app-badge-glow inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider">
-                    <Star className="h-3 w-3" fill="currentColor" />
-                    Best value
-                  </span>
-                  {selectedPlan === "yearly" && (
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ background: "var(--app-accent)" }}>
-                      <Check className="h-3 w-3 text-white" strokeWidth={3} />
-                    </span>
-                  )}
-                </div>
-                <p className="app-muted mt-1 text-[11px] leading-snug">The simplest value over a full year</p>
-                {yearlyMonthly && (
-                  <p className="mt-1 text-[10px] font-semibold" style={{ color: "var(--app-accent)" }}>{yearlyMonthly} billed annually</p>
+            /* Pricing Options */
+            <motion.div variants={itemVariants} className="mb-8 space-y-3">
+              <button
+                ref={yearlyRef}
+                onClick={() => setSelectedPlan("yearly")}
+                className={cn(
+                  "w-full relative flex items-center justify-between p-5 rounded-[1.5rem] border text-left transition-all duration-300",
+                  selectedPlan === "yearly" 
+                    ? "bg-gradient-to-br from-amber-500/15 to-transparent border-amber-500/50 shadow-[0_0_30px_rgba(245,158,11,0.15)] scale-[1.02]" 
+                    : "bg-white/5 border-white/10 hover:bg-white/10"
                 )}
-              </div>
-              <div className="shrink-0 text-right">
-                <div className={cn("app-heading break-words font-serif leading-none", isShortPhone ? "text-[1.4rem]" : "text-2xl")}>{yearlyPrice}</div>
-                <div className="app-soft mt-1 text-[10px]">per year</div>
-              </div>
-            </button>
-          </div>
-          </div>
+              >
+                {selectedPlan === "yearly" && (
+                  <motion.div layoutId="plan-outline" className="absolute inset-0 border-2 border-amber-500 rounded-[1.5rem] pointer-events-none" />
+                )}
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-semibold text-lg">Yearly</span>
+                    <span className="bg-amber-500 text-amber-950 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Star className="w-3 h-3 fill-current" /> Best Value
+                    </span>
+                  </div>
+                  {yearlyMonthly && <p className="text-amber-400 text-sm font-medium">{yearlyMonthly} billed annually</p>}
+                </div>
+                <div className="text-right pl-4">
+                  <div className="text-2xl font-bold font-serif">{yearlyPrice}</div>
+                  <div className="text-xs text-white/50">/year</div>
+                </div>
+              </button>
+
+              <button
+                ref={monthlyRef}
+                onClick={() => setSelectedPlan("monthly")}
+                className={cn(
+                  "w-full relative flex items-center justify-between p-5 rounded-[1.5rem] border text-left transition-all duration-300",
+                  selectedPlan === "monthly" 
+                    ? "bg-gradient-to-br from-amber-500/15 to-transparent border-amber-500/50 shadow-[0_0_30px_rgba(245,158,11,0.15)] scale-[1.02]" 
+                    : "bg-white/5 border-white/10 hover:bg-white/10"
+                )}
+              >
+                {selectedPlan === "monthly" && (
+                  <motion.div layoutId="plan-outline" className="absolute inset-0 border-2 border-amber-500 rounded-[1.5rem] pointer-events-none" />
+                )}
+                <div className="flex-1">
+                  <span className="font-semibold text-lg">Monthly</span>
+                  <p className="text-white/50 text-sm mt-1">Flexible, cancel anytime</p>
+                </div>
+                <div className="text-right pl-4">
+                  <div className="text-2xl font-bold font-serif">{monthlyPrice}</div>
+                  <div className="text-xs text-white/50">/month</div>
+                </div>
+              </button>
+            </motion.div>
           )}
 
-          {error && (
-            <div
-              role="alert"
-              className="mb-4 flex items-start gap-2 rounded-card px-4 py-3 text-sm"
-              style={{
-                background: "var(--app-danger-soft)",
-                border: "1px solid color-mix(in srgb, var(--app-danger) 28%, transparent)",
-                color: "var(--app-danger)",
-              }}
-            >
-              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-              <span>{error}</span>
-            </div>
+          {/* Errors */}
+          {(error || iapLoadError) && (
+            <motion.div variants={itemVariants} className="mb-6 flex items-start gap-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4">
+              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <p className="text-sm text-rose-100/80">{error || iapLoadError}</p>
+            </motion.div>
           )}
 
-          {nativeStoreAvailable && iapLoadError && (
-            <div
-              role="alert"
-              className="mb-4 flex items-start gap-2 rounded-card px-4 py-3 text-sm"
-              style={{
-                background: "color-mix(in srgb, var(--app-accent-soft) 78%, transparent)",
-                border: "1px solid color-mix(in srgb, var(--app-accent) 26%, transparent)",
-                color: "var(--app-accent-strong)",
-              }}
-            >
-              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-              <span>{iapLoadError}</span>
-            </div>
-          )}
-
+          {/* CTA & Footer */}
           {nativeStoreAvailable && (
-            <div className="sanctuary-action mb-4">
+            <motion.div variants={itemVariants} className="space-y-4">
               <button
                 onClick={handleSubscribe}
                 disabled={!canSubscribe}
-                aria-busy={isLoading}
-                className={cn("touch-target app-primary-button app-card-shimmer flex w-full items-center justify-center gap-2 rounded-[1rem] font-semibold text-white transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "py-3.5" : "py-4")}
+                className="relative w-full overflow-hidden group bg-gradient-to-r from-amber-500 to-amber-600 text-amber-950 font-bold text-lg rounded-2xl py-4 flex items-center justify-center gap-2 hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed shadow-[0_8px_30px_rgba(245,158,11,0.3)] hover:shadow-[0_8px_40px_rgba(245,158,11,0.4)] hover:-translate-y-0.5"
               >
+                {/* Shimmer effect */}
+                <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
+                
                 {isLoading ? (
-                  <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-2 border-amber-950/30 border-t-amber-950 rounded-full animate-spin" />
                 ) : isLoadingOffering ? (
-                  "Loading Google Play..."
+                  "Loading..."
                 ) : nativeSelectedPlanUnavailable ? (
                   "Plan unavailable"
-                ) : (`Continue with ${selectedPlanLabel}`)}
+                ) : (
+                  <>Continue with {selectedPlanLabel}</>
+                )}
               </button>
-              <div className="mt-3 flex items-center justify-center gap-2 text-center">
-                <ShieldCheck className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--app-success)" }} />
-                <p className="app-muted text-[11px] leading-relaxed">
-                  Secure payment through Google Play. Cancel anytime in Google Play.
-                </p>
+              
+              <div className="flex items-center justify-center gap-1.5 text-xs text-white/50">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Secure payment via Google Play. Cancel anytime.</span>
               </div>
-            </div>
+              
+              <div className="flex items-center justify-center gap-4 pt-2">
+                <button onClick={handleRestorePurchases} disabled={isLoading} className="text-xs text-white/50 hover:text-white transition-colors">Restore Purchase</button>
+                <div className="w-1 h-1 rounded-full bg-white/20" />
+                <button onClick={handleManageSubscriptions} disabled={isLoading} className="text-xs text-white/50 hover:text-white transition-colors">Manage Billing</button>
+              </div>
+            </motion.div>
           )}
-
-          {nativeStoreAvailable && (
-            <div className="mb-4 flex items-center justify-center gap-2">
-              <button
-                onClick={handleRestorePurchases}
-                disabled={isLoading}
-                className="touch-target app-ghost-button flex-1 rounded-pill px-2 py-2.5 text-[12px] font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-              >
-                Restore access
-              </button>
-              <button
-                onClick={handleManageSubscriptions}
-                disabled={isLoading}
-                className="touch-target app-ghost-button flex-1 rounded-pill px-2 py-2.5 text-[12px] font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-              >
-                Manage billing
-              </button>
-            </div>
-          )}
-
-          <p className="app-muted mx-auto max-w-sm px-2 text-center text-[11px] leading-relaxed" style={{ marginTop: "0.75rem" }}>
-            By subscribing, you agree to the Terms of Service and Privacy Policy. Subscriptions automatically renew unless canceled.
-          </p>
+          
+          <motion.p variants={itemVariants} className="text-center text-[10px] text-white/30 mt-8 mb-4 max-w-xs mx-auto">
+            By continuing, you agree to our Terms of Service and Privacy Policy. Subscriptions automatically renew unless canceled at least 24 hours before the end of the current period.
+          </motion.p>
+          
         </motion.div>
       </div>
-
     </div>
   );
 }
