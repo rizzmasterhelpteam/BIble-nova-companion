@@ -196,7 +196,7 @@ export default function App() {
     const isAndroid = isNativePlatform() && getNativePlatform() === "android";
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, prefersReducedMotion ? 180 : isAndroid ? 520 : 640);
+    }, prefersReducedMotion ? 200 : isAndroid ? 1000 : 1800);
 
     return () => clearTimeout(timer);
   }, [hasRenderedAppFrame]);
@@ -240,7 +240,13 @@ export default function App() {
           </AuthProvider>
         </HapticsProvider>
 
-        {showSplash && <SplashScreen />}
+        <AnimatePresence mode="wait">
+          {showSplash && (
+            <motion.div key="splash" style={{ position: "fixed", inset: 0, zIndex: 100 }}>
+              <SplashScreen />
+            </motion.div>
+          )}
+        </AnimatePresence>
         <ConnectivityNotice />
       </MobileViewportProvider>
     </ThemeProvider>

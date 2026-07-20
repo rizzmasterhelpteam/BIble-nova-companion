@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Check, BookOpen, ChevronRight, Wind } from "lucide-react";
@@ -85,6 +85,25 @@ const getAnalysisSummary = (answers: Record<string, string>) => {
   };
 };
 
+// Defined outside component to avoid re-creating on every render
+const BackgroundOrbs = memo(() => (
+  <>
+    <motion.div
+      animate={{ scale: [1, 1.2, 1], opacity: [0.25, 0.4, 0.25], x: [0, 30, 0], y: [0, -40, 0] }}
+      transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+      className="pointer-events-none absolute -top-[10%] -left-[10%] h-[500px] w-[500px] rounded-full"
+      style={{ background: "rgba(245,158,11,0.08)", filter: "blur(100px)" }}
+    />
+    <motion.div
+      animate={{ scale: [1, 1.3, 1], opacity: [0.15, 0.28, 0.15], x: [0, -30, 0], y: [0, 30, 0] }}
+      transition={{ duration: 18, repeat: Infinity, ease: "linear", delay: 2 }}
+      className="pointer-events-none absolute top-[50%] -right-[10%] h-[600px] w-[600px] rounded-full"
+      style={{ background: "rgba(239,68,68,0.07)", filter: "blur(120px)" }}
+    />
+  </>
+));
+BackgroundOrbs.displayName = "BackgroundOrbs";
+
 export default function Onboarding() {
   useDocumentTitle("Welcome | Bible Nova Companion");
   const { isCompactPhone, isShortPhone: viewportShortPhone, visibleHeight, width } = useMobileViewport();
@@ -121,10 +140,9 @@ export default function Onboarding() {
     const question = questions[currentStep];
     setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: optionId }));
     
-    // Auto-advance after a tiny delay for a premium feel
     setTimeout(() => {
       handleContinue(optionId);
-    }, 400);
+    }, 380);
   };
 
   const handleContinue = (overrideAnswer?: string) => {
@@ -160,21 +178,6 @@ export default function Onboarding() {
     window.requestAnimationFrame(() => navigate("/", { replace: true }));
   };
 
-  const BackgroundOrbs = () => (
-    <>
-      <motion.div
-        animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.4, 0.3], x: [0, 30, 0], y: [0, -40, 0] }}
-        transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-        className="absolute -top-[10%] -left-[10%] h-[500px] w-[500px] rounded-full bg-amber-500/10 blur-[100px] pointer-events-none"
-      />
-      <motion.div
-        animate={{ scale: [1, 1.3, 1], opacity: [0.2, 0.3, 0.2], x: [0, -30, 0], y: [0, 30, 0] }}
-        transition={{ duration: 18, repeat: Infinity, ease: "linear", delay: 2 }}
-        className="absolute top-[50%] -right-[10%] h-[600px] w-[600px] rounded-full bg-rose-500/10 blur-[120px] pointer-events-none"
-      />
-    </>
-  );
-
   // Staggered welcome screen
   if (!hasStarted) {
     const makeStagger = (delay: number) =>
@@ -187,41 +190,62 @@ export default function Onboarding() {
           };
 
     return (
-      <div className="relative min-h-screen w-full overflow-hidden bg-[#0F0F12] text-white flex flex-col justify-center items-center px-4 py-8">
+      <div className="relative min-h-screen w-full overflow-hidden text-white flex flex-col justify-center items-center px-5 py-10" style={{ background: "#0F0F12" }}>
         <BackgroundOrbs />
         
         <div className="relative z-10 w-full max-w-md flex flex-col items-center text-center">
-          {/* Logo — scale in */}
+          {/* Logo */}
           <motion.div
             className="mb-8 relative"
-            initial={isPerformanceMode ? false : { opacity: 0, scale: 0.5, rotate: -10 }}
+            initial={isPerformanceMode ? false : { opacity: 0, scale: 0.5, rotate: -12 }}
             animate={{ opacity: 1, scale: 1, rotate: 0 }}
-            transition={{ type: "spring", stiffness: 200, damping: 20, delay: 0.1 }}
+            transition={{ type: "spring", stiffness: 220, damping: 22, delay: 0.1 }}
           >
+            {/* Rotating ring */}
             <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-              className="absolute -inset-4 rounded-full border border-amber-500/20 border-t-amber-500/60"
+              animate={isPerformanceMode ? {} : { rotate: 360 }}
+              transition={{ duration: 22, repeat: Infinity, ease: "linear" }}
+              className="absolute -inset-4 rounded-full"
+              style={{
+                border: "1.5px solid transparent",
+                borderTopColor: "rgba(245,158,11,0.65)",
+                borderRightColor: "rgba(245,158,11,0.15)",
+              }}
             />
-            <div className="h-24 w-24 rounded-full overflow-hidden shadow-[0_0_50px_rgba(245,158,11,0.25)] bg-gradient-to-br from-[#1a1a1e] to-[#0F0F12] p-1.5 flex items-center justify-center">
-              <AppLogo className="h-full w-full object-cover rounded-full" />
+            {/* Logo container */}
+            <div
+              className="h-24 w-24 rounded-full overflow-hidden flex items-center justify-center"
+              style={{
+                background: "linear-gradient(135deg, #1a1a1e, #0F0F12)",
+                boxShadow: "0 0 50px rgba(245,158,11,0.22)",
+                padding: "5px",
+              }}
+            >
+              <div className="h-full w-full rounded-full overflow-hidden">
+                <AppLogo className="h-full w-full object-cover" />
+              </div>
             </div>
           </motion.div>
 
-          <motion.div {...makeStagger(0.2)} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/70 text-xs font-semibold tracking-wider uppercase mb-5">
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            Welcome to Bible Nova
+          <motion.div
+            {...makeStagger(0.2)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full mb-5"
+            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-white/70 text-xs font-semibold tracking-wider uppercase">Welcome to Bible Nova</span>
           </motion.div>
           
           <motion.h1
-            className="font-serif text-4xl sm:text-5xl leading-tight mb-4 tracking-tight bg-gradient-to-br from-white to-white/60 bg-clip-text text-transparent"
+            className="font-serif text-4xl sm:text-5xl leading-tight mb-4 tracking-tight"
+            style={{ background: "linear-gradient(180deg, #fff 0%, rgba(255,255,255,0.6) 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}
             {...makeStagger(0.3)}
           >
             A quieter place to return to.
           </motion.h1>
           
           <motion.p
-            className="text-white/60 text-[15px] sm:text-[16px] leading-relaxed max-w-sm mb-10"
+            className="text-white/55 text-[15px] sm:text-[16px] leading-relaxed max-w-sm mb-10"
             {...makeStagger(0.4)}
           >
             Answer three thoughtful questions to shape your personalized reflection space.
@@ -231,17 +255,23 @@ export default function Onboarding() {
           <motion.div className="w-full" {...makeStagger(0.5)}>
             <button
               onClick={() => setHasStarted(true)}
-              className="relative w-full overflow-hidden group bg-gradient-to-r from-amber-500 to-amber-600 text-amber-950 font-bold text-lg rounded-[1.25rem] py-4 flex items-center justify-center gap-2 hover:from-amber-400 hover:to-amber-500 transition-all shadow-[0_8px_30px_rgba(245,158,11,0.3)] hover:shadow-[0_8px_40px_rgba(245,158,11,0.4)] hover:-translate-y-1"
+              className="relative w-full overflow-hidden group text-amber-950 font-bold text-lg rounded-[1.25rem] py-4 flex items-center justify-center gap-2 transition-all"
+              style={{
+                background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                boxShadow: "0 8px 30px rgba(245,158,11,0.32)",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 10px 40px rgba(245,158,11,0.44)"; (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-2px)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 8px 30px rgba(245,158,11,0.32)"; (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)"; }}
             >
-              <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
+              <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12 pointer-events-none" />
               Begin Your Journey
               <ChevronRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
             </button>
           </motion.div>
           
-          <motion.div className="mt-6 flex items-center justify-center gap-2 text-white/30 text-xs" {...makeStagger(0.6)}>
+          <motion.div className="mt-6 flex items-center justify-center gap-2" style={{ color: "rgba(255,255,255,0.28)" }} {...makeStagger(0.6)}>
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Your answers are private.</span>
+            <span className="text-xs">Your answers are private.</span>
           </motion.div>
         </div>
       </div>
@@ -252,77 +282,99 @@ export default function Onboarding() {
     const analysis = getAnalysisSummary(answers);
 
     return (
-      <div className="relative min-h-screen w-full overflow-hidden bg-[#0F0F12] text-white flex flex-col justify-center items-center px-4 py-6">
+      <div className="relative w-full overflow-y-auto text-white flex flex-col justify-center items-center px-4 py-8" style={{ minHeight: "100dvh", background: "#0F0F12" }}>
         <BackgroundOrbs />
 
         <motion.div
-          initial={isPerformanceMode ? false : { opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-          className="relative z-10 w-full max-w-md flex flex-col"
+          initial={isPerformanceMode ? false : { opacity: 0, scale: 0.96, y: 12 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+          className="relative z-10 w-full max-w-md flex flex-col py-2"
         >
           <button
             onClick={handleBack}
-            className="self-start inline-flex items-center gap-2 rounded-full px-4 py-2 bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white transition-colors text-sm font-medium mb-8"
+            className="self-start inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium mb-8 transition-colors"
+            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.1)"; (e.currentTarget as HTMLButtonElement).style.color = "#fff"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)"; (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.7)"; }}
           >
             <ArrowLeft className="w-4 h-4" />
             Back
           </button>
 
           <div className="text-center mb-8">
-            <span className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-500/20 text-amber-500 mb-4 border border-amber-500/30">
-              <Check className="w-6 h-6" strokeWidth={3} />
+            <span className="inline-flex items-center justify-center w-14 h-14 rounded-full mb-4" style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)" }}>
+              <Check className="w-7 h-7 text-amber-400" strokeWidth={2.5} />
             </span>
-            <h2 className="font-serif text-3xl sm:text-4xl leading-tight mb-3 bg-gradient-to-br from-white to-white/60 bg-clip-text text-transparent">
+            <h2 className="font-serif text-3xl sm:text-4xl leading-tight mb-3" style={{ background: "linear-gradient(180deg, #fff, rgba(255,255,255,0.6))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
               Your space is ready.
             </h2>
-            <p className="text-white/60 text-[15px] leading-relaxed max-w-sm mx-auto">
+            <p className="text-[15px] leading-relaxed max-w-sm mx-auto" style={{ color: "rgba(255,255,255,0.58)" }}>
               {analysis.overview}
             </p>
+          </div>
+
+          {/* Progress complete indicator */}
+          <div className="flex items-center gap-2 mb-8 px-1">
+            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+              <motion.div
+                className="h-full rounded-full"
+                style={{ background: "linear-gradient(90deg, #f59e0b, #fbbf24)" }}
+                initial={{ width: 0 }}
+                animate={{ width: "100%" }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+              />
+            </div>
+            <span className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: "rgba(255,255,255,0.35)" }}>Complete</span>
           </div>
 
           <div className="space-y-4 mb-8">
             {/* Scripture preview */}
             <motion.div
-              className="bg-gradient-to-br from-white/10 to-white/5 border border-white/10 rounded-[1.5rem] p-6 backdrop-blur-md relative overflow-hidden"
-              initial={isPerformanceMode ? false : { opacity: 0, y: 15 }}
+              className="relative overflow-hidden rounded-[1.5rem] p-6"
+              style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04))", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}
+              initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
             >
-              <div className="absolute top-0 right-0 p-6 opacity-5 pointer-events-none">
+              <div className="absolute top-0 right-0 p-5 pointer-events-none" style={{ opacity: 0.05 }}>
                 <BookOpen className="w-24 h-24 rotate-12" />
               </div>
               <div className="flex items-center justify-between mb-4 relative z-10">
-                <span className="text-white/50 text-[10px] uppercase tracking-widest font-semibold">Glimpse</span>
-                <span className="bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider">Personalized</span>
+                <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Glimpse</span>
+                <span className="rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-amber-400" style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.25)" }}>Personalized</span>
               </div>
-              <p className="font-serif text-[1.5rem] leading-snug mb-2 text-white/90 relative z-10">"Be still, and know that I am God."</p>
-              <p className="text-amber-500 text-[11px] font-bold uppercase tracking-widest relative z-10">Psalm 46:10</p>
+              <p className="font-serif text-[1.5rem] leading-snug mb-2 relative z-10" style={{ color: "rgba(255,255,255,0.9)" }}>"Be still, and know that I am God."</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest relative z-10 text-amber-400">Psalm 46:10</p>
             </motion.div>
 
-            {/* Next step */}
+            {/* How we'll help */}
             <motion.div
-              className="bg-gradient-to-br from-amber-500/15 to-transparent border border-amber-500/30 rounded-[1.5rem] p-5 relative overflow-hidden"
-              initial={isPerformanceMode ? false : { opacity: 0, y: 15 }}
+              className="rounded-[1.5rem] p-5 relative overflow-hidden"
+              style={{ background: "linear-gradient(135deg, rgba(245,158,11,0.12), transparent)", border: "1px solid rgba(245,158,11,0.25)" }}
+              initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
+              transition={{ duration: 0.5, delay: 0.32 }}
             >
               <div className="flex items-center gap-3 mb-3 relative z-10">
-                <div className="bg-amber-500 text-amber-950 p-1.5 rounded-lg">
+                <div className="p-1.5 rounded-lg text-amber-950" style={{ background: "#f59e0b" }}>
                   <Sparkles className="w-4 h-4" />
                 </div>
-                <span className="text-amber-400 text-[10px] font-bold uppercase tracking-widest">How we'll help</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400">How we'll help</span>
               </div>
-              <p className="text-white/80 text-[14px] leading-relaxed relative z-10">{analysis.appResponse}</p>
+              <p className="text-[14px] leading-relaxed relative z-10" style={{ color: "rgba(255,255,255,0.78)" }}>{analysis.appResponse}</p>
             </motion.div>
           </div>
 
           <motion.button
             onClick={handleGetStarted}
-            className="w-full bg-white text-black font-bold text-lg rounded-[1.25rem] py-4 flex items-center justify-center transition-all hover:bg-gray-100 shadow-[0_0_40px_rgba(255,255,255,0.15)] hover:shadow-[0_0_50px_rgba(255,255,255,0.25)] hover:-translate-y-1"
-            initial={isPerformanceMode ? false : { opacity: 0, y: 15 }}
+            className="w-full font-bold text-lg rounded-[1.25rem] py-4 flex items-center justify-center transition-all"
+            style={{ background: "#fff", color: "#000" }}
+            initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.4 }}
+            transition={{ duration: 0.5, delay: 0.44 }}
+            whileHover={isPerformanceMode ? {} : { scale: 1.01, boxShadow: "0 0 50px rgba(255,255,255,0.22)" }}
+            whileTap={isPerformanceMode ? {} : { scale: 0.98 }}
           >
             Enter Sanctuary
           </motion.button>
@@ -332,19 +384,21 @@ export default function Onboarding() {
   }
 
   const question = questions[currentStep];
-  const completedCount = questions.filter((item) => Boolean(answers[item.id])).length;
-  const progressPercent = ((currentStep) / (questions.length - 1)) * 100;
+  // Fixed: progress shows filled steps correctly (step 1 = 33%, step 2 = 66%, step 3 = 100%)
+  const progressPercent = ((currentStep + 1) / questions.length) * 100;
 
-  // Slide direction: forward = slide left in, backward = slide right in
   const isGoingForward = prevStep < currentStep;
   const slideVariants = {
-    initial: { opacity: 0, x: isGoingForward ? 40 : -40, scale: 0.95 },
+    initial: { opacity: 0, x: isGoingForward ? 48 : -48, scale: 0.96 },
     animate: { opacity: 1, x: 0, scale: 1 },
-    exit: { opacity: 0, x: isGoingForward ? -40 : 40, scale: 0.95 },
+    exit: { opacity: 0, x: isGoingForward ? -48 : 48, scale: 0.96 },
   };
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-[#0F0F12] text-white flex flex-col pt-12 pb-8 px-4">
+    <div
+      className="relative w-full overflow-y-auto text-white flex flex-col pt-12 pb-8 px-4"
+      style={{ minHeight: "100dvh", background: "#0F0F12" }}
+    >
       <BackgroundOrbs />
 
       <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col">
@@ -352,23 +406,27 @@ export default function Onboarding() {
         <div className="flex items-center justify-between mb-8">
           <button
             onClick={handleBack}
-            className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500"
+            className="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors focus:outline-none"
+            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.1)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)"; }}
             aria-label="Go back"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
 
-          <div className="flex-1 max-w-[150px] ml-4">
-            <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-              <motion.div 
-                className="h-full bg-amber-500 rounded-full"
+          <div className="flex-1 max-w-[160px] ml-4">
+            <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+              <motion.div
+                className="h-full rounded-full"
+                style={{ background: "linear-gradient(90deg, #f59e0b, #fbbf24)" }}
                 initial={{ width: 0 }}
                 animate={{ width: `${progressPercent}%` }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
+                transition={{ duration: 0.45, ease: "easeOut" }}
               />
             </div>
             <div className="text-right mt-1.5">
-              <span className="text-[10px] text-white/40 font-semibold tracking-widest uppercase">
+              <span className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: "rgba(255,255,255,0.35)" }}>
                 Step {currentStep + 1} of {questions.length}
               </span>
             </div>
@@ -383,13 +441,16 @@ export default function Onboarding() {
               initial={isPerformanceMode ? false : "initial"}
               animate="animate"
               exit={isPerformanceMode ? undefined : "exit"}
-              transition={{ type: "spring", stiffness: 260, damping: 25 }}
+              transition={{ type: "spring", stiffness: 280, damping: 26 }}
               className="w-full"
             >
-              <h1 className="font-serif text-3xl sm:text-4xl leading-tight mb-3 tracking-tight bg-gradient-to-br from-white to-white/70 bg-clip-text text-transparent">
+              <h1
+                className="font-serif text-3xl sm:text-4xl leading-tight mb-3 tracking-tight"
+                style={{ background: "linear-gradient(180deg, #fff, rgba(255,255,255,0.7))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}
+              >
                 {question.title}
               </h1>
-              <p className="text-white/50 text-[14px] mb-8">
+              <p className="text-[14px] mb-8" style={{ color: "rgba(255,255,255,0.45)" }}>
                 Choose what feels most true right now.
               </p>
 
@@ -402,54 +463,55 @@ export default function Onboarding() {
                       role="radio"
                       aria-checked={isSelected}
                       onClick={() => handleSelect(option.id)}
-                      whileHover={isPerformanceMode ? {} : { scale: 1.02 }}
+                      whileHover={isPerformanceMode ? {} : { scale: 1.02, y: -1 }}
                       whileTap={isPerformanceMode ? {} : { scale: 0.98 }}
-                      className={cn(
-                        "w-full flex items-center justify-between p-4 sm:p-5 rounded-2xl text-left transition-all duration-300 border focus:outline-none focus:ring-2 focus:ring-amber-500 group overflow-hidden relative",
-                        isSelected 
-                          ? "bg-amber-500/10 border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.1)]" 
-                          : "bg-white/5 border-white/10 hover:bg-white/10"
-                      )}
-                      initial={isPerformanceMode ? false : { opacity: 0, y: 15 }}
+                      className="w-full flex items-center justify-between p-4 sm:p-5 rounded-2xl text-left transition-all duration-300 relative overflow-hidden"
+                      style={{
+                        background: isSelected ? "rgba(245,158,11,0.1)" : "rgba(255,255,255,0.04)",
+                        border: `1px solid ${isSelected ? "rgba(245,158,11,0.48)" : "rgba(255,255,255,0.08)"}`,
+                        boxShadow: isSelected ? "0 0 24px rgba(245,158,11,0.08)" : "none",
+                        outline: "none",
+                      }}
+                      initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.4, delay: optIdx * 0.08 }}
+                      transition={{ duration: 0.38, delay: optIdx * 0.07 }}
                     >
-                      {/* Active glow background */}
                       {isSelected && (
-                        <motion.div 
-                          layoutId="active-bg"
-                          className="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-transparent pointer-events-none"
+                        <motion.div
+                          layoutId="active-option-bg"
+                          className="absolute inset-0 pointer-events-none"
+                          style={{ background: "linear-gradient(90deg, rgba(245,158,11,0.06), transparent)" }}
                         />
                       )}
                       
                       <div className="flex items-center gap-4 relative z-10">
                         {option.icon && (
                           <div
-                            className={cn(
-                              "p-2.5 rounded-xl transition-colors duration-300",
-                              isSelected ? "bg-amber-500 text-amber-950" : "bg-white/5 text-white/50 group-hover:text-white/80 group-hover:bg-white/10"
-                            )}
+                            className="p-2.5 rounded-xl transition-colors duration-300"
+                            style={{
+                              background: isSelected ? "#f59e0b" : "rgba(255,255,255,0.05)",
+                              color: isSelected ? "#422006" : "rgba(255,255,255,0.45)",
+                            }}
                           >
                             {option.icon}
                           </div>
                         )}
                         <span
-                          className={cn(
-                            "text-[15px] sm:text-[16px] transition-colors duration-300",
-                            isSelected ? "text-amber-500 font-semibold" : "text-white/80 font-medium"
-                          )}
+                          className="text-[15px] sm:text-[16px] transition-colors duration-300 font-medium"
+                          style={{ color: isSelected ? "#f59e0b" : "rgba(255,255,255,0.78)" }}
                         >
                           {option.label}
                         </span>
                       </div>
                       
                       <div
-                        className={cn(
-                          "flex shrink-0 items-center justify-center rounded-full border-2 transition-all duration-300 w-6 h-6 relative z-10",
-                          isSelected ? "border-amber-500 bg-amber-500" : "border-white/20 bg-transparent group-hover:border-white/40"
-                        )}
+                        className="flex shrink-0 items-center justify-center rounded-full border-2 transition-all duration-300 w-6 h-6 relative z-10 ml-3"
+                        style={{
+                          borderColor: isSelected ? "#f59e0b" : "rgba(255,255,255,0.18)",
+                          background: isSelected ? "#f59e0b" : "transparent",
+                        }}
                       >
-                        {isSelected && <Check className="w-3.5 h-3.5 text-amber-950" strokeWidth={4} />}
+                        {isSelected && <Check className="w-3.5 h-3.5 text-amber-950" strokeWidth={3.5} />}
                       </div>
                     </motion.button>
                   );

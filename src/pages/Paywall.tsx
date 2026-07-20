@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Check, Star, AlertCircle, ShieldCheck, Sparkles, HeartHandshake, Zap, Lock, BookOpen } from "lucide-react";
+import { Check, Star, AlertCircle, ShieldCheck, Sparkles, HeartHandshake, Lock, BookOpen } from "lucide-react";
 import { AppLogo } from "../components/AppLogo";
 import { motion, useReducedMotion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
@@ -42,8 +42,7 @@ type ApiStatusResponse = {
 
 export default function Paywall() {
   useDocumentTitle("Subscribe | Bible Nova Companion");
-  const { isCompactPhone, isShortPhone } = useMobileViewport();
-  const shouldTopAlign = isShortPhone;
+  const { isShortPhone } = useMobileViewport();
   const prefersReducedMotion = useReducedMotion();
   const isPerformanceMode = Boolean(
     prefersReducedMotion || (isNativePlatform() && getNativePlatform() === "android"),
@@ -107,9 +106,7 @@ export default function Paywall() {
         if (isMounted) setIsLoadingOffering(false);
       });
 
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [nativeStoreAvailable]);
 
   useEffect(() => {
@@ -130,18 +127,13 @@ export default function Paywall() {
         }
       })
       .catch(() => {});
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [nativeStoreAvailable]);
 
   useEffect(() => {
     if (!nativeStoreAvailable || isLoadingOffering || iapPackages[selectedPlan]) return;
-    if (iapPackages.yearly) {
-      setSelectedPlan("yearly");
-    } else if (iapPackages.monthly) {
-      setSelectedPlan("monthly");
-    }
+    if (iapPackages.yearly) setSelectedPlan("yearly");
+    else if (iapPackages.monthly) setSelectedPlan("monthly");
   }, [iapPackages, isLoadingOffering, nativeStoreAvailable, selectedPlan]);
 
   const selectedNativePackage = iapPackages[selectedPlan];
@@ -199,9 +191,7 @@ export default function Paywall() {
   const getFreshAccessToken = async () => {
     if (!isSupabaseConfigured) return session?.access_token || null;
     const { data, error } = await supabase.auth.getSession();
-    if (error) {
-      console.warn("Could not refresh session before syncing subscription:", error.message);
-    }
+    if (error) console.warn("Could not refresh session before syncing subscription:", error.message);
     return data.session?.access_token || session?.access_token || null;
   };
 
@@ -210,25 +200,16 @@ export default function Paywall() {
     planId?: string,
     expectedProductId?: string,
   ) => {
-    if (!user) {
-      throw new Error("Sign in with Google or email before linking Google Play premium.");
-    }
+    if (!user) throw new Error("Sign in with Google or email before linking Google Play premium.");
     const accessToken = await getFreshAccessToken();
-    if (!accessToken) {
-      throw new Error("Your session expired. Please sign in again before linking Google Play premium.");
-    }
+    if (!accessToken) throw new Error("Your session expired. Please sign in again before linking Google Play premium.");
     const productId = purchase.productIdentifier
       ? getConfiguredProductIdForIdentifier(purchase.productIdentifier) || purchase.productIdentifier.trim()
       : expectedProductId?.trim();
-    if (!productId) {
-      throw new Error("The native purchase was missing its product ID.");
-    }
+    if (!productId) throw new Error("The native purchase was missing its product ID.");
     const response = await apiFetch("/api/subscription/native-sync", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({
         productId,
         planId,
@@ -238,9 +219,7 @@ export default function Paywall() {
       }),
     });
     const data = (await response.json().catch(() => ({}))) as NativeSubscriptionSyncResponse;
-    if (!response.ok) {
-      throw new Error(data.error || "Could not link this subscription to your account.");
-    }
+    if (!response.ok) throw new Error(data.error || "Could not link this subscription to your account.");
     subscribe("native_google_play");
     return data.subscription;
   };
@@ -251,15 +230,11 @@ export default function Paywall() {
     try {
       const purchases = await restorePurchases();
       const restoredPurchase =
-        (purchases.find((purchase) => Boolean((purchase as NativePurchaseTransaction).productIdentifier)) ||
+        (purchases.find((p) => Boolean((p as NativePurchaseTransaction).productIdentifier)) ||
           purchases[0]) as NativePurchaseTransaction | undefined;
-      if (!restoredPurchase?.productIdentifier) {
-        throw new Error("Could not determine which subscription to restore.");
-      }
+      if (!restoredPurchase?.productIdentifier) throw new Error("Could not determine which subscription to restore.");
       const restoredProductId = getConfiguredProductIdForIdentifier(restoredPurchase.productIdentifier);
-      if (!restoredProductId) {
-        throw new Error("The restored purchase does not match a configured subscription.");
-      }
+      if (!restoredProductId) throw new Error("The restored purchase does not match a configured subscription.");
       await syncNativeSubscriptionForAccount(
         restoredPurchase,
         getConfiguredPlanIdForProduct(restoredProductId),
@@ -299,177 +274,214 @@ export default function Paywall() {
   };
 
   const features = [
-    { text: "Unlimited scripture-grounded reflections", icon: <BookOpen className="w-5 h-5 text-amber-500" /> },
-    { text: "Personalized prayers & practical steps", icon: <HeartHandshake className="w-5 h-5 text-rose-500" /> },
-    { text: "A private, distraction-free space", icon: <Lock className="w-5 h-5 text-emerald-500" /> },
+    { text: "Unlimited scripture-grounded reflections", icon: <BookOpen className="w-5 h-5" style={{ color: "#f59e0b" }} /> },
+    { text: "Personalized prayers & practical steps", icon: <HeartHandshake className="w-5 h-5" style={{ color: "#f43f5e" }} /> },
+    { text: "A private, distraction-free space", icon: <Lock className="w-5 h-5" style={{ color: "#10b981" }} /> },
   ];
-
-  const showAndroidBillingUnavailable = !nativeStoreAvailable;
 
   const yearlyMonthly = useMemo(() => {
     if (nativeStoreAvailable && iapPackages.yearly) return null;
     return "≈ $7.50/mo";
   }, [nativeStoreAvailable, iapPackages.yearly]);
 
+  // Show pricing UI on web for preview/demo — only gate subscribe action on native
+  const showPricingCards = true;
+
   const containerVariants = {
     hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1 },
-    }
+    show: { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.05 } },
   };
 
   const itemVariants = {
-    hidden: { opacity: 0, y: 15 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
+    hidden: { opacity: 0, y: 18 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.44, ease: [0.22, 1, 0.36, 1] } },
   };
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-[#0F0F12] text-white">
+    <div
+      className="relative w-full text-white"
+      style={{ minHeight: "100dvh", overflowY: "auto", overflowX: "hidden", background: "#0F0F12" }}
+    >
       {/* Animated Background Orbs */}
       <motion.div
-        animate={{
-          scale: [1, 1.2, 1],
-          opacity: [0.3, 0.5, 0.3],
-          x: [0, 50, 0],
-          y: [0, -30, 0],
-        }}
+        animate={{ scale: [1, 1.2, 1], opacity: [0.25, 0.42, 0.25], x: [0, 50, 0], y: [0, -30, 0] }}
         transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-        className="absolute -top-[20%] -left-[10%] h-[600px] w-[600px] rounded-full bg-amber-500/10 blur-[120px] pointer-events-none"
+        className="pointer-events-none absolute -top-[20%] -left-[10%] h-[600px] w-[600px] rounded-full"
+        style={{ background: "rgba(245,158,11,0.08)", filter: "blur(120px)" }}
       />
       <motion.div
-        animate={{
-          scale: [1, 1.3, 1],
-          opacity: [0.2, 0.4, 0.2],
-          x: [0, -40, 0],
-          y: [0, 40, 0],
-        }}
+        animate={{ scale: [1, 1.3, 1], opacity: [0.15, 0.3, 0.15], x: [0, -40, 0], y: [0, 40, 0] }}
         transition={{ duration: 18, repeat: Infinity, ease: "linear", delay: 2 }}
-        className="absolute top-[40%] -right-[20%] h-[500px] w-[500px] rounded-full bg-rose-500/10 blur-[100px] pointer-events-none"
+        className="pointer-events-none absolute top-[40%] -right-[20%] h-[500px] w-[500px] rounded-full"
+        style={{ background: "rgba(239,68,68,0.06)", filter: "blur(100px)" }}
       />
 
       <div className={cn("relative z-10 flex w-full flex-col items-center justify-start px-4", isShortPhone ? "py-4" : "py-8 sm:py-12")}>
         <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="show"
+          variants={isPerformanceMode ? undefined : containerVariants}
+          initial={isPerformanceMode ? { opacity: 1 } : "hidden"}
+          animate={isPerformanceMode ? { opacity: 1 } : "show"}
           className="w-full max-w-md mx-auto"
         >
           {/* Header Section */}
-          <motion.div variants={itemVariants} className="flex flex-col items-center text-center mb-8">
+          <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="flex flex-col items-center text-center mb-8">
             <div className="relative mb-6">
               <motion.div
-                animate={{ rotate: 360 }}
+                animate={isPerformanceMode ? {} : { rotate: 360 }}
                 transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-                className="absolute -inset-2 rounded-full border border-amber-500/30 border-t-amber-500/80"
+                className="absolute -inset-2 rounded-full"
+                style={{
+                  border: "1.5px solid transparent",
+                  borderTopColor: "rgba(245,158,11,0.75)",
+                  borderRightColor: "rgba(245,158,11,0.2)",
+                }}
               />
-              <div className="h-20 w-20 rounded-full overflow-hidden shadow-[0_0_40px_rgba(245,158,11,0.3)] bg-gradient-to-br from-[#1a1a1e] to-[#0F0F12] p-1 flex items-center justify-center">
-                <AppLogo className="h-full w-full object-cover rounded-full" />
+              <div
+                className="h-20 w-20 rounded-full overflow-hidden flex items-center justify-center p-1"
+                style={{
+                  background: "linear-gradient(135deg, #1a1a1e, #0F0F12)",
+                  boxShadow: "0 0 40px rgba(245,158,11,0.28)",
+                }}
+              >
+                <div className="h-full w-full rounded-full overflow-hidden">
+                  <AppLogo className="h-full w-full object-cover" />
+                </div>
               </div>
             </div>
             
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs font-bold tracking-widest uppercase mb-4">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase mb-4 text-amber-400"
+              style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.22)" }}>
               <Sparkles className="w-3.5 h-3.5" />
               Bible Nova Premium
             </span>
             
-            <h1 className="text-3xl sm:text-4xl font-serif font-medium mb-3 tracking-tight bg-gradient-to-br from-white to-white/60 bg-clip-text text-transparent">
+            <h1 className="text-3xl sm:text-4xl font-serif font-medium mb-3 tracking-tight"
+              style={{ background: "linear-gradient(180deg, #fff, rgba(255,255,255,0.6))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
               Deepen Your Journey
             </h1>
-            <p className="text-white/60 text-[15px] leading-relaxed max-w-[300px]">
+            <p className="text-[15px] leading-relaxed max-w-[300px]" style={{ color: "rgba(255,255,255,0.55)" }}>
               Unlock unlimited personalized reflections, prayers, and a distraction-free spiritual sanctuary.
             </p>
           </motion.div>
 
-          {/* Premium Features Grid */}
-          <motion.div variants={itemVariants} className="space-y-3 mb-8">
+          {/* Premium Features */}
+          <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="space-y-3 mb-8">
             {features.map((feature, idx) => (
-              <div key={idx} className="flex items-center gap-4 bg-white/5 border border-white/10 rounded-2xl p-4 backdrop-blur-md">
-                <div className="flex-shrink-0 bg-white/5 p-2 rounded-xl">
+              <div key={idx}
+                className="flex items-center gap-4 rounded-2xl p-4"
+                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                <div className="flex-shrink-0 p-2 rounded-xl" style={{ background: "rgba(255,255,255,0.06)" }}>
                   {feature.icon}
                 </div>
-                <p className="text-sm font-medium text-white/90">{feature.text}</p>
+                <p className="text-sm font-medium" style={{ color: "rgba(255,255,255,0.88)" }}>{feature.text}</p>
               </div>
             ))}
           </motion.div>
 
           {/* Social Proof */}
-          <motion.div variants={itemVariants} className="mb-8">
-            <div className="relative bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20 rounded-2xl p-5 overflow-hidden">
-              <div className="absolute top-0 right-0 p-4 opacity-10">
-                <Star className="w-16 h-16 text-amber-500 rotate-12" />
+          <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="mb-8">
+            <div className="relative rounded-2xl p-5 overflow-hidden"
+              style={{ background: "linear-gradient(135deg, rgba(245,158,11,0.1), transparent)", border: "1px solid rgba(245,158,11,0.18)" }}>
+              <div className="absolute top-0 right-0 p-4 pointer-events-none" style={{ opacity: 0.08 }}>
+                <Star className="w-16 h-16 text-amber-400 rotate-12" />
               </div>
-              <p className="text-[17px] font-serif italic leading-relaxed text-white/90 relative z-10">
+              <p className="font-serif italic leading-relaxed relative z-10 text-base sm:text-[17px]"
+                style={{ color: "rgba(255,255,255,0.88)" }}>
                 "Bible Nova completely changed how I start my mornings. The reflections feel incredibly personal."
               </p>
               <div className="mt-3 flex items-center gap-2">
                 <div className="flex text-amber-400">
                   {[...Array(5)].map((_, i) => <Star key={i} className="w-3.5 h-3.5 fill-current" />)}
                 </div>
-                <span className="text-xs text-white/50 font-medium">— Sarah M.</span>
+                <span className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.45)" }}>— Sarah M.</span>
               </div>
             </div>
           </motion.div>
 
-          {/* Android Unavailable Warning */}
-          {showAndroidBillingUnavailable ? (
-            <motion.div variants={itemVariants} className="mb-6 flex items-start gap-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4">
-              <ShieldCheck className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-              <p className="text-sm text-rose-100/80 leading-relaxed">
-                Premium subscriptions are currently managed via the Android app on Google Play. Please sign in on an Android device to subscribe or restore.
+          {/* Android unavailable notice (only shown on web when native store unavailable) */}
+          {!nativeStoreAvailable && (
+            <motion.div variants={isPerformanceMode ? undefined : itemVariants}
+              className="mb-6 flex items-start gap-3 rounded-2xl p-4"
+              style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.18)" }}>
+              <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-sm leading-relaxed" style={{ color: "rgba(245,158,11,0.9)" }}>
+                Subscriptions are managed via the Android app. Download it on Google Play to subscribe.
               </p>
             </motion.div>
-          ) : (
-            /* Pricing Options */
-            <motion.div variants={itemVariants} className="mb-8 space-y-3">
+          )}
+
+          {/* Pricing Cards */}
+          {showPricingCards && (
+            <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="mb-8 space-y-3">
+              {/* Yearly — dominant */}
               <button
                 ref={yearlyRef}
                 onClick={() => setSelectedPlan("yearly")}
+                onKeyDown={handlePlanKey}
                 className={cn(
-                  "w-full relative flex items-center justify-between p-5 rounded-[1.5rem] border text-left transition-all duration-300",
-                  selectedPlan === "yearly" 
-                    ? "bg-gradient-to-br from-amber-500/15 to-transparent border-amber-500/50 shadow-[0_0_30px_rgba(245,158,11,0.15)] scale-[1.02]" 
-                    : "bg-white/5 border-white/10 hover:bg-white/10"
+                  "w-full relative flex items-center justify-between p-5 rounded-[1.5rem] text-left transition-all duration-300",
                 )}
+                style={{
+                  background: selectedPlan === "yearly" ? "linear-gradient(135deg, rgba(245,158,11,0.14), rgba(245,158,11,0.04))" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${selectedPlan === "yearly" ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
+                  boxShadow: selectedPlan === "yearly" ? "0 0 30px rgba(245,158,11,0.12)" : "none",
+                  transform: selectedPlan === "yearly" ? "scale(1.02)" : "scale(1)",
+                  outline: "none",
+                }}
               >
                 {selectedPlan === "yearly" && (
-                  <motion.div layoutId="plan-outline" className="absolute inset-0 border-2 border-amber-500 rounded-[1.5rem] pointer-events-none" />
+                  <motion.div
+                    layoutId="plan-outline"
+                    className="absolute inset-0 rounded-[1.5rem] pointer-events-none"
+                    style={{ border: "2px solid rgba(245,158,11,0.9)" }}
+                  />
                 )}
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-semibold text-lg">Yearly</span>
-                    <span className="bg-amber-500 text-amber-950 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <Star className="w-3 h-3 fill-current" /> Best Value
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="font-semibold text-lg text-white">Yearly</span>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-amber-950"
+                      style={{ background: "#f59e0b" }}>
+                      <Star className="w-2.5 h-2.5 fill-current" /> Best Value
                     </span>
                   </div>
-                  {yearlyMonthly && <p className="text-amber-400 text-sm font-medium">{yearlyMonthly} billed annually</p>}
+                  {yearlyMonthly && (
+                    <p className="text-sm font-medium text-amber-400">{yearlyMonthly} billed annually</p>
+                  )}
                 </div>
-                <div className="text-right pl-4">
-                  <div className="text-2xl font-bold font-serif">{yearlyPrice}</div>
-                  <div className="text-xs text-white/50">/year</div>
+                <div className="text-right pl-3 shrink-0">
+                  <div className="text-2xl font-bold font-serif text-white">{yearlyPrice}</div>
+                  <div className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>/year</div>
                 </div>
               </button>
 
+              {/* Monthly */}
               <button
                 ref={monthlyRef}
                 onClick={() => setSelectedPlan("monthly")}
-                className={cn(
-                  "w-full relative flex items-center justify-between p-5 rounded-[1.5rem] border text-left transition-all duration-300",
-                  selectedPlan === "monthly" 
-                    ? "bg-gradient-to-br from-amber-500/15 to-transparent border-amber-500/50 shadow-[0_0_30px_rgba(245,158,11,0.15)] scale-[1.02]" 
-                    : "bg-white/5 border-white/10 hover:bg-white/10"
-                )}
+                onKeyDown={handlePlanKey}
+                className="w-full relative flex items-center justify-between p-5 rounded-[1.5rem] text-left transition-all duration-300"
+                style={{
+                  background: selectedPlan === "monthly" ? "linear-gradient(135deg, rgba(245,158,11,0.14), rgba(245,158,11,0.04))" : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${selectedPlan === "monthly" ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
+                  boxShadow: selectedPlan === "monthly" ? "0 0 30px rgba(245,158,11,0.12)" : "none",
+                  transform: selectedPlan === "monthly" ? "scale(1.02)" : "scale(1)",
+                  outline: "none",
+                }}
               >
                 {selectedPlan === "monthly" && (
-                  <motion.div layoutId="plan-outline" className="absolute inset-0 border-2 border-amber-500 rounded-[1.5rem] pointer-events-none" />
+                  <motion.div
+                    layoutId="plan-outline"
+                    className="absolute inset-0 rounded-[1.5rem] pointer-events-none"
+                    style={{ border: "2px solid rgba(245,158,11,0.9)" }}
+                  />
                 )}
-                <div className="flex-1">
-                  <span className="font-semibold text-lg">Monthly</span>
-                  <p className="text-white/50 text-sm mt-1">Flexible, cancel anytime</p>
+                <div className="flex-1 min-w-0">
+                  <span className="font-semibold text-lg text-white">Monthly</span>
+                  <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.45)" }}>Flexible, cancel anytime</p>
                 </div>
-                <div className="text-right pl-4">
-                  <div className="text-2xl font-bold font-serif">{monthlyPrice}</div>
-                  <div className="text-xs text-white/50">/month</div>
+                <div className="text-right pl-3 shrink-0">
+                  <div className="text-2xl font-bold font-serif text-white">{monthlyPrice}</div>
+                  <div className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>/month</div>
                 </div>
               </button>
             </motion.div>
@@ -477,25 +489,30 @@ export default function Paywall() {
 
           {/* Errors */}
           {(error || iapLoadError) && (
-            <motion.div variants={itemVariants} className="mb-6 flex items-start gap-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4">
-              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-              <p className="text-sm text-rose-100/80">{error || iapLoadError}</p>
+            <motion.div variants={isPerformanceMode ? undefined : itemVariants}
+              className="mb-6 flex items-start gap-3 rounded-2xl p-4"
+              style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
+              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "#f87171" }} />
+              <p className="text-sm leading-relaxed" style={{ color: "rgba(248,113,113,0.9)" }}>{error || iapLoadError}</p>
             </motion.div>
           )}
 
-          {/* CTA & Footer */}
+          {/* CTA — native only */}
           {nativeStoreAvailable && (
-            <motion.div variants={itemVariants} className="space-y-4">
+            <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="space-y-4">
               <button
                 onClick={handleSubscribe}
                 disabled={!canSubscribe}
-                className="relative w-full overflow-hidden group bg-gradient-to-r from-amber-500 to-amber-600 text-amber-950 font-bold text-lg rounded-2xl py-4 flex items-center justify-center gap-2 hover:from-amber-400 hover:to-amber-500 transition-all disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed shadow-[0_8px_30px_rgba(245,158,11,0.3)] hover:shadow-[0_8px_40px_rgba(245,158,11,0.4)] hover:-translate-y-0.5"
+                className="relative w-full overflow-hidden group font-bold text-lg rounded-2xl py-4 flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                  color: "#422006",
+                  boxShadow: "0 8px 30px rgba(245,158,11,0.32)",
+                }}
               >
-                {/* Shimmer effect */}
-                <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12" />
-                
+                <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12 pointer-events-none" />
                 {isLoading ? (
-                  <div className="w-6 h-6 border-2 border-amber-950/30 border-t-amber-950 rounded-full animate-spin" />
+                  <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: "rgba(66,32,6,0.3)", borderTopColor: "#422006" }} />
                 ) : isLoadingOffering ? (
                   "Loading..."
                 ) : nativeSelectedPlanUnavailable ? (
@@ -504,24 +521,39 @@ export default function Paywall() {
                   <>Continue with {selectedPlanLabel}</>
                 )}
               </button>
-              
-              <div className="flex items-center justify-center gap-1.5 text-xs text-white/50">
+
+              <div className="flex items-center justify-center gap-1.5 text-xs" style={{ color: "rgba(255,255,255,0.42)" }}>
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>Secure payment via Google Play. Cancel anytime.</span>
               </div>
-              
-              <div className="flex items-center justify-center gap-4 pt-2">
-                <button onClick={handleRestorePurchases} disabled={isLoading} className="text-xs text-white/50 hover:text-white transition-colors">Restore Purchase</button>
-                <div className="w-1 h-1 rounded-full bg-white/20" />
-                <button onClick={handleManageSubscriptions} disabled={isLoading} className="text-xs text-white/50 hover:text-white transition-colors">Manage Billing</button>
+
+              <div className="flex items-center justify-center gap-4 pt-1">
+                <button onClick={handleRestorePurchases} disabled={isLoading}
+                  className="text-xs transition-colors"
+                  style={{ color: "rgba(255,255,255,0.42)" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#fff"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.42)"; }}>
+                  Restore Purchase
+                </button>
+                <div className="w-1 h-1 rounded-full" style={{ background: "rgba(255,255,255,0.2)" }} />
+                <button onClick={handleManageSubscriptions} disabled={isLoading}
+                  className="text-xs transition-colors"
+                  style={{ color: "rgba(255,255,255,0.42)" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#fff"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.42)"; }}>
+                  Manage Billing
+                </button>
               </div>
             </motion.div>
           )}
-          
-          <motion.p variants={itemVariants} className="text-center text-[10px] text-white/30 mt-8 mb-4 max-w-xs mx-auto">
+
+          <motion.p
+            variants={isPerformanceMode ? undefined : itemVariants}
+            className="text-center text-[10px] mt-8 mb-6 max-w-xs mx-auto leading-relaxed"
+            style={{ color: "rgba(255,255,255,0.25)" }}
+          >
             By continuing, you agree to our Terms of Service and Privacy Policy. Subscriptions automatically renew unless canceled at least 24 hours before the end of the current period.
           </motion.p>
-          
         </motion.div>
       </div>
     </div>
