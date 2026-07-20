@@ -455,6 +455,14 @@
     flex-direction: column;
   }
 
+  .onboarding-question-screen {
+    height: var(--app-visible-height);
+    min-height: var(--app-visible-height);
+    max-height: var(--app-visible-height);
+    overflow-y: hidden;
+    overscroll-behavior: none;
+  }
+
   .app-shell {
     background: var(--app-shell-bg);
     background-color: var(--app-surface-solid);

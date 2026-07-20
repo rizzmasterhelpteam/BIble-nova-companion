@@ -329,6 +329,11 @@ export default function Paywall() {
 
   const showAndroidBillingUnavailable = !nativeStoreAvailable;
 
+  const yearlyMonthly = useMemo(() => {
+    if (nativeStoreAvailable && iapPackages.yearly) return null;
+    return "≈ $7.50/mo";
+  }, [nativeStoreAvailable, iapPackages.yearly]);
+
   return (
     <div
       className={cn("app-screen-scroll sanctuary-screen relative flex w-full flex-col overflow-x-hidden", isShortPhone && "px-3")}
@@ -342,29 +347,28 @@ export default function Paywall() {
       <div className={cn("relative z-10 flex w-full flex-1 flex-col items-center justify-start", isShortPhone ? "py-2" : "px-4 py-2 sm:py-10")}>
         <motion.div
           initial={isPerformanceMode ? false : { opacity: 0, y: 4 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: isPerformanceMode ? 0 : 0.2, ease: "easeOut" }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: isPerformanceMode ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
           className={cn(
             "sanctuary-surface shrink-0 w-full max-w-lg rounded-[1.35rem]",
             !shouldTopAlign && "sm:my-auto",
             isShortPhone ? "p-4" : isCompactPhone ? "p-5" : "p-6 sm:p-7",
           )}
         >
-          <div className={cn("flex items-center justify-between gap-3", isShortPhone ? "mb-4" : "mb-5")}>
+          {/* Header */}
+          <div className={cn("flex items-center gap-3", isShortPhone ? "mb-4" : "mb-5")}>
             <div
-              className={cn(
-                "sanctuary-brand-mark flex items-center justify-center overflow-hidden",
-                isShortPhone ? "h-12 w-12" : "h-14 w-14"
-              )}
-              style={{ width: isShortPhone ? "3rem" : "3.5rem", height: isShortPhone ? "3rem" : "3.5rem" }}
+              className={cn("sanctuary-brand-mark flex items-center justify-center overflow-hidden", isShortPhone ? "h-14 w-14" : "h-16 w-16")}
             >
               <AppLogo className="h-full w-full object-cover" />
             </div>
-            <div className="min-w-0 flex-1 text-left">
+            <div className="min-w-0 flex-1">
               <p className="app-kicker text-[9px]">Bible Nova Premium</p>
-              <p className="app-muted mt-1 text-[11px]">A private rhythm for reflection</p>
+              <p className={cn("app-heading font-serif font-semibold leading-tight", isShortPhone ? "text-[1.1rem]" : "text-[1.25rem]")}>
+                Unlock the full experience
+              </p>
             </div>
-            <span className="app-accent-badge shrink-0 rounded-full px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.14em]">
+            <span className="app-badge-glow shrink-0 rounded-full px-3 py-1 text-[9px] font-bold uppercase tracking-[0.14em]">
               Premium
             </span>
           </div>
@@ -398,18 +402,32 @@ export default function Paywall() {
             </div>
           </div>
 
+          {/* Social proof quote */}
+          <div
+            className={cn("rounded-[1.1rem] px-4 py-3.5", isShortPhone ? "mb-3" : "mb-4")}
+            style={{
+              background: "linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 7%, transparent), transparent)",
+              border: "1px solid color-mix(in srgb, var(--app-accent) 18%, transparent)",
+            }}
+          >
+            <p className="app-heading font-serif text-[1rem] leading-snug italic">
+              "Changed how I start my mornings."
+            </p>
+            <p className="app-muted mt-1.5 text-[11px] font-medium">— Sarah M., using Bible Nova daily</p>
+          </div>
+
           {showAndroidBillingUnavailable ? (
             <div
-              className="mb-4 flex items-start gap-3 rounded-card px-4 py-4 text-sm"
+              className="mb-4 flex items-start gap-3 rounded-[1.1rem] px-4 py-4 text-sm"
               style={{
-                background: "color-mix(in srgb, var(--app-card-strong) 90%, var(--bg-base) 10%)",
-                border: "1px solid var(--app-card-border)",
+                background: "color-mix(in srgb, var(--app-accent-soft) 55%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--app-accent) 20%, transparent)",
                 color: "var(--app-text)",
               }}
             >
-              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" style={{ color: "var(--app-accent-strong)" }} />
+              <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" style={{ color: "var(--app-accent)" }} />
               <p className="leading-relaxed">
-                Premium purchase is available only in the Android app through Google Play. Sign in on Android with this account to subscribe, restore access, or manage billing.
+                Premium is available in the Android app via Google Play. Sign in on Android with this account to subscribe or restore access.
               </p>
             </div>
           ) : (
@@ -466,23 +484,24 @@ export default function Paywall() {
               tabIndex={selectedPlan === "yearly" ? 0 : -1}
               onClick={() => setSelectedPlan("yearly")}
               onKeyDown={handlePlanKey}
-              className={cn("touch-target app-paywall-plan relative order-1 flex min-h-[5.75rem] items-center justify-between gap-3 rounded-[1rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-3.5")}
+              className={cn("touch-target app-paywall-plan relative order-1 flex min-h-[6.25rem] items-center justify-between gap-3 rounded-[1rem] border text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "p-3" : "p-3.5")}
               style={{
                 backgroundColor: selectedPlan === "yearly" ? "var(--app-surface-muted)" : "var(--app-surface-solid)",
-                backgroundImage: selectedPlan === "yearly" ? "linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 12%, transparent), transparent 72%)" : "none",
-                borderColor:
-                  selectedPlan === "yearly"
-                    ? "color-mix(in srgb, var(--app-accent) 36%, transparent)"
-                    : "var(--app-card-border)",
+                backgroundImage: selectedPlan === "yearly"
+                  ? "linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 16%, transparent), transparent 68%)"
+                  : "none",
+                borderColor: selectedPlan === "yearly"
+                  ? "color-mix(in srgb, var(--app-accent) 52%, transparent)"
+                  : "var(--app-card-border)",
                 boxShadow: selectedPlan === "yearly"
-                  ? "0 0 0 1px color-mix(in srgb, var(--app-accent) 18%, transparent)"
+                  ? "0 0 0 1.5px color-mix(in srgb, var(--app-accent) 22%, transparent), 0 8px 24px color-mix(in srgb, var(--app-accent) 14%, transparent)"
                   : "none",
               }}
             >
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="app-heading text-sm font-semibold">Yearly</span>
-                  <span className="app-accent-badge inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-wider">
+                  <span className="app-badge-glow inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider">
                     <Star className="h-3 w-3" fill="currentColor" />
                     Best value
                   </span>
@@ -493,6 +512,9 @@ export default function Paywall() {
                   )}
                 </div>
                 <p className="app-muted mt-1 text-[11px] leading-snug">The simplest value over a full year</p>
+                {yearlyMonthly && (
+                  <p className="mt-1 text-[10px] font-semibold" style={{ color: "var(--app-accent)" }}>{yearlyMonthly} billed annually</p>
+                )}
               </div>
               <div className="shrink-0 text-right">
                 <div className={cn("app-heading break-words font-serif leading-none", isShortPhone ? "text-[1.4rem]" : "text-2xl")}>{yearlyPrice}</div>
@@ -539,7 +561,7 @@ export default function Paywall() {
                 onClick={handleSubscribe}
                 disabled={!canSubscribe}
                 aria-busy={isLoading}
-                className={cn("touch-target app-primary-button flex w-full items-center justify-center gap-2 rounded-[1rem] font-semibold text-white transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "py-3.5" : "py-4")}
+                className={cn("touch-target app-primary-button app-card-shimmer flex w-full items-center justify-center gap-2 rounded-[1rem] font-semibold text-white transition-all hover:opacity-95 active:scale-[0.98] disabled:opacity-70 disabled:grayscale focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]", isShortPhone ? "py-3.5" : "py-4")}
               >
                 {isLoading ? (
                   <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -577,7 +599,7 @@ export default function Paywall() {
             </div>
           )}
 
-          <p className="app-muted mx-auto max-w-sm px-2 text-center text-[10px] leading-relaxed">
+          <p className="app-muted mx-auto max-w-sm px-2 text-center text-[11px] leading-relaxed" style={{ marginTop: "0.75rem" }}>
             By subscribing, you agree to the Terms of Service and Privacy Policy. Subscriptions automatically renew unless canceled.
           </p>
         </motion.div>

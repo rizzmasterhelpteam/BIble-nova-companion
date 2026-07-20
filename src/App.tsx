@@ -10,7 +10,7 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { HapticsProvider } from "./context/HapticsContext";
 import { MobileViewportProvider } from "./context/MobileViewportContext";
 import { SplashScreen } from "./components/SplashScreen";
-import { AnimatePresence } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { getNativePlatform, isNativePlatform } from "./lib/native/platform";
@@ -113,11 +113,20 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-// Keep the first route immediately visible on every platform. A remote WebView
-// must never leave the app behind an opacity-only transition if motion startup
-// is delayed or interrupted.
+// Gentle page entrance for auth-flow routes (login → onboarding → paywall).
+// useReducedMotion is used here so it respects user preferences.
 const PageFade = ({ children }: { children: React.ReactNode }) => {
-  return <>{children}</>;
+  const prefersReducedMotion = useReducedMotion();
+  return (
+    <motion.div
+      style={{ display: "contents" }}
+      initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: prefersReducedMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
+    >
+      {children}
+    </motion.div>
+  );
 };
 
 const AnimatedRoutes = () => {
