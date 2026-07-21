@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Check, Star, AlertCircle, ShieldCheck, Sparkles, HeartHandshake, Lock, BookOpen } from "lucide-react";
-import { AppLogo } from "../components/AppLogo";
 import { motion, useReducedMotion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
@@ -344,30 +343,6 @@ export default function Paywall() {
         >
           {/* Header Section */}
           <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="flex flex-col items-center text-center mb-8">
-            <div className="relative mb-6">
-              <motion.div
-                animate={isPerformanceMode ? undefined : { rotate: 360 }}
-                transition={isPerformanceMode ? undefined : { duration: 20, repeat: Infinity, ease: "linear" }}
-                className="absolute -inset-2 rounded-full"
-                style={{
-                  border: "1.5px solid transparent",
-                  borderTopColor: "rgba(245,158,11,0.75)",
-                  borderRightColor: "rgba(245,158,11,0.2)",
-                }}
-              />
-              <div
-                className="h-20 w-20 rounded-full overflow-hidden flex items-center justify-center p-1"
-                style={{
-                  background: "linear-gradient(135deg, #1a1a1e, #0F0F12)",
-                  boxShadow: "0 0 40px rgba(245,158,11,0.28)",
-                }}
-              >
-                <div className="h-full w-full rounded-full overflow-hidden">
-                  <AppLogo className="h-full w-full object-cover" />
-                </div>
-              </div>
-            </div>
-            
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase mb-4 text-amber-400"
               style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.22)" }}>
               <Sparkles className="w-3.5 h-3.5" />
