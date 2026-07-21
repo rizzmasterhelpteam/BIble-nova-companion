@@ -215,7 +215,7 @@ export default function Onboarding() {
 
     return (
       <div
-        className="relative min-h-[100dvh] w-full overflow-hidden text-white flex flex-col justify-start items-center px-5 pb-8"
+        className="relative min-h-[100dvh] w-full overflow-y-auto overflow-x-hidden text-white flex flex-col justify-center items-center px-5 pb-8"
         style={{
           background: "#0F0F12",
           paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "2rem" : "3rem"})`,
