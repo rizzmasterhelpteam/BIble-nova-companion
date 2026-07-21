@@ -115,6 +115,8 @@ const getSubscriptionConfigs = () => ({
   },
 });
 
+export const getConfiguredMonthlyOfferId = () => getSubscriptionConfigs().monthly.androidOfferId;
+
 const getProductIds = (configs: Record<SubscriptionPlan, SubscriptionConfig>) => {
   const ids = Object.values(configs)
     .map((entry) => entry.productId)

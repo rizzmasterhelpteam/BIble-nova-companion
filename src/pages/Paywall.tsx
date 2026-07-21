@@ -12,6 +12,7 @@ import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import {
   getConfiguredProductIdForIdentifier,
   getConfiguredPlanIdForProduct,
+  getConfiguredMonthlyOfferId,
   getCurrentOffering,
   openSubscriptionManagement,
   purchasePackage as purchaseNativePackage,
@@ -159,8 +160,13 @@ export default function Paywall() {
     [iapPackages.yearly, isLoadingOffering, nativeStoreAvailable],
   );
 
-  const monthlyTrialAvailable = iapPackages.monthly?.product.offerId === "trial";
-  const selectedTrialAvailable = selectedPlan === "monthly" && monthlyTrialAvailable;
+  const configuredMonthlyOfferId = getConfiguredMonthlyOfferId();
+  const monthlyTrialConfigured = configuredMonthlyOfferId === "trial";
+  const monthlyTrialSelected =
+    monthlyTrialConfigured && iapPackages.monthly?.product.offerId === configuredMonthlyOfferId;
+  const monthlyTrialLabel = nativeStoreAvailable
+    ? "Free trial available for eligible subscribers"
+    : "Free trial available on Android";
 
   const nativeSelectedPlanUnavailable = nativeStoreAvailable && !isLoadingOffering && !selectedNativePackage;
   const canSubscribe =
@@ -489,9 +495,16 @@ export default function Paywall() {
                   />
                 )}
                 <div className="flex-1 min-w-0">
-                  <span className="font-semibold text-lg text-white">Monthly</span>
-                  <p className="text-sm mt-1" style={{ color: monthlyTrialAvailable ? "#fbbf24" : "rgba(255,255,255,0.45)" }}>
-                    {monthlyTrialAvailable ? "Free trial available for eligible subscribers" : "Flexible, cancel anytime"}
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-lg text-white">Monthly</span>
+                    {monthlyTrialConfigured && (
+                      <span className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-950" style={{ background: "#f59e0b" }}>
+                        Free trial
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm mt-1" style={{ color: monthlyTrialConfigured ? "#fbbf24" : "rgba(255,255,255,0.45)" }}>
+                    {monthlyTrialConfigured ? monthlyTrialLabel : "Flexible, cancel anytime"}
                   </p>
                 </div>
                 <div className="text-right pl-3 shrink-0">
@@ -533,7 +546,7 @@ export default function Paywall() {
                 ) : nativeSelectedPlanUnavailable ? (
                   "Plan unavailable"
                 ) : (
-                  <>{selectedTrialAvailable ? "Start free trial" : `Continue with ${selectedPlanLabel}`}</>
+                  <>{monthlyTrialSelected && selectedPlan === "monthly" ? "Start free trial" : `Continue with ${selectedPlanLabel}`}</>
                 )}
               </button>
 
