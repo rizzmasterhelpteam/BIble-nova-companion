@@ -334,7 +334,13 @@ export default function Paywall() {
         </>
       )}
 
-      <div className={cn("relative z-10 flex w-full flex-col items-center justify-start px-4", isShortPhone ? "py-4" : "py-8 sm:py-12")}>
+      <div
+        className={cn(
+          "relative z-10 flex w-full flex-col items-center justify-start px-4 pb-4 sm:pb-12",
+          isShortPhone ? "" : "pt-8 sm:pt-12",
+        )}
+        style={{ paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "2rem" : "3rem"})` }}
+      >
         <motion.div
           variants={isPerformanceMode ? undefined : containerVariants}
           initial={isPerformanceMode ? { opacity: 1 } : "hidden"}
