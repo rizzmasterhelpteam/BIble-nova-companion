@@ -101,6 +101,7 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"login" | "signup">("login");
+  const [hasAcceptedLegal, setHasAcceptedLegal] = useState(false);
   const [legalView, setLegalView] = useState<LegalView | null>(null);
   const legalDialogRef = useRef<HTMLElement>(null);
   const legalTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -161,10 +162,17 @@ export default function Login() {
     };
   }, [legalView]);
 
+  const requireLegalAcceptance = () => {
+    if (hasAcceptedLegal) return true;
+    setError("Please tick the box to accept the Terms & Conditions and Privacy Policy.");
+    return false;
+  };
+
   const handleEmailAuth = async (event: React.FormEvent) => {
     event.preventDefault();
     if (isLoading || isAuthLoading) return;
     if (!email || !password) return;
+    if (!requireLegalAcceptance()) return;
     if (!isSupabaseConfigured) {
       setError(supabaseConfigMessage);
       return;
@@ -196,6 +204,7 @@ export default function Login() {
 
   const handleGoogleAuth = async () => {
     if (isLoading || isAuthLoading) return;
+    if (!requireLegalAcceptance()) return;
     if (!isSupabaseConfigured) {
       setError(supabaseConfigMessage);
       return;
@@ -378,31 +387,47 @@ export default function Login() {
           </button>
         </p>
 
-        <p className="app-muted px-2 text-center text-[11px] leading-relaxed">
-          By signing in or creating an account, you agree to our{" "}
-          <button
-            type="button"
-            onClick={(event) => {
-              legalTriggerRef.current = event.currentTarget;
-              setLegalView("terms");
+        <div className="app-muted flex items-start gap-3 px-2 pt-2 text-[11px] leading-relaxed">
+          <input
+            id="legal-consent"
+            name="legal-consent"
+            type="checkbox"
+            checked={hasAcceptedLegal}
+            onChange={(event) => {
+              setHasAcceptedLegal(event.target.checked);
+              if (event.target.checked) setError(null);
             }}
-            className="app-accent font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-          >
-            Terms & Conditions
-          </button>{" "}
-          and{" "}
-          <button
-            type="button"
-            onClick={(event) => {
-              legalTriggerRef.current = event.currentTarget;
-              setLegalView("privacy");
-            }}
-            className="app-accent font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-          >
-            Privacy Policy
-          </button>
-          .
-        </p>
+            required
+            aria-describedby="legal-consent-copy"
+            aria-label="Agree to the Terms and Conditions and Privacy Policy"
+            className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded accent-[var(--app-accent)]"
+          />
+          <p id="legal-consent-copy">
+            I agree to the{" "}
+            <button
+              type="button"
+              onClick={(event) => {
+                legalTriggerRef.current = event.currentTarget;
+                setLegalView("terms");
+              }}
+              className="app-accent font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            >
+              Terms & Conditions
+            </button>{" "}
+            and{" "}
+            <button
+              type="button"
+              onClick={(event) => {
+                legalTriggerRef.current = event.currentTarget;
+                setLegalView("privacy");
+              }}
+              className="app-accent font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            >
+              Privacy Policy
+            </button>
+            .
+          </p>
+        </div>
           </div>
         </section>
       </div>

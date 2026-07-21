@@ -9,7 +9,6 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { HapticsProvider } from "./context/HapticsContext";
 import { MobileViewportProvider } from "./context/MobileViewportContext";
-import { SplashScreen } from "./components/SplashScreen";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -26,9 +25,9 @@ const Login = lazy(() => import("./pages/Login"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const Paywall = lazy(() => import("./pages/Paywall"));
 
-// Loading fallbacks reuse the splash artwork without starting another animation.
-// Only the app-level splash gets an entrance transition.
-const FullScreenLoader = () => <SplashScreen animated={false} />;
+const FullScreenLoader = () => (
+  <div className="fixed inset-0 z-[100] bg-black" aria-hidden="true" />
+);
 
 const ConnectivityNotice = () => {
   const [isOffline, setIsOffline] = useState(
@@ -162,7 +161,6 @@ const AnimatedRoutes = () => {
 };
 
 export default function App() {
-  const [showSplash, setShowSplash] = useState(true);
   const [hasRenderedAppFrame, setHasRenderedAppFrame] = useState(false);
   const isNativeApp = isNativePlatform();
   const Router = isNativeApp ? HashRouter : BrowserRouter;
@@ -190,26 +188,6 @@ export default function App() {
       root.classList.remove("native-android", "app-performance-mode");
     };
   }, [isNativeApp]);
-
-  useEffect(() => {
-    if (!hasRenderedAppFrame) return;
-
-    const prefersReducedMotion =
-      typeof window !== "undefined" && window.matchMedia
-      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      : false;
-
-    if (isNativeApp) {
-      setShowSplash(false);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      setShowSplash(false);
-    }, prefersReducedMotion ? 120 : 520);
-
-    return () => clearTimeout(timer);
-  }, [hasRenderedAppFrame, isNativeApp]);
 
   useEffect(() => {
     let frameOne = 0;
@@ -250,13 +228,6 @@ export default function App() {
           </AuthProvider>
         </HapticsProvider>
 
-        <AnimatePresence mode="wait">
-          {showSplash && !isNativeApp && (
-            <motion.div key="splash" style={{ position: "fixed", inset: 0, zIndex: 100 }}>
-              <SplashScreen />
-            </motion.div>
-          )}
-        </AnimatePresence>
         <ConnectivityNotice />
       </MobileViewportProvider>
     </ThemeProvider>
