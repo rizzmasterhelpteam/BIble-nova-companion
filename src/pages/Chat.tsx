@@ -10,6 +10,7 @@ import {
   Volume2,
   Square,
   ChevronRight,
+  Copy,
 } from "lucide-react";
 import { AppLogo } from "../components/AppLogo";
 import { cn, useDocumentTitle } from "../lib/utils";
@@ -152,33 +153,6 @@ const ChatMessage = React.memo(function ChatMessage({
           </div>
 
           <div className="relative flex min-w-0 flex-1 flex-col gap-2">
-            {!isError && voiceSupported && (
-              <button
-                type="button"
-                onClick={() => onSpeak(message)}
-                className="flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] transition-all"
-                style={{
-                  background:
-                    speakingMessageId === message.id
-                      ? "color-mix(in srgb, var(--app-accent-soft) 92%, transparent)"
-                      : "color-mix(in srgb, var(--app-card-soft) 82%, transparent)",
-                  borderColor:
-                    speakingMessageId === message.id
-                      ? "color-mix(in srgb, var(--app-accent) 28%, transparent)"
-                      : "color-mix(in srgb, var(--app-card-border) 55%, transparent)",
-                  color:
-                    speakingMessageId === message.id
-                      ? "var(--app-accent)"
-                      : "var(--app-text-muted)",
-                }}
-              >
-                {speakingMessageId === message.id ? (
-                  <><Square className="h-3.5 w-3.5 fill-current" />Stop voice</>
-                ) : (
-                  <><Volume2 className="h-3.5 w-3.5" />Father voice</>
-                )}
-              </button>
-            )}
             <div
               className={cn(
                 "break-words whitespace-pre-wrap text-[16px] leading-[1.8] font-serif font-light",
@@ -205,29 +179,21 @@ const ChatMessage = React.memo(function ChatMessage({
                 className="mt-1"
               >
                 <div
-                  className="rounded-[1.25rem] border p-4 shadow-sm"
+                  className="inline-flex rounded-pill border px-3 py-1.5"
                   style={{
                     background: "color-mix(in srgb, var(--app-card-soft) 85%, transparent)",
                     borderColor: "color-mix(in srgb, var(--app-accent) 20%, transparent)",
                   }}
                 >
-                  <p className="app-muted mb-3 text-[12px] italic font-serif opacity-80">
-                    A reading for contemplation.
-                  </p>
-                  <div
-                    className="w-full rounded-xl px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.2em] shadow-[inset_0_1px_0_color-mix(in_srgb,white_15%,transparent)]"
-                    style={{
-                      background: "linear-gradient(135deg, color-mix(in srgb, var(--app-accent-soft) 80%, transparent), transparent)",
-                      color: "var(--app-accent)",
-                    }}
-                  >
-                    <span className="app-heading px-1 font-serif normal-case tracking-normal">
+                  <div className="text-xs font-semibold" style={{ color: "var(--app-accent)" }}>
+                    <span>
                       {message.reference}
                     </span>
                   </div>
                 </div>
               </motion.div>
             )}
+            {!isError && <div className="flex items-center gap-1"><button type="button" onClick={() => void navigator.clipboard?.writeText(message.content)} className="touch-target app-ghost-button inline-flex items-center gap-1.5 rounded-pill px-3 py-2 text-xs"><Copy className="h-3.5 w-3.5" />Copy</button>{voiceSupported && <button type="button" onClick={() => onSpeak(message)} className="touch-target app-ghost-button inline-flex items-center gap-1.5 rounded-pill px-3 py-2 text-xs">{speakingMessageId === message.id ? <Square className="h-3.5 w-3.5 fill-current" /> : <Volume2 className="h-3.5 w-3.5" />}{speakingMessageId === message.id ? "Stop" : "Listen"}</button>}</div>}
           </div>
         </div>
       )}
@@ -682,8 +648,8 @@ export default function Chat() {
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent">
       <header
         className={cn(
-          "z-20 flex shrink-0 items-center justify-between border-b pr-14 backdrop-blur-2xl transition-colors duration-300",
-          isCompactPhone ? "min-h-[80px] px-4 py-3" : "min-h-[88px] px-5 py-4 sm:px-6",
+          "z-20 flex shrink-0 items-center justify-between border-b pr-14 backdrop-blur-xl transition-colors duration-200",
+          isCompactPhone ? "min-h-[64px] px-4 py-2" : "min-h-[72px] px-5 py-3 sm:px-6",
         )}
         style={{
           backgroundColor: "var(--app-surface-solid)",
@@ -850,7 +816,7 @@ export default function Chat() {
         }}
       >
         <div className="mx-auto w-full max-w-xl">
-          {(isRecording ||
+          <div className="mb-2 min-h-4" aria-live="polite">{(isRecording ||
             isTranscribingSpeech ||
             speakingMessageId ||
             chatUnavailable ||
@@ -874,7 +840,7 @@ export default function Chat() {
                 ? "Chat will unlock after the required API key is configured."
                 : ""}
             </p>
-          )}
+          )}</div>
 
           <div
             className={cn(

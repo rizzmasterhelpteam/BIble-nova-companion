@@ -30,6 +30,9 @@ export default function Breathe() {
   const [showSettings, setShowSettings] = useState(false);
   const [timings, setTimings] = useState<Timings>({ inhale: 4, hold: 4, exhale: 4 });
   const [isPaused, setIsPaused] = useState(false);
+  const [isStarted, setIsStarted] = useState(false);
+  const [sessionDuration, setSessionDuration] = useState(60);
+  const [sessionLeft, setSessionLeft] = useState(60);
   const [secondsLeft, setSecondsLeft] = useState(timings.inhale);
   const timeoutRef = useRef<number | null>(null);
 
@@ -55,7 +58,7 @@ export default function Breathe() {
 
   useEffect(() => {
     if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-    if (isPaused) return;
+    if (isPaused || !isStarted) return;
 
     timeoutRef.current = window.setTimeout(() => {
       setSecondsLeft((prev) => {
@@ -70,7 +73,22 @@ export default function Breathe() {
     return () => {
       if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
     };
-  }, [isPaused, phase, secondsLeft, timings]);
+  }, [isPaused, isStarted, phase, secondsLeft, sessionDuration, timings]);
+
+  useEffect(() => {
+    if (!isStarted || isPaused) return;
+    const timer = window.setInterval(() => {
+      setSessionLeft((remaining) => {
+        if (remaining <= 1) {
+          setIsStarted(false);
+          setIsPaused(false);
+          return sessionDuration;
+        }
+        return remaining - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [isPaused, isStarted, sessionDuration]);
 
   const paceSummary = useMemo(
     () => `${timings.inhale}-${timings.hold}-${timings.exhale} rhythm`,
@@ -102,6 +120,15 @@ export default function Breathe() {
           isShortPhone ? "justify-start" : "justify-center",
         )}
       >
+        {!isStarted && (
+          <div className="app-panel mb-5 w-full max-w-sm rounded-card p-4 text-center">
+            <p className="app-heading font-semibold">Choose a quiet moment</p>
+            <div className="my-4 flex justify-center gap-2" role="radiogroup" aria-label="Breathing duration">
+              {[60, 180, 300].map((duration) => <button key={duration} role="radio" aria-checked={sessionDuration === duration} onClick={() => { setSessionDuration(duration); setSessionLeft(duration); }} className={cn("touch-target rounded-pill px-4 py-2 text-sm", sessionDuration === duration ? "app-primary-button text-white" : "app-secondary-button")}>{duration / 60} min</button>)}
+            </div>
+            <button onClick={() => { setSessionLeft(sessionDuration); setIsStarted(true); }} className="touch-target app-primary-button w-full rounded-pill py-3 font-semibold text-white">Begin breathing</button>
+          </div>
+        )}
         <div
           className={cn(
             "relative flex w-full flex-shrink-0 items-center justify-center",
@@ -178,10 +205,10 @@ export default function Breathe() {
               style={{ color: "var(--app-accent)", filter: "drop-shadow(0 0 14px color-mix(in srgb, var(--app-accent) 50%, transparent))" }}
             />
             <span className="app-heading text-2xl font-light uppercase tracking-[0.15em] drop-shadow-md">
-              {phase}
+              {isStarted ? phase : "Ready"}
             </span>
             <span className="app-soft text-[11px] font-sans tabular-nums">
-              {secondsLeft}s left
+              {isStarted ? `${secondsLeft}s · ${Math.ceil(sessionLeft / 60)} min left` : paceSummary}
             </span>
           </div>
         </div>
@@ -190,6 +217,7 @@ export default function Breathe() {
           <button
             type="button"
             onClick={() => setIsPaused((prev) => !prev)}
+            disabled={!isStarted}
             className="touch-target app-secondary-button inline-flex flex-shrink-0 items-center gap-2 rounded-pill px-3 py-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:px-4 sm:py-3 sm:text-sm"
           >
             {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}

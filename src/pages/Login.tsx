@@ -172,7 +172,7 @@ export default function Login() {
     event.preventDefault();
     if (isLoading || isAuthLoading) return;
     if (!email || !password) return;
-    if (!requireLegalAcceptance()) return;
+    if (mode === "signup" && !requireLegalAcceptance()) return;
     if (!isSupabaseConfigured) {
       setError(supabaseConfigMessage);
       return;
@@ -204,7 +204,7 @@ export default function Login() {
 
   const handleGoogleAuth = async () => {
     if (isLoading || isAuthLoading) return;
-    if (!requireLegalAcceptance()) return;
+    if (mode === "signup" && !requireLegalAcceptance()) return;
     if (!isSupabaseConfigured) {
       setError(supabaseConfigMessage);
       return;
@@ -304,7 +304,9 @@ export default function Login() {
 
         <form onSubmit={handleEmailAuth} className="space-y-4">
           <div className="space-y-4">
-            <div className="relative">
+            <div>
+              <label htmlFor="login-email" className="app-muted mb-1.5 block text-xs font-medium">Email address</label>
+              <div className="relative">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 app-soft">
                 <Mail className="h-5 w-5" />
               </div>
@@ -321,8 +323,11 @@ export default function Login() {
                 className="app-input w-full rounded-[1rem] py-3.5 pl-12 pr-4 text-[15px] transition-all"
                 required
               />
+              </div>
             </div>
-            <div className="relative">
+            <div>
+              <label htmlFor="login-password" className="app-muted mb-1.5 block text-xs font-medium">Password</label>
+              <div className="relative">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 app-soft">
                 <Lock className="h-5 w-5" />
               </div>
@@ -349,6 +354,8 @@ export default function Login() {
               >
                 {showPassword ? <EyeOff className="h-4.5 w-4.5" /> : <Eye className="h-4.5 w-4.5" />}
               </button>
+              </div>
+              {mode === "signup" && <p className="app-muted mt-1.5 text-xs">Use at least 6 characters.</p>}
             </div>
           </div>
 
@@ -371,7 +378,7 @@ export default function Login() {
 
         <div className="sanctuary-trust">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--app-success)" }} />
-          <span>Your reflections stay connected to your account and are never sold.</span>
+          <span>Reflections are saved to your account and may be processed by our AI provider. Avoid sharing emergency or highly sensitive information.</span>
         </div>
 
         <p className="app-muted pt-2 text-center text-sm">
@@ -387,7 +394,7 @@ export default function Login() {
           </button>
         </p>
 
-        <div className="app-muted flex items-start gap-3 px-2 pt-2 text-[11px] leading-relaxed">
+        {mode === "signup" && <div className="app-muted flex items-start gap-3 px-2 pt-2 text-xs leading-relaxed">
           <input
             id="legal-consent"
             name="legal-consent"
@@ -427,7 +434,7 @@ export default function Login() {
             </button>
             .
           </p>
-        </div>
+        </div>}
           </div>
         </section>
       </div>

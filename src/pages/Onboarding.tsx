@@ -113,9 +113,7 @@ export default function Onboarding() {
   const isShortPhone = viewportShortPhone || (isCompactPhone && visibleHeight <= 840);
   const prefersReducedMotion = useReducedMotion();
   const isPerformanceMode = Boolean(
-    prefersReducedMotion ||
-      (isNativePlatform() && getNativePlatform() === "android") ||
-      (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches),
+    prefersReducedMotion || (isNativePlatform() && getNativePlatform() === "android"),
   );
   const shouldAnimateLightly = !prefersReducedMotion;
   const [currentStep, setCurrentStep] = useState(0);
@@ -125,6 +123,7 @@ export default function Onboarding() {
   );
   const [hasStarted, setHasStarted] = useState(() => Object.keys(answers).length > 0);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [isAdvancing, setIsAdvancing] = useState(false);
   const continueTimerRef = useRef<number | null>(null);
   const { completeOnboarding, updateShadowNotes } = useAuth();
   const navigate = useNavigate();
@@ -150,6 +149,8 @@ export default function Onboarding() {
   }, []);
 
   const handleSelect = (optionId: string) => {
+    if (isAdvancing) return;
+    setIsAdvancing(true);
     const question = questions[currentStep];
     setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: optionId }));
 
@@ -157,16 +158,12 @@ export default function Onboarding() {
       window.clearTimeout(continueTimerRef.current);
     }
 
-    if (isPerformanceMode) {
-      handleContinue(optionId);
-      return;
-    }
-
-    // Keep a brief selection acknowledgement without making the flow feel blocked.
+    // Keep the selected state visible long enough to feel acknowledged.
     continueTimerRef.current = window.setTimeout(() => {
       continueTimerRef.current = null;
       handleContinue(optionId);
-    }, 160);
+      setIsAdvancing(false);
+    }, prefersReducedMotion ? 120 : 275);
   };
 
   const handleContinue = (overrideAnswer?: string) => {
@@ -268,7 +265,7 @@ export default function Onboarding() {
           
           <motion.div className="mt-5 flex items-center justify-center gap-2" style={{ color: "rgba(255,255,255,0.28)" }} {...makeStagger(0.6)}>
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span className="text-xs">Your answers are private.</span>
+            <span className="text-xs">Your answers personalize this space and are saved with your account.</span>
           </motion.div>
         </div>
       </div>
@@ -318,20 +315,6 @@ export default function Onboarding() {
             </p>
           </div>
 
-          {/* Progress complete indicator */}
-          <div className="flex items-center gap-2 mb-8 px-1">
-            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
-              <motion.div
-                className="h-full rounded-full"
-                style={{ background: "linear-gradient(90deg, #f59e0b, #fbbf24)" }}
-                initial={isPerformanceMode ? false : { width: 0 }}
-                animate={isPerformanceMode ? undefined : { width: "100%" }}
-              transition={isPerformanceMode ? { duration: 0 } : { duration: 0.6, ease: "easeOut" }}
-              />
-            </div>
-            <span className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: "rgba(255,255,255,0.35)" }}>Complete</span>
-          </div>
-
           <div className="space-y-4 mb-8">
             {/* Scripture preview */}
             <motion.div
@@ -352,22 +335,6 @@ export default function Onboarding() {
               <p className="text-[11px] font-bold uppercase tracking-widest relative z-10 text-amber-400">Psalm 46:10</p>
             </motion.div>
 
-            {/* How we'll help */}
-            <motion.div
-              className="rounded-[1.5rem] p-5 relative overflow-hidden"
-              style={{ background: "linear-gradient(135deg, rgba(245,158,11,0.12), transparent)", border: "1px solid rgba(245,158,11,0.25)" }}
-              initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={isPerformanceMode ? { duration: 0 } : { duration: 0.5, delay: 0.32 }}
-            >
-              <div className="flex items-center gap-3 mb-3 relative z-10">
-                <div className="p-1.5 rounded-lg text-amber-950" style={{ background: "#f59e0b" }}>
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400">How we'll help</span>
-              </div>
-              <p className="text-[14px] leading-relaxed relative z-10" style={{ color: "rgba(255,255,255,0.78)" }}>{analysis.appResponse}</p>
-            </motion.div>
           </div>
 
           <motion.button
@@ -380,7 +347,7 @@ export default function Onboarding() {
             whileHover={isPerformanceMode ? {} : { scale: 1.01, boxShadow: "0 0 50px rgba(255,255,255,0.22)" }}
             whileTap={isPerformanceMode ? {} : { scale: 0.98 }}
           >
-            Enter Sanctuary
+            Enter Bible Nova
           </motion.button>
         </motion.div>
       </div>

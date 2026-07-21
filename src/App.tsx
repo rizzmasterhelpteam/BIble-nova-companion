@@ -117,14 +117,12 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
 const PageFade = ({ children }: { children: React.ReactNode }) => {
   const prefersReducedMotion = useReducedMotion();
   const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
-  const isCoarsePointer =
-    typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
   const shouldAnimate = !prefersReducedMotion;
-  const isLowPowerDevice = isAndroidNative || isCoarsePointer;
+  const isLowPowerDevice = isAndroidNative;
 
   return (
     <motion.div
-      style={{ display: "contents" }}
+      className="flex min-h-0 w-full flex-1 flex-col"
       initial={shouldAnimate ? { opacity: 0, y: isLowPowerDevice ? 4 : 8 } : false}
       animate={shouldAnimate ? { opacity: 1, y: 0 } : undefined}
       transition={shouldAnimate ? { duration: isLowPowerDevice ? 0.16 : 0.2, ease: [0.22, 1, 0.36, 1] } : undefined}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Flame, Wind, Eraser } from "lucide-react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
@@ -12,29 +12,15 @@ export default function Confession() {
   const isCrampedPhone = visibleHeight > 0 && visibleHeight <= 620;
   const [confession, setConfession] = useState("");
   const [isReleasing, setIsReleasing] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(10);
+  const [timeLeft, setTimeLeft] = useState(5);
   const [isDone, setIsDone] = useState(false);
-  const timeoutsRef = useRef<number[]>([]);
   const prefersReducedMotion = useReducedMotion();
   const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
   const isPerformanceMode = Boolean(prefersReducedMotion || isAndroidApp);
 
-  const addTimeout = (fn: () => void, ms: number) => {
-    const id = window.setTimeout(fn, ms);
-    timeoutsRef.current.push(id);
-    return id;
-  };
-
-  useEffect(() => {
-    return () => {
-      timeoutsRef.current.forEach(window.clearTimeout);
-      timeoutsRef.current = [];
-    };
-  }, []);
-
   useEffect(() => {
     let timer: number | null = null;
-    const burnDuration = prefersReducedMotion ? 1 : 10;
+    const burnDuration = prefersReducedMotion ? 1 : 5;
 
     if (isReleasing && timeLeft > 0) {
       timer = window.setTimeout(
@@ -44,13 +30,7 @@ export default function Confession() {
     } else if (isReleasing && timeLeft === 0) {
       setIsDone(true);
       setIsReleasing(false);
-      addTimeout(() => {
-        setConfession("");
-        addTimeout(() => {
-          setIsDone(false);
-          setTimeLeft(burnDuration);
-        }, prefersReducedMotion ? 1500 : 5000);
-      }, prefersReducedMotion ? 200 : 1000);
+      setConfession("");
     }
 
     return () => {
@@ -60,9 +40,16 @@ export default function Confession() {
 
   const handleRelease = () => {
     if (!confession.trim()) return;
-    setTimeLeft(prefersReducedMotion ? 1 : 10);
+    setTimeLeft(prefersReducedMotion ? 1 : 5);
     setIsReleasing(true);
   };
+
+  const cancelRelease = () => {
+    setIsReleasing(false);
+    setTimeLeft(5);
+  };
+
+  const completeRelease = () => setTimeLeft(0);
 
   const hasContent = confession.trim().length > 0;
   const panelHeight = isCrampedPhone
@@ -101,15 +88,8 @@ export default function Confession() {
               animate={
                 isReleasing && !isPerformanceMode
                   ? {
-                      scale: [1, 0.98, 0.95, 0.85],
-                      rotate: [0, -0.5, 0.5, -1],
-                      opacity: [1, 1, 0.8, 0],
-                      filter: [
-                        "brightness(1)",
-                        "brightness(1.2) sepia(20%) saturate(120%)",
-                        "brightness(0.6) sepia(80%) saturate(80%)",
-                        "brightness(0) grayscale(100%)",
-                      ],
+                      scale: [1, 0.99, 0.97],
+                      opacity: [1, 0.8, 0],
                     }
                   : isReleasing
                     ? { opacity: [1, 0] }
@@ -126,7 +106,7 @@ export default function Confession() {
               }
               transition={
                 isReleasing
-                  ? { duration: isPerformanceMode ? 0.45 : 8, ease: "easeIn" }
+                  ? { duration: isPerformanceMode ? 0.2 : 4.5, ease: "easeIn" }
                   : { duration: isPerformanceMode ? 0 : 2.5, repeat: isPerformanceMode ? 0 : Infinity, ease: "easeInOut" }
               }
             >
@@ -150,37 +130,7 @@ export default function Confession() {
                 </span>
               )}
 
-              {isReleasing && !prefersReducedMotion && !isAndroidApp && (
-                <>
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: [0, 0.4, 0.2, 0.5, 0.3] }}
-                    transition={{ duration: 4, ease: "easeInOut" }}
-                    className="absolute inset-0 z-15 pointer-events-none"
-                    style={{ backdropFilter: "blur(1px)", mixBlendMode: "overlay" }}
-                  />
-                  <motion.div
-                    initial={{ top: "100%" }}
-                    animate={{ top: "-10%" }}
-                    transition={{ duration: 7, ease: "linear", delay: 0.5 }}
-                    className="pointer-events-none absolute left-0 right-0 z-20 h-[120%]"
-                    style={{
-                      background:
-                        "linear-gradient(0deg, var(--bg-base) 0%, color-mix(in srgb, var(--bg-base) 90%, transparent) 45%, transparent 100%)",
-                    }}
-                  />
-                  <motion.div
-                    initial={{ top: "100%" }}
-                    animate={{ top: "-10%" }}
-                    transition={{ duration: 7, ease: "linear", delay: 0.5 }}
-                    className="pointer-events-none absolute left-0 right-0 z-20 h-[80px] mix-blend-color-dodge blur-sm"
-                    style={{
-                      background:
-                        "linear-gradient(0deg, transparent 0%, color-mix(in srgb, var(--app-accent) 72%, transparent) 55%, transparent 100%)",
-                    }}
-                  />
-                </>
-              )}
+              {isReleasing && <div className="pointer-events-none absolute inset-0 bg-[color:var(--app-accent-soft)]" />}
             </motion.div>
 
             <div className="app-muted flex items-center justify-between gap-3 text-xs">
@@ -223,6 +173,7 @@ export default function Confession() {
                 </div>
               )}
             </button>
+            {isReleasing && <div className="-mt-3 flex justify-center gap-3" aria-live="polite"><button onClick={cancelRelease} className="touch-target app-secondary-button rounded-pill px-4 py-2 text-sm">Cancel</button><button onClick={completeRelease} className="touch-target app-ghost-button rounded-pill px-4 py-2 text-sm">Skip animation</button><span className="sr-only">Release completes in {timeLeft} seconds</span></div>}
           </motion.div>
         ) : (
           <motion.div
@@ -260,6 +211,7 @@ export default function Confession() {
                 The ashes are gone with the wind.
               </span>
             </p>
+            <button onClick={() => { setIsDone(false); setTimeLeft(5); }} className="touch-target app-secondary-button mt-8 rounded-pill px-5 py-3 font-semibold">Write another</button>
           </motion.div>
         )}
       </AnimatePresence>

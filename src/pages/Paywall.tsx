@@ -378,26 +378,6 @@ export default function Paywall() {
             ))}
           </motion.div>
 
-          {/* Social Proof */}
-          <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="mb-8">
-            <div className="relative rounded-2xl p-5 overflow-hidden"
-              style={{ background: "linear-gradient(135deg, rgba(245,158,11,0.1), transparent)", border: "1px solid rgba(245,158,11,0.18)" }}>
-              <div className="absolute top-0 right-0 p-4 pointer-events-none" style={{ opacity: 0.08 }}>
-                <Star className="w-16 h-16 text-amber-400 rotate-12" />
-              </div>
-              <p className="font-serif italic leading-relaxed relative z-10 text-base sm:text-[17px]"
-                style={{ color: "rgba(255,255,255,0.88)" }}>
-                "Bible Nova completely changed how I start my mornings. The reflections feel incredibly personal."
-              </p>
-              <div className="mt-3 flex items-center gap-2">
-                <div className="flex text-amber-400">
-                  {[...Array(5)].map((_, i) => <Star key={i} className="w-3.5 h-3.5 fill-current" />)}
-                </div>
-                <span className="text-xs font-medium" style={{ color: "rgba(255,255,255,0.45)" }}>— Sarah M.</span>
-              </div>
-            </div>
-          </motion.div>
-
           {/* Android unavailable notice (only shown on web when native store unavailable) */}
           {!nativeStoreAvailable && (
             <motion.div variants={isPerformanceMode ? undefined : itemVariants}
@@ -412,12 +392,14 @@ export default function Paywall() {
 
           {/* Pricing Cards */}
           {showPricingCards && (
-            <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="mb-8 space-y-3">
+            <motion.div role="radiogroup" aria-label="Subscription plan" variants={isPerformanceMode ? undefined : itemVariants} className="mb-8 space-y-3">
               {/* Yearly — dominant */}
               <button
                 ref={yearlyRef}
                 onClick={() => setSelectedPlan("yearly")}
                 onKeyDown={handlePlanKey}
+                role="radio"
+                aria-checked={selectedPlan === "yearly"}
                 className={cn(
                   "w-full relative flex items-center justify-between p-5 rounded-[1.5rem] text-left transition-all duration-300",
                 )}
@@ -425,8 +407,6 @@ export default function Paywall() {
                   background: selectedPlan === "yearly" ? "linear-gradient(135deg, rgba(245,158,11,0.14), rgba(245,158,11,0.04))" : "rgba(255,255,255,0.04)",
                   border: `1px solid ${selectedPlan === "yearly" ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
                   boxShadow: selectedPlan === "yearly" ? "0 0 30px rgba(245,158,11,0.12)" : "none",
-                  transform: selectedPlan === "yearly" ? "scale(1.02)" : "scale(1)",
-                  outline: "none",
                 }}
               >
                 {selectedPlan === "yearly" && (
@@ -459,13 +439,13 @@ export default function Paywall() {
                 ref={monthlyRef}
                 onClick={() => setSelectedPlan("monthly")}
                 onKeyDown={handlePlanKey}
+                role="radio"
+                aria-checked={selectedPlan === "monthly"}
                 className="w-full relative flex items-center justify-between p-5 rounded-[1.5rem] text-left transition-all duration-300"
                 style={{
                   background: selectedPlan === "monthly" ? "linear-gradient(135deg, rgba(245,158,11,0.14), rgba(245,158,11,0.04))" : "rgba(255,255,255,0.04)",
                   border: `1px solid ${selectedPlan === "monthly" ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
                   boxShadow: selectedPlan === "monthly" ? "0 0 30px rgba(245,158,11,0.12)" : "none",
-                  transform: selectedPlan === "monthly" ? "scale(1.02)" : "scale(1)",
-                  outline: "none",
                 }}
               >
                 {selectedPlan === "monthly" && (
@@ -478,14 +458,14 @@ export default function Paywall() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-lg text-white">Monthly</span>
-                    {monthlyTrialConfigured && (
+                    {monthlyTrialSelected && (
                       <span className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-950" style={{ background: "#f59e0b" }}>
                         7-day trial
                       </span>
                     )}
                   </div>
-                  <p className="text-sm mt-1" style={{ color: monthlyTrialConfigured ? "#fbbf24" : "rgba(255,255,255,0.45)" }}>
-                    {monthlyTrialConfigured ? monthlyTrialLabel : "Flexible, cancel anytime"}
+                  <p className="text-sm mt-1" style={{ color: monthlyTrialSelected ? "#fbbf24" : "rgba(255,255,255,0.45)" }}>
+                    {monthlyTrialSelected ? monthlyTrialLabel : "Flexible, cancel anytime"}
                   </p>
                 </div>
                 <div className="text-right pl-3 shrink-0">

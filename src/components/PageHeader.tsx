@@ -31,8 +31,8 @@ export default function PageHeader({
       className={cn(
         "pt-safe",
         shouldCompact ? "pt-3" : "pt-4",
-        action || !isCentered ? "pr-16" : "",
-        isCentered && (shouldCompact ? "px-5 text-center sm:px-10" : "px-8 text-center sm:px-12"),
+        !isCentered ? "pr-16" : "",
+        isCentered && (shouldCompact ? "px-14 text-center sm:px-16" : "px-16 text-center sm:px-20"),
         className,
       )}
     >

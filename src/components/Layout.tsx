@@ -355,7 +355,7 @@ export default function Layout() {
               initial={prefersReducedMotion || isAndroidApp ? false : { opacity: 0, y: 8 }}
               animate={prefersReducedMotion || isAndroidApp ? { opacity: 1 } : { opacity: 1, y: 0 }}
               exit={prefersReducedMotion || isAndroidApp ? { opacity: 0 } : { opacity: 0, y: -8 }}
-              transition={{ duration: prefersReducedMotion || isAndroidApp ? 0 : 0.3 }}
+              transition={{ duration: prefersReducedMotion || isAndroidApp ? 0 : 0.2, ease: "easeOut" }}
               className="relative flex min-h-0 flex-1 flex-col"
             >
               <Outlet />
@@ -400,6 +400,9 @@ export default function Layout() {
                 animate={{ y: 0 }}
                 exit={{ y: "100%" }}
                 transition={isAndroidApp ? { duration: 0.18, ease: "easeOut" } : { type: "spring", stiffness: 380, damping: 40 }}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="settings-title"
                 className="app-panel-strong app-settings-sheet fixed inset-x-0 bottom-0 z-[70] mx-auto max-h-[92dvh] w-full overflow-y-auto rounded-t-[2rem] border-t scrollbar-hide sm:max-w-lg sm:px-0 xl:max-w-xl"
                 style={{
                   bottom: "var(--app-bottom-offset)",
@@ -419,11 +422,11 @@ export default function Layout() {
                 >
                 <div className="flex items-center justify-between">
                     <div>
-                      <p className="app-kicker">Settings</p>
-                      <h2 className="mt-2 text-[19px] font-semibold tracking-tight app-heading">Shape your sanctuary</h2>
+                      <h2 id="settings-title" className="text-[19px] font-semibold tracking-tight app-heading">Settings</h2>
                     </div>
                     <button
                       onClick={() => setSettingsOpen(false)}
+                      aria-label="Close settings"
                       className="touch-target app-secondary-button rounded-full p-2.5 transition-colors"
                     >
                       <X className="h-4 w-4" />
@@ -863,7 +866,7 @@ function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label
   return (
     <NavLink
       to={to}
-      className="touch-target relative flex flex-1 flex-col items-center justify-center gap-1 rounded-pill py-2 transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+      className="touch-target relative flex flex-1 flex-col items-center justify-center gap-1 rounded-pill py-2 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
       style={{ color: "var(--app-text-muted)" }}
     >
       {({ isActive }) => (
@@ -878,18 +881,16 @@ function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label
           )}
           <div
             className={cn(
-              "relative z-10 transition-all duration-300",
-              isActive ? "app-nav-active-glow" : "",
+              "relative z-10 transition-colors duration-200",
             )}
             style={{
               color: isActive ? "var(--app-accent)" : "var(--app-text-muted)",
-              transform: isActive ? "scale(1.1)" : "scale(1)",
             }}
           >
             {icon}
           </div>
           <span
-            className="relative z-10 text-[10px] font-semibold tracking-wide transition-all duration-300"
+            className="relative z-10 text-[11px] font-semibold tracking-wide transition-colors duration-200"
             style={{
               color: isActive ? "var(--app-accent)" : "var(--app-text-muted)",
               opacity: isActive ? 1 : 0.6,
