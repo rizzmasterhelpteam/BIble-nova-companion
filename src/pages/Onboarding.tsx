@@ -279,7 +279,14 @@ export default function Onboarding() {
     const analysis = getAnalysisSummary(answers);
 
     return (
-      <div className="relative w-full overflow-y-auto text-white flex flex-col justify-center items-center px-4 py-8" style={{ minHeight: "100dvh", background: "#0F0F12" }}>
+      <div
+        className="relative w-full overflow-y-auto text-white flex flex-col justify-start items-center px-4 pb-8"
+        style={{
+          minHeight: "100dvh",
+          background: "#0F0F12",
+          paddingTop: "max(env(safe-area-inset-top, 0px), 3rem)",
+        }}
+      >
         <BackgroundOrbs animated={!isPerformanceMode} />
 
         <motion.div
@@ -393,8 +400,12 @@ export default function Onboarding() {
 
   return (
     <div
-      className="relative w-full overflow-y-auto text-white flex flex-col pt-12 pb-8 px-4"
-      style={{ minHeight: "100dvh", background: "#0F0F12" }}
+      className="relative w-full overflow-y-auto text-white flex flex-col pb-8 px-4"
+      style={{
+        minHeight: "100dvh",
+        background: "#0F0F12",
+        paddingTop: "max(env(safe-area-inset-top, 0px), 3rem)",
+      }}
     >
       <BackgroundOrbs animated={!isPerformanceMode} />
 
