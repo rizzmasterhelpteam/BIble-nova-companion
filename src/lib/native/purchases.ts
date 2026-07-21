@@ -5,16 +5,21 @@ type SubscriptionPlan = "monthly" | "yearly";
 type SubscriptionConfig = {
   productId?: string;
   androidBasePlanId?: string;
+  androidOfferId?: string;
+};
+type SubscriptionDefaults = Required<Pick<SubscriptionConfig, "productId" | "androidBasePlanId">> & {
+  androidOfferId?: string;
 };
 
 // These are public Google Play identifiers, not secrets. Keep them as a
 // fallback because Vite replaces VITE_* values at build time and a remote web
 // bundle without those variables would otherwise make every native plan look
 // unconfigured.
-const DEFAULT_ANDROID_SUBSCRIPTION_CONFIG: Record<SubscriptionPlan, Required<SubscriptionConfig>> = {
+const DEFAULT_ANDROID_SUBSCRIPTION_CONFIG: Record<SubscriptionPlan, SubscriptionDefaults> = {
   monthly: {
     productId: "biblenova",
     androidBasePlanId: "monthly",
+    androidOfferId: "trial",
   },
   yearly: {
     productId: "biblenovayearly",
@@ -25,6 +30,7 @@ const DEFAULT_ANDROID_SUBSCRIPTION_CONFIG: Record<SubscriptionPlan, Required<Sub
 export type SubscriptionPackage = {
   plan: SubscriptionPlan;
   product: Product;
+  baseProduct?: Product;
   productId: string;
   androidBasePlanId?: string;
 };
@@ -92,6 +98,9 @@ const getSubscriptionConfigs = () => ({
     androidBasePlanId:
       normalizeConfigValue(import.meta.env.VITE_IAP_MONTHLY_BASE_PLAN_ID) ||
       DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.monthly.androidBasePlanId,
+    androidOfferId:
+      normalizeConfigValue(import.meta.env.VITE_IAP_MONTHLY_OFFER_ID) ||
+      DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.monthly.androidOfferId,
   },
   yearly: {
     productId:
@@ -100,6 +109,9 @@ const getSubscriptionConfigs = () => ({
     androidBasePlanId:
       normalizeConfigValue(import.meta.env.VITE_IAP_YEARLY_BASE_PLAN_ID) ||
       DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.yearly.androidBasePlanId,
+    androidOfferId:
+      normalizeConfigValue(import.meta.env.VITE_IAP_YEARLY_OFFER_ID) ||
+      DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.yearly.androidOfferId,
   },
 });
 
@@ -135,6 +147,12 @@ const selectProductForConfig = (
       (product) => product.identifier === config.androidBasePlanId,
     );
 
+    const preferredOffer = basePlanCandidates.find(
+      (product) => product.offerId === config.androidOfferId,
+    );
+
+    if (preferredOffer) return preferredOffer;
+
     return (
       basePlanCandidates.find((product) => !product.offerId) ||
       basePlanCandidates[0]
@@ -142,6 +160,17 @@ const selectProductForConfig = (
   }
 
   return candidates.find((product) => !product.offerId) || candidates[0];
+};
+
+const selectBasePlanProduct = (products: Product[], config: SubscriptionConfig) => {
+  if (!config.productId || !config.androidBasePlanId) return undefined;
+
+  return products.find(
+    (product) =>
+      product.planIdentifier === config.productId &&
+      product.identifier === config.androidBasePlanId &&
+      !product.offerId,
+  );
 };
 
 const isActivePurchase = (purchase: Transaction) => {
@@ -236,6 +265,8 @@ export async function getCurrentOffering(): Promise<SubscriptionOffering | null>
   const isAndroid = getNativePlatform() === "android";
   const monthlyProduct = selectProductForConfig(products, configs.monthly, isAndroid);
   const yearlyProduct = selectProductForConfig(products, configs.yearly, isAndroid);
+  const monthlyBaseProduct = selectBasePlanProduct(products, configs.monthly);
+  const yearlyBaseProduct = selectBasePlanProduct(products, configs.yearly);
 
   return {
     monthly:
@@ -243,6 +274,7 @@ export async function getCurrentOffering(): Promise<SubscriptionOffering | null>
         ? {
             plan: "monthly",
             product: monthlyProduct,
+            baseProduct: monthlyBaseProduct,
             productId: configs.monthly.productId,
             androidBasePlanId: configs.monthly.androidBasePlanId || monthlyProduct.identifier,
           }
@@ -252,6 +284,7 @@ export async function getCurrentOffering(): Promise<SubscriptionOffering | null>
         ? {
             plan: "yearly",
             product: yearlyProduct,
+            baseProduct: yearlyBaseProduct,
             productId: configs.yearly.productId,
             androidBasePlanId: configs.yearly.androidBasePlanId || yearlyProduct.identifier,
           }
@@ -267,6 +300,7 @@ export async function purchasePackage(aPackage: SubscriptionPackage) {
 
   const isAndroid = getNativePlatform() === "android";
   const planIdentifier = isAndroid ? aPackage.androidBasePlanId || aPackage.product.identifier : undefined;
+  const offerId = isAndroid ? aPackage.product.offerId || undefined : undefined;
 
   if (isAndroid && !planIdentifier) {
     throw new Error("Android base plan ID is missing for this subscription.");
@@ -278,6 +312,9 @@ export async function purchasePackage(aPackage: SubscriptionPackage) {
     productType: nativePurchasesModule.PURCHASE_TYPE.SUBS,
     quantity: 1,
     autoAcknowledgePurchases: true,
+    ...(offerId ? { offerId } : {}),
+  } as Parameters<typeof nativePurchasesModule.NativePurchases.purchaseProduct>[0] & {
+    offerId?: string;
   });
 
   assertValidSubscriptionPurchase(purchase, aPackage);

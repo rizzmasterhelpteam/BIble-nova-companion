@@ -142,7 +142,9 @@ export default function Paywall() {
   const monthlyPrice = useMemo(
     () =>
       nativeStoreAvailable
-        ? iapPackages.monthly?.product.priceString || (isLoadingOffering ? "Loading..." : "Unavailable")
+        ? iapPackages.monthly?.baseProduct?.priceString ||
+          iapPackages.monthly?.product.priceString ||
+          (isLoadingOffering ? "Loading..." : "Unavailable")
         : "$9.99",
     [iapPackages.monthly, isLoadingOffering, nativeStoreAvailable],
   );
@@ -150,10 +152,15 @@ export default function Paywall() {
   const yearlyPrice = useMemo(
     () =>
       nativeStoreAvailable
-        ? iapPackages.yearly?.product.priceString || (isLoadingOffering ? "Loading..." : "Unavailable")
+        ? iapPackages.yearly?.baseProduct?.priceString ||
+          iapPackages.yearly?.product.priceString ||
+          (isLoadingOffering ? "Loading..." : "Unavailable")
         : "$89.99",
     [iapPackages.yearly, isLoadingOffering, nativeStoreAvailable],
   );
+
+  const monthlyTrialAvailable = iapPackages.monthly?.product.offerId === "trial";
+  const selectedTrialAvailable = selectedPlan === "monthly" && monthlyTrialAvailable;
 
   const nativeSelectedPlanUnavailable = nativeStoreAvailable && !isLoadingOffering && !selectedNativePackage;
   const canSubscribe =
@@ -483,7 +490,9 @@ export default function Paywall() {
                 )}
                 <div className="flex-1 min-w-0">
                   <span className="font-semibold text-lg text-white">Monthly</span>
-                  <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.45)" }}>Flexible, cancel anytime</p>
+                  <p className="text-sm mt-1" style={{ color: monthlyTrialAvailable ? "#fbbf24" : "rgba(255,255,255,0.45)" }}>
+                    {monthlyTrialAvailable ? "Free trial available for eligible subscribers" : "Flexible, cancel anytime"}
+                  </p>
                 </div>
                 <div className="text-right pl-3 shrink-0">
                   <div className="text-2xl font-bold font-serif text-white">{monthlyPrice}</div>
@@ -524,7 +533,7 @@ export default function Paywall() {
                 ) : nativeSelectedPlanUnavailable ? (
                   "Plan unavailable"
                 ) : (
-                  <>Continue with {selectedPlanLabel}</>
+                  <>{selectedTrialAvailable ? "Start free trial" : `Continue with ${selectedPlanLabel}`}</>
                 )}
               </button>
 

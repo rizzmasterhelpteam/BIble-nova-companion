@@ -10,6 +10,7 @@
     "test": "vitest run",
     "preview": "vite preview",
     "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist',{recursive:true,force:true});\"",
+    "postinstall": "node scripts/patch-native-purchases.mjs",
     "lint": "tsc --noEmit",
     "assets:native": "powershell -ExecutionPolicy Bypass -File scripts/generate-native-assets.ps1",
     "fix:ios-spm": "node scripts/fix-capacitor-ios-spm.mjs",
