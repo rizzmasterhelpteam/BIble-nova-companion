@@ -119,14 +119,15 @@ const PageFade = ({ children }: { children: React.ReactNode }) => {
   const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
   const isCoarsePointer =
     typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
-  const shouldSkipMotion = prefersReducedMotion || isAndroidNative || isCoarsePointer;
+  const shouldAnimate = !prefersReducedMotion;
+  const isLowPowerDevice = isAndroidNative || isCoarsePointer;
 
   return (
     <motion.div
       style={{ display: "contents" }}
-      initial={shouldSkipMotion ? false : { opacity: 0, y: 8 }}
-      animate={shouldSkipMotion ? undefined : { opacity: 1, y: 0 }}
-      transition={shouldSkipMotion ? undefined : { duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+      initial={shouldAnimate ? { opacity: 0, y: isLowPowerDevice ? 4 : 8 } : false}
+      animate={shouldAnimate ? { opacity: 1, y: 0 } : undefined}
+      transition={shouldAnimate ? { duration: isLowPowerDevice ? 0.16 : 0.2, ease: [0.22, 1, 0.36, 1] } : undefined}
     >
       {children}
     </motion.div>

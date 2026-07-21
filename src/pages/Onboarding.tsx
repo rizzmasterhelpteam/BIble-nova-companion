@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Check, BookOpen, ChevronRight, Wind } from "lucide-react";
 import { ChristianCross } from "../components/ChristianCross";
-import { AppLogo } from "../components/AppLogo";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
@@ -118,6 +117,7 @@ export default function Onboarding() {
       (isNativePlatform() && getNativePlatform() === "android") ||
       (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches),
   );
+  const shouldAnimateLightly = !prefersReducedMotion;
   const [currentStep, setCurrentStep] = useState(0);
   const [prevStep, setPrevStep] = useState(-1);
   const [answers, setAnswers] = useState<Record<string, string>>(() =>
@@ -214,43 +214,16 @@ export default function Onboarding() {
           };
 
     return (
-      <div className="relative min-h-screen w-full overflow-hidden text-white flex flex-col justify-center items-center px-5 py-10" style={{ background: "#0F0F12" }}>
+      <div
+        className="relative min-h-[100dvh] w-full overflow-hidden text-white flex flex-col justify-start items-center px-5 pb-8"
+        style={{
+          background: "#0F0F12",
+          paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "2rem" : "3rem"})`,
+        }}
+      >
         <BackgroundOrbs animated={!isPerformanceMode} />
         
         <div className="relative z-10 w-full max-w-md flex flex-col items-center text-center">
-          {/* Logo */}
-          <motion.div
-            className="mb-8 relative"
-            initial={isPerformanceMode ? false : { opacity: 0, scale: 0.5, rotate: -12 }}
-            animate={isPerformanceMode ? undefined : { opacity: 1, scale: 1, rotate: 0 }}
-            transition={isPerformanceMode ? undefined : { type: "spring", stiffness: 220, damping: 22, delay: 0.1 }}
-          >
-            {/* Rotating ring */}
-            <motion.div
-              animate={isPerformanceMode ? undefined : { rotate: 360 }}
-              transition={isPerformanceMode ? undefined : { duration: 22, repeat: Infinity, ease: "linear" }}
-              className="absolute -inset-4 rounded-full"
-              style={{
-                border: "1.5px solid transparent",
-                borderTopColor: "rgba(245,158,11,0.65)",
-                borderRightColor: "rgba(245,158,11,0.15)",
-              }}
-            />
-            {/* Logo container */}
-            <div
-              className="h-24 w-24 rounded-full overflow-hidden flex items-center justify-center"
-              style={{
-                background: "linear-gradient(135deg, #1a1a1e, #0F0F12)",
-                boxShadow: "0 0 50px rgba(245,158,11,0.22)",
-                padding: "5px",
-              }}
-            >
-              <div className="h-full w-full rounded-full overflow-hidden">
-                <AppLogo className="h-full w-full object-cover" />
-              </div>
-            </div>
-          </motion.div>
-
           <motion.div
             {...makeStagger(0.2)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full mb-5"
@@ -269,7 +242,7 @@ export default function Onboarding() {
           </motion.h1>
           
           <motion.p
-            className="text-white/55 text-[15px] sm:text-[16px] leading-relaxed max-w-sm mb-10"
+            className="text-white/55 text-[15px] sm:text-[16px] leading-relaxed max-w-sm mb-8"
             {...makeStagger(0.4)}
           >
             Answer three thoughtful questions to shape your personalized reflection space.
@@ -293,7 +266,7 @@ export default function Onboarding() {
             </button>
           </motion.div>
           
-          <motion.div className="mt-6 flex items-center justify-center gap-2" style={{ color: "rgba(255,255,255,0.28)" }} {...makeStagger(0.6)}>
+          <motion.div className="mt-5 flex items-center justify-center gap-2" style={{ color: "rgba(255,255,255,0.28)" }} {...makeStagger(0.6)}>
             <ShieldCheck className="w-3.5 h-3.5" />
             <span className="text-xs">Your answers are private.</span>
           </motion.div>
@@ -310,9 +283,9 @@ export default function Onboarding() {
         <BackgroundOrbs animated={!isPerformanceMode} />
 
         <motion.div
-          initial={isPerformanceMode ? false : { opacity: 0, scale: 0.96, y: 12 }}
-          animate={isPerformanceMode ? undefined : { opacity: 1, scale: 1, y: 0 }}
-          transition={isPerformanceMode ? undefined : { duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+          initial={shouldAnimateLightly ? { opacity: 0, y: 10 } : false}
+          animate={shouldAnimateLightly ? { opacity: 1, y: 0 } : undefined}
+          transition={shouldAnimateLightly ? { duration: 0.22, ease: [0.22, 1, 0.36, 1] } : undefined}
           className="relative z-10 w-full max-w-md flex flex-col py-2"
         >
           <button
@@ -413,9 +386,9 @@ export default function Onboarding() {
 
   const isGoingForward = prevStep < currentStep;
   const slideVariants = {
-    initial: { opacity: 0, x: isGoingForward ? 48 : -48, scale: 0.96 },
-    animate: { opacity: 1, x: 0, scale: 1 },
-    exit: { opacity: 0, x: isGoingForward ? -48 : 48, scale: 0.96 },
+    initial: { opacity: 0, x: isGoingForward ? 24 : -24 },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: isGoingForward ? -24 : 24 },
   };
 
   return (
@@ -461,11 +434,11 @@ export default function Onboarding() {
           <AnimatePresence mode="wait" custom={isGoingForward}>
             <motion.div
               key={currentStep}
-              variants={isPerformanceMode ? {} : slideVariants}
-              initial={isPerformanceMode ? false : "initial"}
-              animate={isPerformanceMode ? undefined : "animate"}
-              exit={isPerformanceMode ? undefined : "exit"}
-              transition={isPerformanceMode ? undefined : { type: "spring", stiffness: 280, damping: 26 }}
+              variants={shouldAnimateLightly ? slideVariants : {}}
+              initial={shouldAnimateLightly ? "initial" : false}
+              animate={shouldAnimateLightly ? "animate" : undefined}
+              exit={shouldAnimateLightly ? "exit" : undefined}
+              transition={shouldAnimateLightly ? { duration: 0.2, ease: [0.22, 1, 0.36, 1] } : undefined}
               className="w-full"
             >
               <h1
@@ -488,7 +461,7 @@ export default function Onboarding() {
                       aria-checked={isSelected}
                       onClick={() => handleSelect(option.id)}
                       whileHover={isPerformanceMode ? {} : { scale: 1.02, y: -1 }}
-                      whileTap={isPerformanceMode ? {} : { scale: 0.98 }}
+                      whileTap={shouldAnimateLightly ? { scale: 0.985 } : {}}
                       className="w-full flex items-center justify-between p-4 sm:p-5 rounded-2xl text-left transition-all duration-300 relative overflow-hidden"
                       style={{
                         background: isSelected ? "rgba(245,158,11,0.1)" : "rgba(255,255,255,0.04)",
@@ -535,7 +508,15 @@ export default function Onboarding() {
                           background: isSelected ? "#f59e0b" : "transparent",
                         }}
                       >
-                        {isSelected && <Check className="w-3.5 h-3.5 text-amber-950" strokeWidth={3.5} />}
+                        {isSelected && (
+                          <motion.div
+                            initial={shouldAnimateLightly ? { scale: 0.5, opacity: 0 } : false}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={shouldAnimateLightly ? { duration: 0.16, ease: "easeOut" } : undefined}
+                          >
+                            <Check className="w-3.5 h-3.5 text-amber-950" strokeWidth={3.5} />
+                          </motion.div>
+                        )}
                       </div>
                     </motion.button>
                   );
