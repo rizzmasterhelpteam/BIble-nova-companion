@@ -199,6 +199,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     let isDisposed = false;
     let anonymousSignOutInFlight = false;
+    let activeSessionToken: string | null = null;
 
     clearLegacyGuestState();
     const clearLegacyStateAfterRestore = () => clearLegacyGuestState();
@@ -332,17 +333,45 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await syncSubscriptionState(currentUser);
     };
 
+    const refreshAuthenticatedUser = async (currentSession: Session, initialUser: User) => {
+      try {
+        const refreshedUser = await resolveCurrentUser(currentSession);
+        if (
+          isDisposed ||
+          activeSessionToken !== currentSession.access_token ||
+          !refreshedUser ||
+          refreshedUser.is_anonymous ||
+          refreshedUser.id !== initialUser.id
+        ) {
+          return;
+        }
+
+        setUser(refreshedUser);
+        syncProfileState(refreshedUser);
+        syncShadowNotes(refreshedUser);
+        await syncSubscriptionState(refreshedUser);
+      } catch (error) {
+        console.warn("Could not refresh the signed-in user in the background:", error);
+      }
+    };
+
     const applySession = async (currentSession: Session | null) => {
       if (isDisposed) return;
 
+      activeSessionToken = currentSession?.access_token || null;
       setSession(currentSession);
-      const currentUser = await resolveCurrentUser(currentSession);
-      if (isDisposed) return;
+      const currentUser = currentSession?.user || null;
 
       if (currentUser?.is_anonymous) {
         await rejectAnonymousSession();
       } else if (currentUser) {
+        // The session already contains the user needed to render onboarding and
+        // paywall. Do not hold the first interactive frame on a second network
+        // request; refresh profile/subscription metadata in the background.
         await applyAuthenticatedUser(currentUser);
+        if (currentSession.access_token) {
+          void refreshAuthenticatedUser(currentSession, currentUser);
+        }
       } else {
         await clearActiveSession();
       }

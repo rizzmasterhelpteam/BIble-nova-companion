@@ -21,7 +21,7 @@ export function SplashScreen({ animated = true }: SplashScreenProps) {
       initial={shouldAnimate ? { opacity: 0 } : false}
       animate={{ opacity: 1 }}
       exit={shouldAnimate ? { opacity: 0 } : undefined}
-      transition={{ duration: shouldAnimate ? 0.4 : 0, ease: "easeInOut" }}
+      transition={{ duration: shouldAnimate ? 0.24 : 0, ease: "easeOut" }}
     >
       {/* Ambient glow orbs */}
       {shouldAnimate && (
@@ -45,12 +45,12 @@ export function SplashScreen({ animated = true }: SplashScreenProps) {
           animate={{ opacity: 1, scale: 1 }}
           transition={shouldAnimate ? { duration: 0.64, ease: [0.22, 1, 0.36, 1], delay: 0.05 } : { duration: 0 }}
         >
-          {/* Rotating border ring */}
+          {/* One-shot border ring; an infinite loop here keeps the opening screen busy. */}
           {shouldAnimate && (
             <motion.div
               className="absolute inset-[-8px] rounded-full"
-              animate={{ rotate: 360 }}
-              transition={{ duration: 22, repeat: Infinity, ease: "linear" }}
+              animate={{ rotate: 180 }}
+              transition={{ duration: 0.7, ease: "easeOut", delay: 0.05 }}
               style={{
                 border: "1.5px solid transparent",
                 borderTopColor: "rgba(245,158,11,0.6)",
@@ -81,11 +81,12 @@ export function SplashScreen({ animated = true }: SplashScreenProps) {
               boxShadow: "0 0 50px rgba(245,158,11,0.18)",
             }}
           />
-          {/* Floating logo */}
+          {/* Logo entrance */}
           <motion.div
             className="relative h-20 w-20 overflow-hidden rounded-full"
-            animate={shouldAnimate ? { y: [0, -6, 0] } : {}}
-            transition={shouldAnimate ? { duration: 3.4, ease: "easeInOut", repeat: Infinity, delay: 0.8 } : {}}
+            initial={shouldAnimate ? { y: 4 } : false}
+            animate={shouldAnimate ? { y: 0 } : undefined}
+            transition={shouldAnimate ? { duration: 0.42, ease: "easeOut", delay: 0.18 } : undefined}
           >
             <AppLogo alt="Bible Nova Companion" loading="eager" fetchPriority="high" className="h-full w-full object-cover" />
           </motion.div>
@@ -109,21 +110,19 @@ export function SplashScreen({ animated = true }: SplashScreenProps) {
           A quiet place to reflect
         </motion.p>
 
-        {/* Loading pulse dots */}
+        {/* Static loading indicator keeps the splash compositor-friendly. */}
         {shouldAnimate && (
           <motion.div
             className="mt-8 flex items-center gap-2"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.75, duration: 0.3 }}
+            transition={{ delay: 0.5, duration: 0.2 }}
           >
             {[0, 1, 2].map((i) => (
-              <motion.span
+              <span
                 key={i}
                 className="inline-block h-1.5 w-1.5 rounded-full"
                 style={{ background: "rgba(245,158,11,0.65)" }}
-                animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.15, 0.8] }}
-                transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2, ease: "easeInOut" }}
               />
             ))}
           </motion.div>

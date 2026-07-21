@@ -45,7 +45,9 @@ export default function Paywall() {
   const { isShortPhone } = useMobileViewport();
   const prefersReducedMotion = useReducedMotion();
   const isPerformanceMode = Boolean(
-    prefersReducedMotion || (isNativePlatform() && getNativePlatform() === "android"),
+    prefersReducedMotion ||
+      (isNativePlatform() && getNativePlatform() === "android") ||
+      (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches),
   );
   const nativeStoreAvailable = isNativePlatform() && getNativePlatform() === "android";
   const [selectedPlan, setSelectedPlan] = useState<Plan>("yearly");
@@ -302,33 +304,37 @@ export default function Paywall() {
       className="relative w-full text-white"
       style={{ minHeight: "100dvh", overflowY: "auto", overflowX: "hidden", background: "#0F0F12" }}
     >
-      {/* Animated Background Orbs */}
-      <motion.div
-        animate={{ scale: [1, 1.2, 1], opacity: [0.25, 0.42, 0.25], x: [0, 50, 0], y: [0, -30, 0] }}
-        transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-        className="pointer-events-none absolute -top-[20%] -left-[10%] h-[600px] w-[600px] rounded-full"
-        style={{ background: "rgba(245,158,11,0.08)", filter: "blur(120px)" }}
-      />
-      <motion.div
-        animate={{ scale: [1, 1.3, 1], opacity: [0.15, 0.3, 0.15], x: [0, -40, 0], y: [0, 40, 0] }}
-        transition={{ duration: 18, repeat: Infinity, ease: "linear", delay: 2 }}
-        className="pointer-events-none absolute top-[40%] -right-[20%] h-[500px] w-[500px] rounded-full"
-        style={{ background: "rgba(239,68,68,0.06)", filter: "blur(100px)" }}
-      />
+      {/* Blurred infinite orbs are desktop-only; they cause sustained GPU work on touch devices. */}
+      {!isPerformanceMode && (
+        <>
+          <motion.div
+            animate={{ scale: [1, 1.2, 1], opacity: [0.25, 0.42, 0.25], x: [0, 50, 0], y: [0, -30, 0] }}
+            transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+            className="pointer-events-none absolute -top-[20%] -left-[10%] h-[600px] w-[600px] rounded-full"
+            style={{ background: "rgba(245,158,11,0.08)", filter: "blur(120px)" }}
+          />
+          <motion.div
+            animate={{ scale: [1, 1.3, 1], opacity: [0.15, 0.3, 0.15], x: [0, -40, 0], y: [0, 40, 0] }}
+            transition={{ duration: 18, repeat: Infinity, ease: "linear", delay: 2 }}
+            className="pointer-events-none absolute top-[40%] -right-[20%] h-[500px] w-[500px] rounded-full"
+            style={{ background: "rgba(239,68,68,0.06)", filter: "blur(100px)" }}
+          />
+        </>
+      )}
 
       <div className={cn("relative z-10 flex w-full flex-col items-center justify-start px-4", isShortPhone ? "py-4" : "py-8 sm:py-12")}>
         <motion.div
           variants={isPerformanceMode ? undefined : containerVariants}
           initial={isPerformanceMode ? { opacity: 1 } : "hidden"}
-          animate={isPerformanceMode ? { opacity: 1 } : "show"}
+          animate={isPerformanceMode ? undefined : "show"}
           className="w-full max-w-md mx-auto"
         >
           {/* Header Section */}
           <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="flex flex-col items-center text-center mb-8">
             <div className="relative mb-6">
               <motion.div
-                animate={isPerformanceMode ? {} : { rotate: 360 }}
-                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+                animate={isPerformanceMode ? undefined : { rotate: 360 }}
+                transition={isPerformanceMode ? undefined : { duration: 20, repeat: Infinity, ease: "linear" }}
                 className="absolute -inset-2 rounded-full"
                 style={{
                   border: "1.5px solid transparent",
@@ -366,8 +372,8 @@ export default function Paywall() {
 
           {/* Premium Features */}
           <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="space-y-3 mb-8">
-            {features.map((feature, idx) => (
-              <div key={idx}
+            {features.map((feature) => (
+              <div key={feature.text}
                 className="flex items-center gap-4 rounded-2xl p-4"
                 style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
                 <div className="flex-shrink-0 p-2 rounded-xl" style={{ background: "rgba(255,255,255,0.06)" }}>

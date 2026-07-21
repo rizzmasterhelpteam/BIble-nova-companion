@@ -1,4 +1,4 @@
-import React, { useEffect, useState, memo } from "react";
+import React, { useEffect, useRef, useState, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Check, BookOpen, ChevronRight, Wind } from "lucide-react";
@@ -86,22 +86,26 @@ const getAnalysisSummary = (answers: Record<string, string>) => {
 };
 
 // Defined outside component to avoid re-creating on every render
-const BackgroundOrbs = memo(() => (
-  <>
-    <motion.div
-      animate={{ scale: [1, 1.2, 1], opacity: [0.25, 0.4, 0.25], x: [0, 30, 0], y: [0, -40, 0] }}
-      transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-      className="pointer-events-none absolute -top-[10%] -left-[10%] h-[500px] w-[500px] rounded-full"
-      style={{ background: "rgba(245,158,11,0.08)", filter: "blur(100px)" }}
-    />
-    <motion.div
-      animate={{ scale: [1, 1.3, 1], opacity: [0.15, 0.28, 0.15], x: [0, -30, 0], y: [0, 30, 0] }}
-      transition={{ duration: 18, repeat: Infinity, ease: "linear", delay: 2 }}
-      className="pointer-events-none absolute top-[50%] -right-[10%] h-[600px] w-[600px] rounded-full"
-      style={{ background: "rgba(239,68,68,0.07)", filter: "blur(120px)" }}
-    />
-  </>
-));
+const BackgroundOrbs = memo(({ animated = true }: { animated?: boolean }) => {
+  if (!animated) return null;
+
+  return (
+    <>
+      <motion.div
+        animate={{ scale: [1, 1.2, 1], opacity: [0.25, 0.4, 0.25], x: [0, 30, 0], y: [0, -40, 0] }}
+        transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
+        className="pointer-events-none absolute -top-[10%] -left-[10%] h-[500px] w-[500px] rounded-full"
+        style={{ background: "rgba(245,158,11,0.08)", filter: "blur(100px)" }}
+      />
+      <motion.div
+        animate={{ scale: [1, 1.3, 1], opacity: [0.15, 0.28, 0.15], x: [0, -30, 0], y: [0, 30, 0] }}
+        transition={{ duration: 18, repeat: Infinity, ease: "linear", delay: 2 }}
+        className="pointer-events-none absolute top-[50%] -right-[10%] h-[600px] w-[600px] rounded-full"
+        style={{ background: "rgba(239,68,68,0.07)", filter: "blur(120px)" }}
+      />
+    </>
+  );
+});
 BackgroundOrbs.displayName = "BackgroundOrbs";
 
 export default function Onboarding() {
@@ -110,7 +114,9 @@ export default function Onboarding() {
   const isShortPhone = viewportShortPhone || (isCompactPhone && visibleHeight <= 840);
   const prefersReducedMotion = useReducedMotion();
   const isPerformanceMode = Boolean(
-    prefersReducedMotion || (isNativePlatform() && getNativePlatform() === "android"),
+    prefersReducedMotion ||
+      (isNativePlatform() && getNativePlatform() === "android") ||
+      (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches),
   );
   const [currentStep, setCurrentStep] = useState(0);
   const [prevStep, setPrevStep] = useState(-1);
@@ -119,6 +125,7 @@ export default function Onboarding() {
   );
   const [hasStarted, setHasStarted] = useState(() => Object.keys(answers).length > 0);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const continueTimerRef = useRef<number | null>(null);
   const { completeOnboarding, updateShadowNotes } = useAuth();
   const navigate = useNavigate();
 
@@ -136,13 +143,30 @@ export default function Onboarding() {
     storageSet(STORAGE_KEY, JSON.stringify(answers));
   }, [answers]);
 
+  useEffect(() => () => {
+    if (continueTimerRef.current !== null) {
+      window.clearTimeout(continueTimerRef.current);
+    }
+  }, []);
+
   const handleSelect = (optionId: string) => {
     const question = questions[currentStep];
     setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: optionId }));
-    
-    setTimeout(() => {
+
+    if (continueTimerRef.current !== null) {
+      window.clearTimeout(continueTimerRef.current);
+    }
+
+    if (isPerformanceMode) {
       handleContinue(optionId);
-    }, 380);
+      return;
+    }
+
+    // Keep a brief selection acknowledgement without making the flow feel blocked.
+    continueTimerRef.current = window.setTimeout(() => {
+      continueTimerRef.current = null;
+      handleContinue(optionId);
+    }, 160);
   };
 
   const handleContinue = (overrideAnswer?: string) => {
@@ -191,20 +215,20 @@ export default function Onboarding() {
 
     return (
       <div className="relative min-h-screen w-full overflow-hidden text-white flex flex-col justify-center items-center px-5 py-10" style={{ background: "#0F0F12" }}>
-        <BackgroundOrbs />
+        <BackgroundOrbs animated={!isPerformanceMode} />
         
         <div className="relative z-10 w-full max-w-md flex flex-col items-center text-center">
           {/* Logo */}
           <motion.div
             className="mb-8 relative"
             initial={isPerformanceMode ? false : { opacity: 0, scale: 0.5, rotate: -12 }}
-            animate={{ opacity: 1, scale: 1, rotate: 0 }}
-            transition={{ type: "spring", stiffness: 220, damping: 22, delay: 0.1 }}
+            animate={isPerformanceMode ? undefined : { opacity: 1, scale: 1, rotate: 0 }}
+            transition={isPerformanceMode ? undefined : { type: "spring", stiffness: 220, damping: 22, delay: 0.1 }}
           >
             {/* Rotating ring */}
             <motion.div
-              animate={isPerformanceMode ? {} : { rotate: 360 }}
-              transition={{ duration: 22, repeat: Infinity, ease: "linear" }}
+              animate={isPerformanceMode ? undefined : { rotate: 360 }}
+              transition={isPerformanceMode ? undefined : { duration: 22, repeat: Infinity, ease: "linear" }}
               className="absolute -inset-4 rounded-full"
               style={{
                 border: "1.5px solid transparent",
@@ -283,12 +307,12 @@ export default function Onboarding() {
 
     return (
       <div className="relative w-full overflow-y-auto text-white flex flex-col justify-center items-center px-4 py-8" style={{ minHeight: "100dvh", background: "#0F0F12" }}>
-        <BackgroundOrbs />
+        <BackgroundOrbs animated={!isPerformanceMode} />
 
         <motion.div
           initial={isPerformanceMode ? false : { opacity: 0, scale: 0.96, y: 12 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+          animate={isPerformanceMode ? undefined : { opacity: 1, scale: 1, y: 0 }}
+          transition={isPerformanceMode ? undefined : { duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
           className="relative z-10 w-full max-w-md flex flex-col py-2"
         >
           <button
@@ -320,9 +344,9 @@ export default function Onboarding() {
               <motion.div
                 className="h-full rounded-full"
                 style={{ background: "linear-gradient(90deg, #f59e0b, #fbbf24)" }}
-                initial={{ width: 0 }}
-                animate={{ width: "100%" }}
-                transition={{ duration: 0.6, ease: "easeOut" }}
+                initial={isPerformanceMode ? false : { width: 0 }}
+                animate={isPerformanceMode ? undefined : { width: "100%" }}
+              transition={isPerformanceMode ? { duration: 0 } : { duration: 0.6, ease: "easeOut" }}
               />
             </div>
             <span className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: "rgba(255,255,255,0.35)" }}>Complete</span>
@@ -332,10 +356,10 @@ export default function Onboarding() {
             {/* Scripture preview */}
             <motion.div
               className="relative overflow-hidden rounded-[1.5rem] p-6"
-              style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04))", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}
+              style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04))", border: "1px solid rgba(255,255,255,0.1)" }}
               initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
+              transition={isPerformanceMode ? { duration: 0 } : { duration: 0.5, delay: 0.2 }}
             >
               <div className="absolute top-0 right-0 p-5 pointer-events-none" style={{ opacity: 0.05 }}>
                 <BookOpen className="w-24 h-24 rotate-12" />
@@ -354,7 +378,7 @@ export default function Onboarding() {
               style={{ background: "linear-gradient(135deg, rgba(245,158,11,0.12), transparent)", border: "1px solid rgba(245,158,11,0.25)" }}
               initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.32 }}
+              transition={isPerformanceMode ? { duration: 0 } : { duration: 0.5, delay: 0.32 }}
             >
               <div className="flex items-center gap-3 mb-3 relative z-10">
                 <div className="p-1.5 rounded-lg text-amber-950" style={{ background: "#f59e0b" }}>
@@ -372,7 +396,7 @@ export default function Onboarding() {
             style={{ background: "#fff", color: "#000" }}
             initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.44 }}
+            transition={isPerformanceMode ? { duration: 0 } : { duration: 0.5, delay: 0.44 }}
             whileHover={isPerformanceMode ? {} : { scale: 1.01, boxShadow: "0 0 50px rgba(255,255,255,0.22)" }}
             whileTap={isPerformanceMode ? {} : { scale: 0.98 }}
           >
@@ -399,7 +423,7 @@ export default function Onboarding() {
       className="relative w-full overflow-y-auto text-white flex flex-col pt-12 pb-8 px-4"
       style={{ minHeight: "100dvh", background: "#0F0F12" }}
     >
-      <BackgroundOrbs />
+      <BackgroundOrbs animated={!isPerformanceMode} />
 
       <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col">
         {/* Header: back + progress */}
@@ -439,9 +463,9 @@ export default function Onboarding() {
               key={currentStep}
               variants={isPerformanceMode ? {} : slideVariants}
               initial={isPerformanceMode ? false : "initial"}
-              animate="animate"
+              animate={isPerformanceMode ? undefined : "animate"}
               exit={isPerformanceMode ? undefined : "exit"}
-              transition={{ type: "spring", stiffness: 280, damping: 26 }}
+              transition={isPerformanceMode ? undefined : { type: "spring", stiffness: 280, damping: 26 }}
               className="w-full"
             >
               <h1
@@ -473,8 +497,8 @@ export default function Onboarding() {
                         outline: "none",
                       }}
                       initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.38, delay: optIdx * 0.07 }}
+                      animate={isPerformanceMode ? undefined : { opacity: 1, y: 0 }}
+                      transition={isPerformanceMode ? undefined : { duration: 0.26, delay: optIdx * 0.04 }}
                     >
                       {isSelected && (
                         <motion.div

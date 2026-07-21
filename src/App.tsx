@@ -117,12 +117,17 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
 // useReducedMotion is used here so it respects user preferences.
 const PageFade = ({ children }: { children: React.ReactNode }) => {
   const prefersReducedMotion = useReducedMotion();
+  const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
+  const isCoarsePointer =
+    typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
+  const shouldSkipMotion = prefersReducedMotion || isAndroidNative || isCoarsePointer;
+
   return (
     <motion.div
       style={{ display: "contents" }}
-      initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: prefersReducedMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
+      initial={shouldSkipMotion ? false : { opacity: 0, y: 8 }}
+      animate={shouldSkipMotion ? undefined : { opacity: 1, y: 0 }}
+      transition={shouldSkipMotion ? undefined : { duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
     >
       {children}
     </motion.div>
@@ -159,7 +164,8 @@ const AnimatedRoutes = () => {
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [hasRenderedAppFrame, setHasRenderedAppFrame] = useState(false);
-  const Router = isNativePlatform() ? HashRouter : BrowserRouter;
+  const isNativeApp = isNativePlatform();
+  const Router = isNativeApp ? HashRouter : BrowserRouter;
 
   useEffect(() => {
     startup.mark("app-mounted");
@@ -169,7 +175,7 @@ export default function App() {
     });
 
     const root = document.documentElement;
-    const isAndroid = isNativePlatform() && getNativePlatform() === "android";
+    const isAndroid = isNativeApp && getNativePlatform() === "android";
     root.classList.toggle("native-android", isAndroid);
     const mediaQuery = window.matchMedia?.("(prefers-reduced-motion: reduce)");
     const updatePerformanceMode = () => {
@@ -183,7 +189,7 @@ export default function App() {
       mediaQuery?.removeEventListener("change", updatePerformanceMode);
       root.classList.remove("native-android", "app-performance-mode");
     };
-  }, []);
+  }, [isNativeApp]);
 
   useEffect(() => {
     if (!hasRenderedAppFrame) return;
@@ -193,13 +199,17 @@ export default function App() {
       ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
       : false;
 
-    const isAndroid = isNativePlatform() && getNativePlatform() === "android";
+    if (isNativeApp) {
+      setShowSplash(false);
+      return;
+    }
+
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, prefersReducedMotion ? 200 : isAndroid ? 1000 : 1800);
+    }, prefersReducedMotion ? 120 : 520);
 
     return () => clearTimeout(timer);
-  }, [hasRenderedAppFrame]);
+  }, [hasRenderedAppFrame, isNativeApp]);
 
   useEffect(() => {
     let frameOne = 0;
@@ -241,7 +251,7 @@ export default function App() {
         </HapticsProvider>
 
         <AnimatePresence mode="wait">
-          {showSplash && (
+          {showSplash && !isNativeApp && (
             <motion.div key="splash" style={{ position: "fixed", inset: 0, zIndex: 100 }}>
               <SplashScreen />
             </motion.div>
