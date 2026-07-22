@@ -254,7 +254,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const syncSubscriptionState = async (currentUser: User | null) => {
+    const syncSubscriptionState = async (
+      currentUser: User | null,
+      options?: { allowStoredNativeFallback?: boolean },
+    ) => {
       const id = currentUser?.id || null;
       if (!id) {
         if (!isDisposed) setIsSubscribed(false);
@@ -265,6 +268,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const storedSubscriptionSource = getStoredSubscriptionSource(id);
       const serverSubscription = hasActiveServerSubscription(currentUser);
       let nativeSubscriptionActive = false;
+      let nativeCheckCompleted = false;
+      const allowStoredNativeFallback = options?.allowStoredNativeFallback === true;
 
       if (
         !serverSubscription &&
@@ -273,18 +278,44 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         isNativePlatform()
       ) {
         try {
-          nativeSubscriptionActive = await withStartupTimeout(
-            hasActiveSubscription(),
-            false,
-            "Native subscription check",
-            2500,
-          );
+          nativeSubscriptionActive = await new Promise<boolean>((resolve, reject) => {
+            let settled = false;
+            const timeoutId = window.setTimeout(() => {
+              if (settled) return;
+              settled = true;
+              console.warn("Native subscription check timed out. Preserving cached premium state for now.");
+              resolve(false);
+            }, 2500);
+
+            hasActiveSubscription().then(
+              (value) => {
+                if (settled) return;
+                settled = true;
+                nativeCheckCompleted = true;
+                window.clearTimeout(timeoutId);
+                resolve(value);
+              },
+              (error) => {
+                if (settled) return;
+                settled = true;
+                window.clearTimeout(timeoutId);
+                reject(error);
+              },
+            );
+          });
         } catch (error) {
           console.warn("Could not verify native subscription state:", error);
         }
       }
 
-      const hasEntitlement = serverSubscription || nativeSubscriptionActive;
+      const hasEntitlement =
+        serverSubscription ||
+        nativeSubscriptionActive ||
+        (!nativeCheckCompleted &&
+          allowStoredNativeFallback &&
+          storedSubscription &&
+          isNativeSubscriptionSource(storedSubscriptionSource));
+
       if (isDisposed) return;
 
       setStoredSubscriptionState(id, hasEntitlement);
@@ -329,7 +360,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       syncOnboardingState(currentUser.id);
       syncProfileState(currentUser);
       syncShadowNotes(currentUser);
-      await syncSubscriptionState(currentUser);
+      await syncSubscriptionState(currentUser, { allowStoredNativeFallback: true });
     };
 
     const refreshAuthenticatedUser = async (currentSession: Session, initialUser: User) => {
