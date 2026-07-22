@@ -28,8 +28,10 @@ const WEB_RECORDING_MIME_TYPES = [
   "audio/ogg;codecs=opus",
 ];
 
-const shouldUseNativeSpeechRecognition = () =>
-  isNativePlatform() && getNativePlatform() === "android";
+type RecognitionMode = "web" | "native";
+
+const canPreferNativeSpeechRecognition = () =>
+  isNativePlatform() && getNativePlatform() === "android" && !isWebRecordingSupported();
 
 const isWebRecordingSupported = () =>
   Boolean(
@@ -88,6 +90,7 @@ export const createSpeechRecognitionSession = ({
 }: SpeechRecognitionCallbacks): SpeechRecognitionSession => {
   let baseText = "";
   let isDestroyed = false;
+  let activeMode: RecognitionMode | null = null;
   let mediaRecorder: MediaRecorder | null = null;
   let mediaStream: MediaStream | null = null;
   let mediaChunks: Blob[] = [];
@@ -125,6 +128,19 @@ export const createSpeechRecognitionSession = ({
     await removeNativeListener(nativeListeningStateListener);
     nativePartialResultsListener = null;
     nativeListeningStateListener = null;
+  };
+
+  const resolveRecognitionMode = async (): Promise<RecognitionMode> => {
+    if (!canPreferNativeSpeechRecognition()) {
+      return "web";
+    }
+
+    try {
+      const { available } = await NativeSpeechRecognition.available();
+      return available ? "native" : "web";
+    } catch {
+      return "web";
+    }
   };
 
   const releaseMediaStream = () => {
@@ -230,7 +246,7 @@ export const createSpeechRecognitionSession = ({
 
   return {
     isSupported: async () => {
-      if (shouldUseNativeSpeechRecognition()) {
+      if (canPreferNativeSpeechRecognition()) {
         try {
           const { available } = await NativeSpeechRecognition.available();
           return available;
@@ -243,8 +259,9 @@ export const createSpeechRecognitionSession = ({
     },
     start: async (initialText = "") => {
       baseText = initialText;
+      activeMode = await resolveRecognitionMode();
 
-      if (shouldUseNativeSpeechRecognition()) {
+      if (activeMode === "native") {
         const { available } = await NativeSpeechRecognition.available();
         if (!available) {
           throw new Error("Speech recognition is not available on this device.");
@@ -322,37 +339,46 @@ export const createSpeechRecognitionSession = ({
       };
 
       recorder.start();
+      activeMode = "web";
     },
     stop: async () => {
-      if (shouldUseNativeSpeechRecognition()) {
+      if (activeMode === "native") {
         await stopNativeRecognition();
         emitListeningChange(false);
+        activeMode = null;
         return;
       }
 
       if (!mediaRecorder) {
         emitListeningChange(false);
+        activeMode = null;
         return;
       }
 
       await stopWebRecording();
+      activeMode = null;
     },
     destroy: async () => {
       isDestroyed = true;
 
-      if (shouldUseNativeSpeechRecognition()) {
+      if (activeMode === "native" || canPreferNativeSpeechRecognition()) {
         await stopNativeRecognition();
-        return;
+        if (activeMode === "native") {
+          activeMode = null;
+          return;
+        }
       }
 
       if (mediaRecorder) {
         discardWebRecording();
+        activeMode = null;
         return;
       }
 
       releaseMediaStream();
       mediaRecorder = null;
       mediaChunks = [];
+      activeMode = null;
     },
   };
 };
