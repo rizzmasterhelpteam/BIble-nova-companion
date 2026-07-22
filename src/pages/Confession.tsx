@@ -6,6 +6,14 @@ import PageHeader from "../components/PageHeader";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 
+const BURN_EMBERS = [
+  { left: "16%", bottom: "14%", size: "5px", color: "rgba(255, 211, 112, 0.95)", drift: -14, rise: -112, delay: 0.05 },
+  { left: "29%", bottom: "10%", size: "4px", color: "rgba(255, 153, 66, 0.9)", drift: 11, rise: -86, delay: 0.22 },
+  { left: "47%", bottom: "12%", size: "6px", color: "rgba(255, 226, 145, 0.98)", drift: -7, rise: -132, delay: 0.1 },
+  { left: "64%", bottom: "9%", size: "4px", color: "rgba(255, 137, 51, 0.88)", drift: 16, rise: -96, delay: 0.34 },
+  { left: "79%", bottom: "15%", size: "5px", color: "rgba(255, 202, 99, 0.92)", drift: -10, rise: -118, delay: 0.18 },
+] as const;
+
 export default function Confession() {
   useDocumentTitle("Confess | Bible Nova Companion");
   const { isCompactPhone, isShortPhone, visibleHeight } = useMobileViewport();
@@ -89,15 +97,15 @@ export default function Confession() {
               animate={
                 isReleasing && burnAnimationEnabled
                   ? {
-                      scale: [1, 0.995, 0.97, 0.9, 0.82],
-                      rotate: [0, -0.35, 0.35, -0.5, 0],
-                      opacity: [1, 1, 0.94, 0.55, 0],
-                      filter: [
-                        "brightness(1)",
-                        "brightness(1.18) sepia(35%) saturate(140%)",
-                        "brightness(0.84) sepia(80%) saturate(120%)",
-                        "brightness(0.45) sepia(100%) saturate(80%)",
-                        "brightness(0) grayscale(100%)",
+                      y: [0, -1, -2, -6, -12],
+                      scale: [1, 1.002, 1.005, 1.01, 1.016],
+                      opacity: [1, 1, 0.98, 0.8, 0],
+                      boxShadow: [
+                        "0 14px 34px rgba(12, 12, 18, 0.06)",
+                        "0 14px 38px rgba(244, 132, 45, 0.12)",
+                        "0 12px 40px rgba(244, 132, 45, 0.18)",
+                        "0 8px 34px rgba(244, 132, 45, 0.12)",
+                        "0 4px 22px rgba(244, 132, 45, 0)",
                       ],
                     }
                   : isReleasing
@@ -119,13 +127,28 @@ export default function Confession() {
                   : { duration: isPerformanceMode ? 0 : 2.5, repeat: isPerformanceMode ? 0 : Infinity, ease: "easeInOut" }
               }
             >
-              <textarea
+              <motion.textarea
                 value={confession}
                 onChange={(event) => setConfession(event.target.value)}
                 disabled={isReleasing}
                 placeholder="I confess that..."
                 aria-label="Confession"
                 enterKeyHint="done"
+                animate={
+                  isReleasing && burnAnimationEnabled
+                    ? {
+                        opacity: [1, 0.96, 0.72, 0.22, 0],
+                        y: [0, -1, -4, -10, -18],
+                        filter: ["blur(0px)", "blur(0px)", "blur(0.5px)", "blur(2px)", "blur(6px)"],
+                      }
+                    : isReleasing
+                      ? { opacity: 0.2 }
+                      : { opacity: 1, y: 0, filter: "blur(0px)" }
+                }
+                transition={{
+                  duration: isReleasing ? (burnAnimationEnabled ? burnDuration : 0.45) : 0.25,
+                  ease: "easeOut",
+                }}
                 className={cn(
                   "app-heading relative z-10 h-full w-full resize-none bg-transparent p-5 font-serif italic leading-[1.8] outline-none transition-opacity focus-visible:outline-none",
                   isCrampedPhone ? "p-4 text-[16px]" : isCompactPhone ? "text-[16px] sm:p-6" : "text-[17px] sm:p-8",
@@ -142,35 +165,72 @@ export default function Confession() {
               {isReleasing && burnAnimationEnabled && (
                 <>
                   <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: [0, 0.18, 0.3, 0.16, 0] }}
+                    aria-hidden="true"
+                    initial={{ opacity: 0, scale: 0.82 }}
+                    animate={{ opacity: [0, 0.12, 0.2, 0.1, 0], scale: [0.82, 0.98, 1.04, 1.1, 1.18] }}
                     transition={{ duration: burnDuration, ease: "easeInOut" }}
-                    className="pointer-events-none absolute inset-0 z-20"
+                    className="pointer-events-none absolute inset-x-[-18%] bottom-[-42%] z-20 h-[100%] rounded-[50%]"
                     style={{
                       background:
-                        "radial-gradient(circle at 50% 100%, rgba(255, 160, 58, 0.62) 0%, rgba(234, 76, 31, 0.22) 42%, transparent 76%)",
+                        "radial-gradient(ellipse at 50% 100%, rgba(255, 186, 74, 0.72) 0%, rgba(239, 91, 35, 0.3) 32%, rgba(239, 91, 35, 0.08) 58%, transparent 78%)",
+                      filter: "blur(10px)",
                     }}
                   />
                   <motion.div
-                    initial={{ top: "100%" }}
-                    animate={{ top: "-18%", opacity: [0.9, 0.9, 0.72, 0.34, 0] }}
-                    transition={{ duration: burnDuration, ease: "linear" }}
-                    className="pointer-events-none absolute left-[-8%] right-[-8%] z-20 h-[76%] rounded-[50%]"
+                    aria-hidden="true"
+                    initial={{ y: "8%", opacity: 0, scaleX: 0.9 }}
+                    animate={{
+                      y: ["8%", "-8%", "-34%", "-72%", "-112%"],
+                      opacity: [0, 0.7, 0.58, 0.22, 0],
+                      scaleX: [0.9, 1.04, 1, 0.95, 0.84],
+                    }}
+                    transition={{ duration: burnDuration, ease: "easeIn" }}
+                    className="pointer-events-none absolute bottom-[-36%] left-[-18%] right-[-18%] z-20 h-[84%] rounded-[50%]"
                     style={{
                       background:
-                        "linear-gradient(0deg, rgba(237, 76, 28, 0.92) 0%, rgba(255, 171, 48, 0.76) 34%, rgba(255, 220, 112, 0.18) 68%, transparent 100%)",
+                        "radial-gradient(ellipse at 50% 100%, rgba(247, 86, 29, 0.9) 0%, rgba(255, 158, 57, 0.62) 28%, rgba(255, 208, 105, 0.18) 56%, transparent 78%)",
+                      filter: "blur(8px)",
                     }}
                   />
                   <motion.div
-                    initial={{ top: "92%", opacity: 0 }}
-                    animate={{ top: "-12%", opacity: [0, 0.9, 0.8, 0.25, 0] }}
-                    transition={{ duration: burnDuration * 0.78, ease: "linear", delay: 0.15 }}
-                    className="pointer-events-none absolute left-[8%] right-[8%] z-30 h-12 rounded-[50%]"
+                    aria-hidden="true"
+                    initial={{ y: "10%", opacity: 0, scaleX: 0.72 }}
+                    animate={{
+                      y: ["10%", "-12%", "-48%", "-106%"],
+                      opacity: [0, 0.82, 0.42, 0],
+                      scaleX: [0.72, 1, 0.9, 0.7],
+                    }}
+                    transition={{ duration: burnDuration * 0.82, ease: "easeIn", delay: 0.12 }}
+                    className="pointer-events-none absolute bottom-[-24%] left-[10%] right-[10%] z-30 h-[56%] rounded-[50%]"
                     style={{
                       background:
-                        "linear-gradient(0deg, transparent 0%, rgba(255, 215, 104, 0.94) 50%, transparent 100%)",
+                        "radial-gradient(ellipse at 50% 100%, rgba(255, 229, 151, 0.88) 0%, rgba(255, 178, 74, 0.36) 35%, transparent 72%)",
+                      filter: "blur(5px)",
                     }}
                   />
+                  {BURN_EMBERS.map((ember) => (
+                    <motion.span
+                      key={`${ember.left}-${ember.bottom}`}
+                      aria-hidden="true"
+                      initial={{ opacity: 0, x: 0, y: 0, scale: 0.35 }}
+                      animate={{
+                        opacity: [0, 0.95, 0.7, 0],
+                        x: [0, ember.drift * 0.35, ember.drift, ember.drift * 1.3],
+                        y: [0, ember.rise * 0.35, ember.rise * 0.78, ember.rise],
+                        scale: [0.35, 1, 0.7, 0],
+                      }}
+                      transition={{ duration: burnDuration * 0.72, delay: ember.delay, ease: "easeOut" }}
+                      className="pointer-events-none absolute z-40 rounded-full"
+                      style={{
+                        left: ember.left,
+                        bottom: ember.bottom,
+                        width: ember.size,
+                        height: ember.size,
+                        background: ember.color,
+                        boxShadow: `0 0 12px ${ember.color}`,
+                      }}
+                    />
+                  ))}
                 </>
               )}
             </motion.div>
@@ -201,7 +261,14 @@ export default function Confession() {
             >
               {isReleasing ? (
                 <div className="flex items-center gap-3">
-                  <Flame className="w-5 h-5 animate-bounce" />
+                  <motion.span
+                    aria-hidden="true"
+                    animate={burnAnimationEnabled ? { scale: [1, 1.08, 1], rotate: [-4, 4, -4], opacity: [0.82, 1, 0.82] } : undefined}
+                    transition={{ duration: 1.15, repeat: Infinity, ease: "easeInOut" }}
+                    className="inline-flex"
+                  >
+                    <Flame className="h-5 w-5" />
+                  </motion.span>
                   <span className="font-semibold tracking-[0.2em] uppercase text-xs flex items-center gap-2">
                     <span className="w-16 text-right">Burning</span>
                     <span className="app-soft">|</span>
