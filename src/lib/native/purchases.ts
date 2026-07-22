@@ -42,9 +42,11 @@ export type SubscriptionOffering = {
 
 let billingChecked = false;
 let billingSupported = false;
+let billingSupportPromise: Promise<boolean> | null = null;
 let nativePurchasesModulePromise: Promise<typeof import("@capgo/native-purchases") | null> | null =
   null;
-const BILLING_STARTUP_TIMEOUT_MS = 3000;
+const BILLING_STARTUP_TIMEOUT_MS = 8000;
+const OFFERING_RETRY_DELAY_MS = 700;
 
 const withTimeout = <T,>(promise: Promise<T>, fallback: T, timeoutMs = BILLING_STARTUP_TIMEOUT_MS) =>
   new Promise<T>((resolve, reject) => {
@@ -69,6 +71,9 @@ const withTimeout = <T,>(promise: Promise<T>, fallback: T, timeoutMs = BILLING_S
         reject(error);
       });
   });
+
+const wait = (durationMs: number) =>
+  new Promise<void>((resolve) => window.setTimeout(resolve, durationMs));
 
 const getNativePurchasesModule = async () => {
   if (!isNativePlatform()) {
@@ -231,67 +236,97 @@ const assertValidSubscriptionPurchase = (
 export async function initializePurchases() {
   const nativePurchasesModule = await getNativePurchasesModule();
   if (!nativePurchasesModule) return false;
-  if (billingChecked) return billingSupported;
+  if (billingChecked && billingSupported) return true;
+  if (billingSupportPromise) return billingSupportPromise;
 
-  try {
-    const result = await withTimeout(
-      nativePurchasesModule.NativePurchases.isBillingSupported(),
-      { isBillingSupported: false },
-    );
-    billingSupported = Boolean(result.isBillingSupported);
-  } catch {
-    billingSupported = false;
-  } finally {
-    billingChecked = true;
-  }
+  billingSupportPromise = (async () => {
+    try {
+      const result = await withTimeout(
+        nativePurchasesModule.NativePurchases.isBillingSupported(),
+        { isBillingSupported: false },
+      );
+      billingSupported = Boolean(result.isBillingSupported);
+      // Do not permanently cache a transient false response. Google Play can
+      // become ready shortly after the app process starts.
+      billingChecked = billingSupported;
+      return billingSupported;
+    } catch {
+      billingSupported = false;
+      billingChecked = false;
+      return false;
+    } finally {
+      billingSupportPromise = null;
+    }
+  })();
 
-  return billingSupported;
+  return billingSupportPromise;
 }
 
 export async function getCurrentOffering(): Promise<SubscriptionOffering | null> {
   const nativePurchasesModule = await getNativePurchasesModule();
-  if (!nativePurchasesModule || !(await initializePurchases())) return null;
+  if (!nativePurchasesModule) return null;
 
   const configs = getSubscriptionConfigs();
   const productIdentifiers = getProductIds(configs);
   if (!productIdentifiers.length) return null;
 
-  const { products } = await withTimeout(
-    nativePurchasesModule.NativePurchases.getProducts({
-      productIdentifiers,
-      productType: nativePurchasesModule.PURCHASE_TYPE.SUBS,
-    }),
-    { products: [] as Product[] },
-  );
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      if (!(await initializePurchases())) {
+        throw new Error("Google Play billing is still starting. Please try again.");
+      }
 
-  const isAndroid = getNativePlatform() === "android";
-  const monthlyProduct = selectProductForConfig(products, configs.monthly, isAndroid);
-  const yearlyProduct = selectProductForConfig(products, configs.yearly, isAndroid);
-  const monthlyBaseProduct = selectBasePlanProduct(products, configs.monthly);
-  const yearlyBaseProduct = selectBasePlanProduct(products, configs.yearly);
+      const result = await withTimeout(
+        nativePurchasesModule.NativePurchases.getProducts({
+          productIdentifiers,
+          productType: nativePurchasesModule.PURCHASE_TYPE.SUBS,
+        }),
+        null,
+      );
 
-  return {
-    monthly:
-      monthlyProduct && configs.monthly.productId
-        ? {
-            plan: "monthly",
-            product: monthlyProduct,
-            baseProduct: monthlyBaseProduct,
-            productId: configs.monthly.productId,
-            androidBasePlanId: configs.monthly.androidBasePlanId || monthlyProduct.identifier,
-          }
-        : undefined,
-    annual:
-      yearlyProduct && configs.yearly.productId
-        ? {
-            plan: "yearly",
-            product: yearlyProduct,
-            baseProduct: yearlyBaseProduct,
-            productId: configs.yearly.productId,
-            androidBasePlanId: configs.yearly.androidBasePlanId || yearlyProduct.identifier,
-          }
-        : undefined,
-  };
+      if (!result?.products?.length) {
+        throw new Error("Google Play did not return subscription products yet.");
+      }
+
+      const products = result.products;
+      const isAndroid = getNativePlatform() === "android";
+      const monthlyProduct = selectProductForConfig(products, configs.monthly, isAndroid);
+      const yearlyProduct = selectProductForConfig(products, configs.yearly, isAndroid);
+      const monthlyBaseProduct = selectBasePlanProduct(products, configs.monthly);
+      const yearlyBaseProduct = selectBasePlanProduct(products, configs.yearly);
+      const offering = {
+        monthly:
+          monthlyProduct && configs.monthly.productId
+            ? {
+                plan: "monthly" as const,
+                product: monthlyProduct,
+                baseProduct: monthlyBaseProduct,
+                productId: configs.monthly.productId,
+                androidBasePlanId: configs.monthly.androidBasePlanId || monthlyProduct.identifier,
+              }
+            : undefined,
+        annual:
+          yearlyProduct && configs.yearly.productId
+            ? {
+                plan: "yearly" as const,
+                product: yearlyProduct,
+                baseProduct: yearlyBaseProduct,
+                productId: configs.yearly.productId,
+                androidBasePlanId: configs.yearly.androidBasePlanId || yearlyProduct.identifier,
+              }
+            : undefined,
+      } satisfies SubscriptionOffering;
+
+      if (offering.monthly || offering.annual) return offering;
+      throw new Error("Google Play returned products, but none matched the configured plans.");
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("Could not load Google Play products.");
+      if (attempt === 0) await wait(OFFERING_RETRY_DELAY_MS);
+    }
+  }
+
+  throw lastError || new Error("Could not load Google Play subscription products.");
 }
 
 export async function purchasePackage(aPackage: SubscriptionPackage) {

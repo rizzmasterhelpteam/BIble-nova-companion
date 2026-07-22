@@ -57,6 +57,8 @@ export default function Paywall() {
   const [iapReady, setIapReady] = useState(false);
   const [isLoadingOffering, setIsLoadingOffering] = useState(nativeStoreAvailable);
   const [iapLoadError, setIapLoadError] = useState<string | null>(null);
+  const [subscriptionSyncError, setSubscriptionSyncError] = useState<string | null>(null);
+  const [offeringReloadKey, setOfferingReloadKey] = useState(0);
   const [subscriptionSyncReady, setSubscriptionSyncReady] = useState<boolean | null>(null);
   const { isSubscribed, session, subscribe, user } = useAuth();
   const navigate = useNavigate();
@@ -109,7 +111,7 @@ export default function Paywall() {
       });
 
     return () => { isMounted = false; };
-  }, [nativeStoreAvailable]);
+  }, [nativeStoreAvailable, offeringReloadKey]);
 
   useEffect(() => {
     if (!nativeStoreAvailable) return;
@@ -123,9 +125,11 @@ export default function Paywall() {
         if (!isMounted || !status || typeof status.nativeSubscriptionSyncReady !== "boolean") return;
         setSubscriptionSyncReady(status.nativeSubscriptionSyncReady);
         if (!status.nativeSubscriptionSyncReady) {
-          setIapLoadError(
+          setSubscriptionSyncError(
             "Premium purchases are temporarily unavailable while secure Google Play verification is being configured. Please try again later.",
           );
+        } else {
+          setSubscriptionSyncError(null);
         }
       })
       .catch(() => {});
@@ -477,12 +481,13 @@ export default function Paywall() {
           )}
 
           {/* Errors */}
-          {(error || iapLoadError) && (
+          {(error || iapLoadError || subscriptionSyncError) && (
             <motion.div variants={isPerformanceMode ? undefined : itemVariants}
               className="mb-6 flex items-start gap-3 rounded-2xl p-4"
               style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
               <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "#f87171" }} />
-              <p className="text-sm leading-relaxed" style={{ color: "rgba(248,113,113,0.9)" }}>{error || iapLoadError}</p>
+              <p className="text-sm leading-relaxed" style={{ color: "rgba(248,113,113,0.9)" }}>{error || iapLoadError || subscriptionSyncError}</p>
+              {!error && iapLoadError && <button type="button" onClick={() => { setIapLoadError(null); setOfferingReloadKey((value) => value + 1); }} disabled={isLoadingOffering} className="touch-target shrink-0 rounded-pill px-3 py-2 text-xs font-semibold text-white underline-offset-4 hover:underline disabled:opacity-50">Retry</button>}
             </motion.div>
           )}
 
