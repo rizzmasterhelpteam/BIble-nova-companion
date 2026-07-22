@@ -165,8 +165,7 @@ export default function Paywall() {
 
   const configuredMonthlyOfferId = getConfiguredMonthlyOfferId();
   const monthlyTrialConfigured = configuredMonthlyOfferId === "trial";
-  const monthlyTrialSelected =
-    monthlyTrialConfigured && iapPackages.monthly?.product.offerId === configuredMonthlyOfferId;
+  const monthlyTrialSelected = monthlyTrialConfigured && Boolean(iapPackages.monthly);
   const monthlyTrialLabel = nativeStoreAvailable
     ? "7-day first-time subscription trial"
     : "7-day first-time subscription trial on Android";
@@ -464,7 +463,7 @@ export default function Paywall() {
                     <span className="font-semibold text-lg text-white">Monthly</span>
                     {monthlyTrialSelected && (
                       <span className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-950" style={{ background: "#f59e0b" }}>
-                        7-day trial
+                        7-day free trial
                       </span>
                     )}
                   </div>
@@ -512,7 +511,7 @@ export default function Paywall() {
                 ) : nativeSelectedPlanUnavailable ? (
                   "Plan unavailable"
                 ) : (
-                  <>{monthlyTrialSelected && selectedPlan === "monthly" ? "Start 7-day trial" : `Continue with ${selectedPlanLabel}`}</>
+                  <>{monthlyTrialSelected && selectedPlan === "monthly" ? "Start free trial" : `Continue with ${selectedPlanLabel}`}</>
                 )}
               </button>
 

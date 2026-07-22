@@ -33,6 +33,7 @@ export type SubscriptionPackage = {
   baseProduct?: Product;
   productId: string;
   androidBasePlanId?: string;
+  androidOfferId?: string;
 };
 
 export type SubscriptionOffering = {
@@ -301,9 +302,10 @@ export async function getCurrentOffering(): Promise<SubscriptionOffering | null>
             ? {
                 plan: "monthly" as const,
                 product: monthlyProduct,
-                baseProduct: monthlyBaseProduct,
-                productId: configs.monthly.productId,
-                androidBasePlanId: configs.monthly.androidBasePlanId || monthlyProduct.identifier,
+            baseProduct: monthlyBaseProduct,
+            productId: configs.monthly.productId,
+            androidBasePlanId: configs.monthly.androidBasePlanId || monthlyProduct.identifier,
+            androidOfferId: configs.monthly.androidOfferId,
               }
             : undefined,
         annual:
@@ -314,6 +316,7 @@ export async function getCurrentOffering(): Promise<SubscriptionOffering | null>
                 baseProduct: yearlyBaseProduct,
                 productId: configs.yearly.productId,
                 androidBasePlanId: configs.yearly.androidBasePlanId || yearlyProduct.identifier,
+                androidOfferId: configs.yearly.androidOfferId,
               }
             : undefined,
       } satisfies SubscriptionOffering;
@@ -337,7 +340,9 @@ export async function purchasePackage(aPackage: SubscriptionPackage) {
 
   const isAndroid = getNativePlatform() === "android";
   const planIdentifier = isAndroid ? aPackage.androidBasePlanId || aPackage.product.identifier : undefined;
-  const offerId = isAndroid ? aPackage.product.offerId || undefined : undefined;
+  const offerId = isAndroid
+    ? aPackage.androidOfferId || aPackage.product.offerId || undefined
+    : undefined;
 
   if (isAndroid && !planIdentifier) {
     throw new Error("Android base plan ID is missing for this subscription.");
