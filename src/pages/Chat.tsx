@@ -11,6 +11,7 @@ import {
   Square,
   ChevronRight,
   Copy,
+  ArrowDown,
 } from "lucide-react";
 import { AppLogo } from "../components/AppLogo";
 import { cn, useDocumentTitle } from "../lib/utils";
@@ -239,6 +240,7 @@ export default function Chat() {
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [voiceSupported, setVoiceSupported] = useState(false);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef(messages);
@@ -249,6 +251,7 @@ export default function Chat() {
   const resizeFrameRef = useRef<number | null>(null);
   const storageWriteTimerRef = useRef<number | null>(null);
   const lastScrolledMessageCountRef = useRef(0);
+  const isNearBottomRef = useRef(true);
   const showQuickPrompts = messages.length === 1 && !isTyping;
   const chatUnavailable = apiStatus?.chatReady === false;
   const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
@@ -559,11 +562,33 @@ export default function Chat() {
         return;
       }
 
-      container.scrollTo({ top: container.scrollHeight, behavior });
+      if (isNearBottomRef.current) {
+        container.scrollTo({ top: container.scrollHeight, behavior });
+        setShowJumpToLatest(false);
+      } else {
+        setShowJumpToLatest(true);
+      }
     });
 
     return () => window.cancelAnimationFrame(frame);
   }, [isKeyboardOpen, messages.length, isTyping, showQuickPrompts]);
+
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const isNearBottom = distanceFromBottom < 96;
+    isNearBottomRef.current = isNearBottom;
+    if (isNearBottom) setShowJumpToLatest(false);
+  }, []);
+
+  const jumpToLatest = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    isNearBottomRef.current = true;
+    setShowJumpToLatest(false);
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }, []);
 
   useEffect(() => {
     if (!shouldAutoFocusInput) return;
@@ -687,6 +712,7 @@ export default function Chat() {
 
       <div
         ref={scrollContainerRef}
+        onScroll={handleScroll}
         className={cn(
           "app-scroll-region z-10 flex flex-1 flex-col scrollbar-hide",
           isCompactPhone ? "px-4 py-4" : "px-5 py-5 sm:px-6",
@@ -805,6 +831,17 @@ export default function Chat() {
         </div>
       </div>
 
+      {showJumpToLatest && (
+        <button
+          type="button"
+          onClick={jumpToLatest}
+          className="touch-target app-secondary-button absolute bottom-24 right-4 z-30 inline-flex items-center gap-2 rounded-pill px-3 py-2 text-xs font-semibold shadow-lg"
+          aria-label="Jump to latest message"
+        >
+          <ArrowDown className="h-4 w-4" /> Latest
+        </button>
+      )}
+
       <div
         className={cn(
           "shrink-0 border-t border-[color:color-mix(in_srgb,var(--app-divider)_50%,transparent)] transition-colors duration-300",
@@ -831,7 +868,7 @@ export default function Chat() {
               {speechError || ttsError
                 ? speechError || ttsError
                 : speakingMessageId
-                ? "Playing the best available fatherly device voice."
+                ? "Playing audio."
                 : isRecording
                 ? "Listening. Tap stop when you're done."
                 : isTranscribingSpeech

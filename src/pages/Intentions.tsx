@@ -78,6 +78,9 @@ export default function Intentions() {
     if (storageTimerRef.current !== null) {
       window.clearTimeout(storageTimerRef.current);
     }
+    if (undoTimerRef.current !== null) {
+      window.clearTimeout(undoTimerRef.current);
+    }
   }, []);
 
   const addIntention = (value = newIntention) => {

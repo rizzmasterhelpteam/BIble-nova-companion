@@ -1,6 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { App as CapacitorApp } from "@capacitor/app";
-import { Session, User } from "@supabase/supabase-js";
+import type { Session, User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { hasActiveSubscription } from "../lib/native/purchases";
 import { apiFetch } from "../lib/apiClient";
@@ -425,7 +424,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     let removeAppStateListener: (() => void) | undefined;
     if (isNativePlatform()) {
-      void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      void import("@capacitor/app").then(({ App }) => App.addListener("appStateChange", ({ isActive }) => {
         if (!isActive) return;
 
         void supabase.auth
@@ -442,7 +441,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           .catch((error) => {
             console.warn("Could not refresh session while syncing subscriptions:", error);
           });
-      }).then((listener) => {
+      })).then((listener) => {
         if (isDisposed) {
           void listener.remove();
           return;
@@ -451,6 +450,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         removeAppStateListener = () => {
           void listener.remove();
         };
+      }).catch((error) => {
+        console.warn("Could not register the native session listener:", error);
       });
     }
 

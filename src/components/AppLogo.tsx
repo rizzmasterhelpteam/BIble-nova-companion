@@ -10,6 +10,7 @@ export function AppLogo({ alt = "Bible Nova Companion logo", className, ...props
       alt={alt}
       className={className}
       draggable={false}
+      decoding="async"
       {...props}
     />
   );

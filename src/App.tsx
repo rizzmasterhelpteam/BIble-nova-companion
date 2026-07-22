@@ -9,7 +9,6 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { HapticsProvider } from "./context/HapticsContext";
 import { MobileViewportProvider } from "./context/MobileViewportContext";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { getNativePlatform, isNativePlatform } from "./lib/native/platform";
@@ -115,20 +114,10 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
 // Gentle page entrance for auth-flow routes (login → onboarding → paywall).
 // useReducedMotion is used here so it respects user preferences.
 const PageFade = ({ children }: { children: React.ReactNode }) => {
-  const prefersReducedMotion = useReducedMotion();
-  const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
-  const shouldAnimate = !prefersReducedMotion;
-  const isLowPowerDevice = isAndroidNative;
-
   return (
-    <motion.div
-      className="flex min-h-0 w-full flex-1 flex-col"
-      initial={shouldAnimate ? { opacity: 0, y: isLowPowerDevice ? 4 : 8 } : false}
-      animate={shouldAnimate ? { opacity: 1, y: 0 } : undefined}
-      transition={shouldAnimate ? { duration: isLowPowerDevice ? 0.16 : 0.2, ease: [0.22, 1, 0.36, 1] } : undefined}
-    >
+    <div className="app-route-enter flex min-h-0 w-full flex-1 flex-col">
       {children}
-    </motion.div>
+    </div>
   );
 };
 
@@ -140,7 +129,6 @@ const AnimatedRoutes = () => {
     : "app";
 
   return (
-    <AnimatePresence mode="sync" initial={false}>
       <React.Fragment key={topKey}>
       <Routes location={location}>
         <Route path="/login" element={<PageFade><Login /></PageFade>} />
@@ -155,7 +143,6 @@ const AnimatedRoutes = () => {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </React.Fragment>
-    </AnimatePresence>
   );
 };
 
@@ -195,7 +182,6 @@ export default function App() {
     frameOne = window.requestAnimationFrame(() => {
         frameTwo = window.requestAnimationFrame(() => {
           setHasRenderedAppFrame(true);
-          startup.mark("first-frame-painted");
         });
     });
 

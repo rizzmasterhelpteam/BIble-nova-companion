@@ -115,6 +115,10 @@ export default function Onboarding() {
   const isPerformanceMode = Boolean(
     prefersReducedMotion || (isNativePlatform() && getNativePlatform() === "android"),
   );
+  const disableAmbientMotion = Boolean(
+    isPerformanceMode ||
+      (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches),
+  );
   const shouldAnimateLightly = !prefersReducedMotion;
   const [currentStep, setCurrentStep] = useState(0);
   const [prevStep, setPrevStep] = useState(-1);
@@ -218,7 +222,7 @@ export default function Onboarding() {
           paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "2rem" : "3rem"})`,
         }}
       >
-        <BackgroundOrbs animated={!isPerformanceMode} />
+        <BackgroundOrbs animated={!disableAmbientMotion} />
         
         <div className="relative z-10 w-full max-w-md flex flex-col items-center text-center">
           <motion.div
@@ -284,7 +288,7 @@ export default function Onboarding() {
           paddingTop: "max(env(safe-area-inset-top, 0px), 3rem)",
         }}
       >
-        <BackgroundOrbs animated={!isPerformanceMode} />
+        <BackgroundOrbs animated={!disableAmbientMotion} />
 
         <motion.div
           initial={shouldAnimateLightly ? { opacity: 0, y: 10 } : false}
@@ -374,7 +378,7 @@ export default function Onboarding() {
         paddingTop: "max(env(safe-area-inset-top, 0px), 3rem)",
       }}
     >
-      <BackgroundOrbs animated={!isPerformanceMode} />
+      <BackgroundOrbs animated={!disableAmbientMotion} />
 
       <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col">
         {/* Header: back + progress */}

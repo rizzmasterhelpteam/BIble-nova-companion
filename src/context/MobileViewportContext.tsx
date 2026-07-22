@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { PluginListenerHandle } from "@capacitor/core";
-import { Keyboard, type KeyboardInfo } from "@capacitor/keyboard";
+import type { KeyboardInfo } from "@capacitor/keyboard";
 import { isNativePlatform } from "../lib/native/platform";
 
 type MobileViewportState = {
@@ -289,12 +289,12 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
     window.visualViewport?.addEventListener("scroll", handleViewportScroll, { passive: true });
 
     if (isNativePlatform()) {
-      void Promise.all([
+      void import("@capacitor/keyboard").then(({ Keyboard }) => Promise.all([
         Keyboard.addListener("keyboardWillShow", handleKeyboardShow),
         Keyboard.addListener("keyboardDidShow", handleKeyboardShow),
         Keyboard.addListener("keyboardWillHide", handleKeyboardHide),
         Keyboard.addListener("keyboardDidHide", handleKeyboardHide),
-      ]).then((handles) => {
+      ])).then((handles) => {
         if (isDisposed) {
           void Promise.all(handles.map((handle) => handle.remove()));
           return;

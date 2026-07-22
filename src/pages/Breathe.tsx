@@ -34,7 +34,8 @@ export default function Breathe() {
   const [sessionDuration, setSessionDuration] = useState(60);
   const [sessionLeft, setSessionLeft] = useState(60);
   const [secondsLeft, setSecondsLeft] = useState(timings.inhale);
-  const timeoutRef = useRef<number | null>(null);
+  const customizerRef = useRef<HTMLDivElement>(null);
+  const customizerTriggerRef = useRef<HTMLButtonElement>(null);
 
   const phaseDuration = timings[PHASE_LABELS[phase]] * 1000;
   const cycleLength = timings.inhale + timings.hold + timings.exhale;
@@ -57,27 +58,14 @@ export default function Breathe() {
   }, [phase, timings]);
 
   useEffect(() => {
-    if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-    if (isPaused || !isStarted) return;
-
-    timeoutRef.current = window.setTimeout(() => {
-      setSecondsLeft((prev) => {
-        if (prev > 1) return prev - 1;
-
+    if (!isStarted || isPaused) return;
+    const timer = window.setInterval(() => {
+      setSecondsLeft((remaining) => {
+        if (remaining > 1) return remaining - 1;
         const nextPhase = PHASE_ORDER[(PHASE_ORDER.indexOf(phase) + 1) % PHASE_ORDER.length];
         setPhase(nextPhase);
         return timings[PHASE_LABELS[nextPhase]];
       });
-    }, 1000);
-
-    return () => {
-      if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-    };
-  }, [isPaused, isStarted, phase, secondsLeft, sessionDuration, timings]);
-
-  useEffect(() => {
-    if (!isStarted || isPaused) return;
-    const timer = window.setInterval(() => {
       setSessionLeft((remaining) => {
         if (remaining <= 1) {
           setIsStarted(false);
@@ -88,7 +76,21 @@ export default function Breathe() {
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [isPaused, isStarted, sessionDuration]);
+  }, [isPaused, isStarted, phase, sessionDuration, timings]);
+
+  useEffect(() => {
+    if (!showSettings) return;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    window.requestAnimationFrame(() => customizerRef.current?.focus());
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowSettings(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      (customizerTriggerRef.current ?? previouslyFocused)?.focus();
+    };
+  }, [showSettings]);
 
   const paceSummary = useMemo(
     () => `${timings.inhale}-${timings.hold}-${timings.exhale} rhythm`,
@@ -215,6 +217,7 @@ export default function Breathe() {
 
         <div className={cn("mb-4 flex w-full items-center justify-center gap-2", isShortPhone ? "max-w-[320px]" : "max-w-[340px] sm:mb-6")}>
           <button
+            ref={customizerTriggerRef}
             type="button"
             onClick={() => setIsPaused((prev) => !prev)}
             disabled={!isStarted}
@@ -261,6 +264,8 @@ export default function Breathe() {
             />
 
             <motion.div
+              ref={customizerRef}
+              tabIndex={-1}
               id="breathing-customizer"
               role="dialog"
               aria-modal="true"

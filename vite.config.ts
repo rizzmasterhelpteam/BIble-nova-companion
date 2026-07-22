@@ -223,10 +223,11 @@ export default defineConfig(({mode}) => {
               return;
             }
 
-            if (id.includes("react-dom") || id.includes("react")) return "react-vendor";
-            if (id.includes("@capacitor") || id.includes("@capgo")) return "native-vendor";
             if (id.includes("motion")) return "motion-vendor";
             if (id.includes("@supabase")) return "supabase-vendor";
+            if (/node_modules[\\/](react|react-dom|react-router|react-router-dom)[\\/]/.test(id)) {
+              return "react-vendor";
+            }
           },
         },
       },

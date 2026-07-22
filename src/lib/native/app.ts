@@ -1,4 +1,3 @@
-import { hasNativeGoogleAuthConfig, initializeNativeGoogleAuth } from "./auth";
 import { isNativePlatform } from "./platform";
 
 let nativeSplashHidden = false;
@@ -90,6 +89,7 @@ export async function initializeNativeApp() {
   }
 
   nativeAppInitializationPromise = (async () => {
+    const { hasNativeGoogleAuthConfig, initializeNativeGoogleAuth } = await import("./auth");
     const { App, Keyboard, Network, StatusBar, Style } = await loadNativeModules();
 
     try {

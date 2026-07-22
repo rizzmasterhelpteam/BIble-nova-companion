@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Haptics, ImpactStyle } from "@capacitor/haptics";
 import { isNativePlatform } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
 import { storageGet, storageSet } from "../lib/webStorage";
@@ -40,7 +39,9 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
     lastHapticAtRef.current = now;
 
     if (isNativePlatform()) {
-      void Haptics.impact({ style: ImpactStyle.Light }).catch(() => undefined);
+      void import("@capacitor/haptics")
+        .then(({ Haptics, ImpactStyle }) => Haptics.impact({ style: ImpactStyle.Light }))
+        .catch(() => undefined);
       return;
     }
 
@@ -53,7 +54,9 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
     setHapticsEnabledState(enabled);
     if (enabled) {
       if (isNativePlatform()) {
-        void Haptics.impact({ style: ImpactStyle.Light }).catch(() => undefined);
+        void import("@capacitor/haptics")
+          .then(({ Haptics, ImpactStyle }) => Haptics.impact({ style: ImpactStyle.Light }))
+          .catch(() => undefined);
       } else if (canVibrate()) {
         navigator.vibrate(12);
       }
@@ -61,6 +64,7 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!isNativePlatform()) return;
     nativeStorage
       .get(STORAGE_KEY)
       .then((stored) => {

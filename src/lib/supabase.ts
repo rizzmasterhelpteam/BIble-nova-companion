@@ -10,17 +10,27 @@ export const isSupabaseConfigured = !hasPlaceholderUrl && !hasPlaceholderAnonKey
 export const supabaseConfigMessage =
   'Supabase is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable sign-in.';
 
-import { Preferences } from '@capacitor/preferences';
-
 const capacitorStorage = {
   getItem: async (key: string): Promise<string | null> => {
+    if (!isNativePlatform()) return window.localStorage.getItem(key);
+    const { Preferences } = await import('@capacitor/preferences');
     const { value } = await Preferences.get({ key });
     return value;
   },
   setItem: async (key: string, value: string): Promise<void> => {
+    if (!isNativePlatform()) {
+      window.localStorage.setItem(key, value);
+      return;
+    }
+    const { Preferences } = await import('@capacitor/preferences');
     await Preferences.set({ key, value });
   },
   removeItem: async (key: string): Promise<void> => {
+    if (!isNativePlatform()) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    const { Preferences } = await import('@capacitor/preferences');
     await Preferences.remove({ key });
   },
 };
