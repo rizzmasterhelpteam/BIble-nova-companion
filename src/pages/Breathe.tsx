@@ -122,15 +122,6 @@ export default function Breathe() {
           isShortPhone ? "justify-start" : "justify-center",
         )}
       >
-        {!isStarted && (
-          <div className="app-panel mb-5 w-full max-w-sm rounded-card p-4 text-center">
-            <p className="app-heading font-semibold">Choose a quiet moment</p>
-            <div className="my-4 flex justify-center gap-2" role="radiogroup" aria-label="Breathing duration">
-              {[60, 180, 300].map((duration) => <button key={duration} role="radio" aria-checked={sessionDuration === duration} onClick={() => { setSessionDuration(duration); setSessionLeft(duration); }} className={cn("touch-target rounded-pill px-4 py-2 text-sm", sessionDuration === duration ? "app-primary-button text-white" : "app-secondary-button")}>{duration / 60} min</button>)}
-            </div>
-            <button onClick={() => { setSessionLeft(sessionDuration); setIsStarted(true); }} className="touch-target app-primary-button w-full rounded-pill py-3 font-semibold text-white">Begin breathing</button>
-          </div>
-        )}
         <div
           className={cn(
             "relative flex w-full flex-shrink-0 items-center justify-center",
@@ -217,7 +208,6 @@ export default function Breathe() {
 
         <div className={cn("mb-4 flex w-full items-center justify-center gap-2", isShortPhone ? "max-w-[320px]" : "max-w-[340px] sm:mb-6")}>
           <button
-            ref={customizerTriggerRef}
             type="button"
             onClick={() => setIsPaused((prev) => !prev)}
             disabled={!isStarted}
@@ -230,6 +220,7 @@ export default function Breathe() {
             {paceSummary}
           </div>
           <button
+            ref={customizerTriggerRef}
             type="button"
             onClick={() => setShowSettings((prev) => !prev)}
             aria-controls="breathing-customizer"
@@ -280,10 +271,10 @@ export default function Breathe() {
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
                   <p className="app-kicker" id="breathing-customizer-title">
-                    Custom rhythm
+                    Customize your session
                   </p>
                   <p className="app-muted mt-1 text-[12px]">
-                    Set each phase from {MIN}s to {MAX}s.
+                    Choose a duration and set your breathing rhythm.
                   </p>
                 </div>
                 <button
@@ -296,7 +287,32 @@ export default function Breathe() {
                 </button>
               </div>
 
+              <div className="mb-5 border-b border-[color:var(--app-divider)] pb-5">
+                <p className="app-heading mb-3 text-sm font-semibold">Session length</p>
+                <div className="flex justify-center gap-2" role="radiogroup" aria-label="Breathing duration">
+                  {[60, 180, 300].map((duration) => (
+                    <button
+                      key={duration}
+                      type="button"
+                      role="radio"
+                      aria-checked={sessionDuration === duration}
+                      onClick={() => {
+                        setSessionDuration(duration);
+                        if (!isStarted) setSessionLeft(duration);
+                      }}
+                      className={cn(
+                        "touch-target rounded-pill px-4 py-2 text-sm",
+                        sessionDuration === duration ? "app-primary-button text-white" : "app-secondary-button",
+                      )}
+                    >
+                      {duration / 60} min
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="space-y-2">
+                <p className="app-heading mb-3 text-sm font-semibold">Custom rhythm</p>
                 {(["Inhale", "Hold", "Exhale"] as Phase[]).map((label) => {
                   const key = PHASE_LABELS[label];
                   const isActive = phase === label;
@@ -335,6 +351,20 @@ export default function Breathe() {
                   );
                 })}
               </div>
+
+              {!isStarted && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSessionLeft(sessionDuration);
+                    setIsStarted(true);
+                    setShowSettings(false);
+                  }}
+                  className="touch-target app-primary-button mt-5 w-full rounded-pill py-3 font-semibold text-white"
+                >
+                  Begin breathing
+                </button>
+              )}
             </motion.div>
           </>
         )}
