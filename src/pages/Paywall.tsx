@@ -166,9 +166,7 @@ export default function Paywall() {
   const configuredMonthlyOfferId = getConfiguredMonthlyOfferId();
   const monthlyTrialConfigured = configuredMonthlyOfferId === "trial";
   const monthlyTrialSelected = monthlyTrialConfigured && Boolean(iapPackages.monthly);
-  const monthlyTrialLabel = nativeStoreAvailable
-    ? "7-day first-time subscription trial"
-    : "7-day first-time subscription trial on Android";
+  const monthlyTrialLabel = "7-day free trial";
 
   const nativeSelectedPlanUnavailable = nativeStoreAvailable && !isLoadingOffering && !selectedNativePackage;
   const canSubscribe =
