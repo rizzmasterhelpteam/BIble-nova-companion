@@ -567,16 +567,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const updateShadowNotes = useCallback(async (notes: string) => {
     if (!user) throw new Error("No active profile to update.");
-
-    if (isSupabaseConfigured) {
-      const { error } = await supabase.auth.updateUser({
-        data: { shadow_notes: notes },
-      });
-
-      if (error) throw new Error(error.message);
+    const trimmed = notes.trim();
+    if (!trimmed) {
+      setShadowNotes(null);
+      return;
     }
 
-    setShadowNotes(notes);
+    if (isSupabaseConfigured) {
+      const response = await apiFetch("/api/shadow-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: trimmed }),
+      });
+      const data = (await response.json().catch(() => ({}))) as { shadowNotes?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(data.error || "Could not save shadow notes.");
+      }
+      setShadowNotes(data.shadowNotes || trimmed);
+      return;
+    }
+
+    setShadowNotes(trimmed);
   }, [user]);
 
   const value = useMemo(

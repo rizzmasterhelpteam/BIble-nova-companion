@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { JWT } from "google-auth-library";
-import { hasChatApiKey } from "./chat-api.js";
+import { MAX_SHADOW_NOTES_CHARS, createReflection, hasChatApiKey, hasGeminiApiKey } from "./chat-api.js";
 export {
-  createChatCompletion,
+  createReflection,
   getClientErrorMessage,
   hasChatApiKey,
 } from "./chat-api.js";
@@ -12,7 +12,7 @@ export const hasModelsApiKey = () => Boolean(process.env.GROK_API_KEY?.trim());
 
 export const hasPrayerApiKey = () => Boolean(process.env.GEMINI_API_KEY?.trim());
 
-export const hasSpeechApiKey = () => Boolean(process.env.GROQ_API_KEY?.trim());
+export const hasSpeechApiKey = () => Boolean(process.env.GEMINI_API_KEY?.trim());
 
 export const hasNativeSubscriptionSyncConfig = () => {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -100,6 +100,29 @@ export type NativeSubscriptionSyncPayload = {
 
 const GOOGLE_PLAY_PACKAGE_NAME = "com.biblenovacompanion.app";
 const GOOGLE_PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher";
+const SHADOW_NOTES_TABLE = "user_shadow_notes";
+
+const getSupabaseServerConfig = () => {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || supabaseUrl.includes("placeholder.supabase.co") || !serviceRoleKey) {
+    return null;
+  }
+
+  return { supabaseUrl, serviceRoleKey };
+};
+
+const createSupabaseAdminClient = () => {
+  const config = getSupabaseServerConfig();
+  if (!config) {
+    return null;
+  }
+
+  return createClient(config.supabaseUrl, config.serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+};
 
 const getGooglePlayServiceAccount = () => {
   const raw = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?.trim();
@@ -256,45 +279,105 @@ const parseBase64Audio = (audio: string) => {
   };
 };
 
+export async function loadStoredShadowNotes(userId: string) {
+  const adminClient = createSupabaseAdminClient();
+  if (!adminClient) {
+    return null;
+  }
+
+  const { data, error } = await adminClient
+    .from(SHADOW_NOTES_TABLE)
+    .select("notes")
+    .eq("user_id", userId)
+    .maybeSingle<{ notes: string | null }>();
+
+  if (error) {
+    console.error("Shadow notes load failed:", error.message);
+    return null;
+  }
+
+  return data?.notes?.trim().slice(0, MAX_SHADOW_NOTES_CHARS) || null;
+}
+
+export async function saveShadowNotes(userId: string, notes: string) {
+  const adminClient = createSupabaseAdminClient();
+  if (!adminClient) {
+    throw new Error("Shadow note persistence requires SUPABASE_SERVICE_ROLE_KEY on the server.");
+  }
+
+  const normalizedNotes = notes.trim().slice(0, MAX_SHADOW_NOTES_CHARS);
+  const { error } = await adminClient.from(SHADOW_NOTES_TABLE).upsert(
+    {
+      user_id: userId,
+      notes: normalizedNotes,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" },
+  );
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return normalizedNotes;
+}
+
+export async function createReflectionResponse(
+  userId: string,
+  messages: Array<{ role: "user" | "assistant" | "ai" | "model" | "system"; content: string }>,
+  shadowNotes?: string | null,
+) {
+  const persistedShadowNotes = await loadStoredShadowNotes(userId);
+  const effectiveShadowNotes = persistedShadowNotes || shadowNotes || null;
+  const result = await createReflection(messages, effectiveShadowNotes);
+
+  if (result.shadowNotes) {
+    try {
+      result.shadowNotes = await saveShadowNotes(userId, result.shadowNotes);
+    } catch (error) {
+      console.error("Shadow notes save failed:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  return result;
+}
+
 export async function transcribeAudio(audio: string, language?: string) {
-  const apiKey = process.env.GROQ_API_KEY?.trim();
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
-    throw new Error("Speech transcription requires GROQ_API_KEY on the server.");
+    throw new Error("Speech transcription requires GEMINI_API_KEY on the server.");
   }
 
   const { mimeType, buffer } = parseBase64Audio(audio);
-  const extension = mimeType.split("/")[1]?.split(";")[0] || "webm";
-  const formData = new FormData();
-  formData.append("file", new Blob([buffer], { type: mimeType }), `speech.${extension}`);
-  formData.append("model", "whisper-large-v3-turbo");
-  formData.append("response_format", "json");
-  formData.append("temperature", "0");
-
-  if (language) {
-    formData.append("language", language);
-  }
-
-  const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: formData,
+  const { GoogleGenAI } = await import("@google/genai");
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.generateContent({
+    model: process.env.GEMINI_TRANSCRIBE_MODEL?.trim() || "gemini-2.5-flash-lite",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: language?.trim()
+              ? `Transcribe this audio accurately in ${language.trim()}. Return only the spoken words with light punctuation.`
+              : "Transcribe this audio accurately. Return only the spoken words with light punctuation.",
+          },
+          {
+            inlineData: {
+              mimeType,
+              data: buffer.toString("base64"),
+            },
+          },
+        ],
+      },
+    ],
   });
-
-  const data = (await response.json().catch(() => ({}))) as {
-    text?: string;
-    error?: { message?: string };
-  };
-  if (!response.ok) {
-    throw new Error(data.error?.message || "Speech transcription failed.");
-  }
-
-  if (!data.text?.trim()) {
+  const text = response.text?.trim();
+  if (!text) {
     throw new Error("Speech transcription returned no text.");
   }
 
-  return data.text.trim();
+  return text;
 }
 
 export async function generatePrayer(prompt: string) {

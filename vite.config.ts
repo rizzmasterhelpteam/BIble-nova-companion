@@ -5,12 +5,13 @@ import path from 'path';
 import pkg from './package.json';
 import {defineConfig, loadEnv} from 'vite';
 import {
-  createChatCompletion,
+  createReflectionResponse,
   deleteSupabaseAccount,
   fetchAvailableModels,
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
+  saveShadowNotes,
   syncNativeSubscription,
   transcribeAudio,
 } from './server-api';
@@ -82,10 +83,35 @@ const localApiPlugin = () => ({
           if (shadowNotes !== undefined && shadowNotes !== null) {
             assertStringLength(shadowNotes, 2_000, 'Shadow notes');
           }
-          const message = await createChatCompletion(messages, shadowNotes);
-          sendJson(res, 200, { message });
+          const result = await createReflectionResponse(userId, messages, shadowNotes);
+          sendJson(res, 200, result);
         } catch (error) {
           console.error('Vite local API chat error:', error);
+          const details = getHttpErrorDetails(error);
+          if (details.retryAfterSeconds) res.setHeader('Retry-After', String(details.retryAfterSeconds));
+          sendJson(res, details.statusCode, { error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
+        }
+        return;
+      }
+
+      if (pathname === '/api/shadow-notes') {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'Method not allowed.' });
+          return;
+        }
+
+        try {
+          const { userId, ip } = await requireAuthenticatedRequest(req);
+          await enforceRateLimits([
+            { key: `shadow-notes:user:${userId}`, limit: 20 },
+            { key: `shadow-notes:ip:${ip}`, limit: 40 },
+          ]);
+          const { notes } = await readJsonBody(req);
+          assertStringLength(notes, 2_000, 'Shadow notes');
+          const shadowNotes = await saveShadowNotes(userId, notes);
+          sendJson(res, 200, { shadowNotes });
+        } catch (error) {
+          console.error('Vite local API shadow notes error:', error);
           const details = getHttpErrorDetails(error);
           if (details.retryAfterSeconds) res.setHeader('Retry-After', String(details.retryAfterSeconds));
           sendJson(res, details.statusCode, { error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });

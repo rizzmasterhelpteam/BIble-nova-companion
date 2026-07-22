@@ -5,13 +5,15 @@ import { createChatCompletion } from "../chat-api";
 describe("chat provider reliability", () => {
   beforeEach(() => {
     process.env.GROQ_API_KEY = "test-groq-key";
-    process.env.GROK_API_KEY = "test-grok-key";
+    delete process.env.GROQ_MODEL;
+    delete process.env.GROQ_FALLBACK_MODEL;
     vi.stubGlobal("fetch", vi.fn());
   });
 
   afterEach(() => {
     delete process.env.GROQ_API_KEY;
-    delete process.env.GROK_API_KEY;
+    delete process.env.GROQ_MODEL;
+    delete process.env.GROQ_FALLBACK_MODEL;
     vi.unstubAllGlobals();
   });
 

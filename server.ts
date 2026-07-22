@@ -3,12 +3,13 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
 import {
-  createChatCompletion,
+  createReflectionResponse,
   deleteSupabaseAccount,
   fetchAvailableModels,
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
+  saveShadowNotes,
   syncNativeSubscription,
   transcribeAudio,
 } from "./server-api";
@@ -42,10 +43,29 @@ app.post("/api/chat", async (req, res) => {
     if (shadowNotes !== undefined && shadowNotes !== null) {
       assertStringLength(shadowNotes, 2_000, "Shadow notes");
     }
-    const message = await createChatCompletion(messages, shadowNotes);
-    res.json({ message });
+    const result = await createReflectionResponse(userId, messages, shadowNotes);
+    res.json(result);
   } catch (error: any) {
     console.error("LLM API Error:", error);
+    const details = getHttpErrorDetails(error);
+    if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
+    res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
+  }
+});
+
+app.post("/api/shadow-notes", async (req, res) => {
+  try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    await enforceRateLimits([
+      { key: `shadow-notes:user:${userId}`, limit: 20 },
+      { key: `shadow-notes:ip:${ip}`, limit: 40 },
+    ]);
+    const { notes } = req.body;
+    assertStringLength(notes, 2_000, "Shadow notes");
+    const shadowNotes = await saveShadowNotes(userId, notes);
+    res.json({ shadowNotes });
+  } catch (error) {
+    console.error("Shadow notes error:", error);
     const details = getHttpErrorDetails(error);
     if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
     res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });

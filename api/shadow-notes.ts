@@ -1,5 +1,5 @@
 import { getClientErrorMessage } from "../chat-api.js";
-import { createReflectionResponse } from "../server-api.js";
+import { saveShadowNotes } from "../server-api.js";
 import {
   assertStringLength,
   enforceRateLimits,
@@ -7,7 +7,7 @@ import {
   requireAuthenticatedRequest,
 } from "../server-security.js";
 
-const API_BUILD_ID = "2026-07-16-shared-chat-security";
+const API_BUILD_ID = "2026-07-22-shadow-notes";
 
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
@@ -44,23 +44,21 @@ export default async function handler(req: any, res: any) {
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
-      { key: `chat:user:${userId}`, limit: 30 },
-      { key: `chat:ip:${ip}`, limit: 60 },
+      { key: `shadow-notes:user:${userId}`, limit: 20 },
+      { key: `shadow-notes:ip:${ip}`, limit: 40 },
     ]);
 
-    const { messages, shadowNotes } = getBody(req);
-    if (shadowNotes !== undefined && shadowNotes !== null) {
-      assertStringLength(shadowNotes, 2_000, "Shadow notes");
-    }
-
-    const result = await createReflectionResponse(userId, messages, shadowNotes);
-    res.status(200).json(result);
+    const { notes } = getBody(req);
+    assertStringLength(notes, 2_000, "Shadow notes");
+    const shadowNotes = await saveShadowNotes(userId, notes);
+    res.status(200).json({ shadowNotes });
   } catch (error) {
-    console.error("Vercel API chat error:", error);
+    console.error("Vercel API shadow notes error:", error);
     const details = getHttpErrorDetails(error);
-    const statusCode = details.statusCode === 500 && error instanceof Error && error.message === "Invalid JSON request body."
-      ? 400
-      : details.statusCode;
+    const statusCode =
+      details.statusCode === 500 && error instanceof Error && error.message === "Invalid JSON request body."
+        ? 400
+        : details.statusCode;
     if (details.retryAfterSeconds) {
       res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
     }

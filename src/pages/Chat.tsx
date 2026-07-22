@@ -227,7 +227,7 @@ export default function Chat() {
   useDocumentTitle("Bible Nova Companion");
   const location = useLocation();
   const navigate = useNavigate();
-  const { identityKey, shadowNotes } = useAuth();
+  const { identityKey, shadowNotes, updateShadowNotes } = useAuth();
   const { isCompactPhone, isKeyboardOpen, isShortPhone, width } = useMobileViewport();
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
@@ -460,7 +460,7 @@ export default function Chat() {
       });
 
       const responseText = await response.text();
-      let data: { message?: string; error?: string };
+      let data: { message?: string; shadowNotes?: string | null; error?: string };
 
       try {
         data = JSON.parse(responseText);
@@ -479,6 +479,12 @@ export default function Chat() {
 
       if (!response.ok) {
         throw new Error(data.error || `Unable to generate a response (${response.status}).`);
+      }
+
+      if (typeof data.shadowNotes === "string" && data.shadowNotes.trim() && data.shadowNotes !== shadowNotes) {
+        void updateShadowNotes(data.shadowNotes).catch((error) => {
+          console.error("Shadow notes sync failed:", error);
+        });
       }
 
       appendAiMessage(data.message || "I could not form a response just now.");
@@ -500,7 +506,7 @@ export default function Chat() {
         textareaRef.current?.focus();
       }
     }
-  }, [apiStatus?.chatReady, appendAiMessage, isRecording, isTyping, shadowNotes]);
+  }, [apiStatus?.chatReady, appendAiMessage, isRecording, isTyping, shadowNotes, updateShadowNotes]);
 
   useEffect(() => {
     if (!hasLoadedMessages) {
@@ -786,7 +792,7 @@ export default function Chat() {
               </p>
             </div>
             <p className="app-heading text-sm leading-relaxed">
-              Chat is disabled until you add `GROK_API_KEY` or `GROQ_API_KEY` to your environment.
+              Chat is disabled until you add `GROQ_API_KEY` to your environment.
             </p>
           </motion.div>
         )}
