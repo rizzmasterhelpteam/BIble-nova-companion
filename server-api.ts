@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { JWT } from "google-auth-library";
-import { MAX_SHADOW_NOTES_CHARS, createReflection, hasChatApiKey, hasGeminiApiKey } from "./chat-api.js";
+import { MAX_SHADOW_NOTES_CHARS, createChatCompletion, createReflection, hasChatApiKey } from "./chat-api.js";
 export {
   createReflection,
   getClientErrorMessage,
@@ -10,9 +10,9 @@ export {
 
 export const hasModelsApiKey = () => Boolean(process.env.GROK_API_KEY?.trim());
 
-export const hasPrayerApiKey = () => Boolean(process.env.GEMINI_API_KEY?.trim());
+export const hasPrayerApiKey = () => Boolean(process.env.GROQ_API_KEY?.trim());
 
-export const hasSpeechApiKey = () => Boolean(process.env.GEMINI_API_KEY?.trim());
+export const hasSpeechApiKey = () => Boolean(process.env.GROQ_API_KEY?.trim());
 
 export const hasNativeSubscriptionSyncConfig = () => {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -343,68 +343,57 @@ export async function createReflectionResponse(
 }
 
 export async function transcribeAudio(audio: string, language?: string) {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const apiKey = process.env.GROQ_API_KEY?.trim();
   if (!apiKey) {
-    throw new Error("Speech transcription requires GEMINI_API_KEY on the server.");
+    throw new Error("Speech transcription requires GROQ_API_KEY on the server.");
   }
 
   const { mimeType, buffer } = parseBase64Audio(audio);
-  const { GoogleGenAI } = await import("@google/genai");
-  const ai = new GoogleGenAI({ apiKey });
-  const response = await ai.models.generateContent({
-    model: process.env.GEMINI_TRANSCRIBE_MODEL?.trim() || "gemini-2.5-flash-lite",
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: language?.trim()
-              ? `Transcribe this audio accurately in ${language.trim()}. Return only the spoken words with light punctuation.`
-              : "Transcribe this audio accurately. Return only the spoken words with light punctuation.",
-          },
-          {
-            inlineData: {
-              mimeType,
-              data: buffer.toString("base64"),
-            },
-          },
-        ],
-      },
-    ],
+  const extension = mimeType.split("/")[1]?.split(";")[0] || "webm";
+  const formData = new FormData();
+  formData.append("file", new Blob([buffer], { type: mimeType }), `speech.${extension}`);
+  formData.append("model", process.env.GROQ_TRANSCRIBE_MODEL?.trim() || "whisper-large-v3");
+  formData.append("response_format", "json");
+  formData.append("temperature", "0");
+
+  if (language) {
+    formData.append("language", language);
+  }
+
+  const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: formData,
   });
-  const text = response.text?.trim();
-  if (!text) {
+
+  const data = (await response.json().catch(() => ({}))) as {
+    text?: string;
+    error?: { message?: string };
+  };
+  if (!response.ok) {
+    throw new Error(data.error?.message || "Speech transcription failed.");
+  }
+
+  if (!data.text?.trim()) {
     throw new Error("Speech transcription returned no text.");
   }
 
-  return text;
+  return data.text.trim();
 }
 
 export async function generatePrayer(prompt: string) {
-  const { GoogleGenAI } = await import("@google/genai");
-
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Gemini API key is missing. Please configure it in settings.");
+  if (!process.env.GROQ_API_KEY?.trim()) {
+    throw new Error("Groq API key is missing. Please configure it in settings.");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
-
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `Generate an uplifting, beautifully written 2-sentence prayer based on this prompt: ${prompt}`,
-          },
-        ],
-      },
-    ],
-  });
-
-  return response.text;
+  return createChatCompletion([
+    {
+      role: "user",
+      content: `Generate an uplifting, beautifully written 2-sentence Christian prayer based on this prompt: ${prompt}`,
+    },
+  ]);
 }
 
 export async function deleteSupabaseAccount(authorizationHeader?: string) {

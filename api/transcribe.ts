@@ -6,7 +6,7 @@ import {
   requireAuthenticatedRequest,
 } from "../server-security.js";
 
-const API_BUILD_ID = "2026-07-22-gemini-transcription";
+const API_BUILD_ID = "2026-07-22-groq-transcription";
 
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");

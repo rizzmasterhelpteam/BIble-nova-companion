@@ -1,3 +1,4 @@
+import { generatePrayer } from "../server-api.js";
 import { assertStringLength, enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../server-security.js";
 
 const setCorsHeaders = (res: any) => {
@@ -49,29 +50,8 @@ export default async function handler(req: any, res: any) {
     ]);
     const { prompt } = getBody(req);
     assertStringLength(prompt, 2_000, "Prompt");
-    const { GoogleGenAI } = await import("@google/genai");
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      throw new Error("Gemini API key is missing. Please configure it in settings.");
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `Generate an uplifting, beautifully written 2-sentence prayer based on this prompt: ${prompt}`,
-            },
-          ],
-        },
-      ],
-    });
-
-    res.status(200).json({ text: response.text });
+    const text = await generatePrayer(prompt);
+    res.status(200).json({ text });
   } catch (error) {
     console.error("Vercel API generation error:", error);
     const details = getHttpErrorDetails(error);

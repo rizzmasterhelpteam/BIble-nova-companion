@@ -129,7 +129,7 @@ app.post("/api/generate", async (req, res) => {
     if (details.statusCode !== 500) {
       res.status(details.statusCode).json({ error: details.message });
     } else if (error?.message?.includes("API key not valid")) {
-      res.status(500).json({ error: "Your Gemini API key is invalid. Please update it in the settings panel." });
+      res.status(500).json({ error: "Your Groq API key is invalid. Please update it in the settings panel." });
     } else {
       res.status(500).json({ error: "Failed to generate content. Please try again." });
     }

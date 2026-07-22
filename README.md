@@ -27,17 +27,18 @@ Set these in Vercel for the environments you deploy to:
 - `VITE_SUPABASE_ANON_KEY`
 - `GROQ_API_KEY`
 - `GROQ_MODEL` required for production; use a currently supported provider model and do not rely on a deprecated fallback
+- `GROQ_FALLBACK_MODEL` optional secondary Groq chat model
+- `GROQ_TRANSCRIBE_MODEL` optional Groq speech model; defaults to `whisper-large-v3`
 - `SUPABASE_SERVICE_ROLE_KEY` required server-only for account deletion, persistent rate limits, and subscription entitlements
 - `RATE_LIMIT_IP_SALT` optional server-only random value used to hash IP-based rate-limit keys; the server-only Supabase service-role key is used as a secure fallback
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` required server-only JSON credentials for verified Android subscriptions
-- `GEMINI_API_KEY` only needed for `/api/generate`
 - `VITE_API_BASE_URL` required in native mobile builds, set to your Vercel site URL
 - Release Capacitor builds load bundled `dist` assets. Set `CAPACITOR_LIVE_RELOAD=true` and `CAPACITOR_SERVER_URL` only for local live reload; never enable it for a release build.
 - `VITE_GOOGLE_PLAY_PUBLIC_KEY` optional Google Play monetization RSA public key for Android billing or verification integrations
 - `VITE_IAP_MONTHLY_PRODUCT_ID` and `VITE_IAP_YEARLY_PRODUCT_ID` required for native subscription IAP
 - `VITE_IAP_MONTHLY_BASE_PLAN_ID` and `VITE_IAP_YEARLY_BASE_PLAN_ID` required for Android subscription IAP (Google Play base plans)
 
-`VITE_` variables are embedded into the browser bundle. Keep `GROQ_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `GEMINI_API_KEY` server-only.
+`VITE_` variables are embedded into the browser bundle. Keep `GROQ_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` server-only.
 Keep `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` server-only as well; the native subscription endpoint fails closed when Google Play verification or server persistence is not configured.
 
 ## Production Database Migration
