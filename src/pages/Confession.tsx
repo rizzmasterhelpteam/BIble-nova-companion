@@ -17,10 +17,11 @@ export default function Confession() {
   const prefersReducedMotion = useReducedMotion();
   const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
   const isPerformanceMode = Boolean(prefersReducedMotion || isAndroidApp);
+  const burnAnimationEnabled = !prefersReducedMotion;
+  const burnDuration = prefersReducedMotion ? 1 : 5;
 
   useEffect(() => {
     let timer: number | null = null;
-    const burnDuration = prefersReducedMotion ? 1 : 5;
 
     if (isReleasing && timeLeft > 0) {
       timer = window.setTimeout(
@@ -86,10 +87,18 @@ export default function Confession() {
               className="app-panel group relative w-full overflow-hidden rounded-[2rem] border shadow-2xl transition-colors"
               style={{ height: panelHeight, minHeight: isCrampedPhone ? "10.5rem" : isShortPhone ? "13rem" : "15rem" }}
               animate={
-                isReleasing && !isPerformanceMode
+                isReleasing && burnAnimationEnabled
                   ? {
-                      scale: [1, 0.99, 0.97],
-                      opacity: [1, 0.8, 0],
+                      scale: [1, 0.995, 0.97, 0.9, 0.82],
+                      rotate: [0, -0.35, 0.35, -0.5, 0],
+                      opacity: [1, 1, 0.94, 0.55, 0],
+                      filter: [
+                        "brightness(1)",
+                        "brightness(1.18) sepia(35%) saturate(140%)",
+                        "brightness(0.84) sepia(80%) saturate(120%)",
+                        "brightness(0.45) sepia(100%) saturate(80%)",
+                        "brightness(0) grayscale(100%)",
+                      ],
                     }
                   : isReleasing
                     ? { opacity: [1, 0] }
@@ -106,7 +115,7 @@ export default function Confession() {
               }
               transition={
                 isReleasing
-                  ? { duration: isPerformanceMode ? 0.2 : 4.5, ease: "easeIn" }
+                  ? { duration: burnAnimationEnabled ? burnDuration : 0.45, ease: "easeIn" }
                   : { duration: isPerformanceMode ? 0 : 2.5, repeat: isPerformanceMode ? 0 : Infinity, ease: "easeInOut" }
               }
             >
@@ -130,7 +139,40 @@ export default function Confession() {
                 </span>
               )}
 
-              {isReleasing && <div className="pointer-events-none absolute inset-0 bg-[color:var(--app-accent-soft)]" />}
+              {isReleasing && burnAnimationEnabled && (
+                <>
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: [0, 0.18, 0.3, 0.16, 0] }}
+                    transition={{ duration: burnDuration, ease: "easeInOut" }}
+                    className="pointer-events-none absolute inset-0 z-20"
+                    style={{
+                      background:
+                        "radial-gradient(circle at 50% 100%, rgba(255, 160, 58, 0.62) 0%, rgba(234, 76, 31, 0.22) 42%, transparent 76%)",
+                    }}
+                  />
+                  <motion.div
+                    initial={{ top: "100%" }}
+                    animate={{ top: "-18%", opacity: [0.9, 0.9, 0.72, 0.34, 0] }}
+                    transition={{ duration: burnDuration, ease: "linear" }}
+                    className="pointer-events-none absolute left-[-8%] right-[-8%] z-20 h-[76%] rounded-[50%]"
+                    style={{
+                      background:
+                        "linear-gradient(0deg, rgba(237, 76, 28, 0.92) 0%, rgba(255, 171, 48, 0.76) 34%, rgba(255, 220, 112, 0.18) 68%, transparent 100%)",
+                    }}
+                  />
+                  <motion.div
+                    initial={{ top: "92%", opacity: 0 }}
+                    animate={{ top: "-12%", opacity: [0, 0.9, 0.8, 0.25, 0] }}
+                    transition={{ duration: burnDuration * 0.78, ease: "linear", delay: 0.15 }}
+                    className="pointer-events-none absolute left-[8%] right-[8%] z-30 h-12 rounded-[50%]"
+                    style={{
+                      background:
+                        "linear-gradient(0deg, transparent 0%, rgba(255, 215, 104, 0.94) 50%, transparent 100%)",
+                    }}
+                  />
+                </>
+              )}
             </motion.div>
 
             <div className="app-muted flex items-center justify-between gap-3 text-xs">
