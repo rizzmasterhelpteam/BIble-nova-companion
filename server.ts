@@ -13,6 +13,7 @@ import {
   syncNativeSubscription,
   transcribeAudio,
 } from "./server-api";
+import { getKjvScriptureContext } from "./kjv-context";
 import liveTokenHandler from "./api/live/token";
 import { createShadowNotes, type ChatMessage } from "./chat-api";
 import {
@@ -87,6 +88,13 @@ app.post("/api/chat", async (req, res) => {
       { key: `chat:user:${userId}`, limit: 30 },
       { key: `chat:ip:${ip}`, limit: 60 },
     ]);
+    if (req.body?.scriptureContextOnly === true) {
+      const query = typeof req.body.query === "string" ? req.body.query.trim() : "";
+      assertStringLength(query, 800, "Scripture query");
+      res.json({ scriptureContext: getKjvScriptureContext(query) });
+      return;
+    }
+
     const { messages, shadowNotes } = req.body;
     if (shadowNotes !== undefined && shadowNotes !== null) {
       assertStringLength(shadowNotes, 2_000, "Shadow notes");

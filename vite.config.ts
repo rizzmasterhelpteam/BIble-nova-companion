@@ -15,6 +15,7 @@ import {
   syncNativeSubscription,
   transcribeAudio,
 } from './server-api';
+import { getKjvScriptureContext } from './kjv-context';
 import liveTokenHandler from './api/live/token';
 import { createShadowNotes, type ChatMessage } from './chat-api';
 import {
@@ -158,7 +159,14 @@ const localApiPlugin = () => ({
             { key: `chat:user:${userId}`, limit: 30 },
             { key: `chat:ip:${ip}`, limit: 60 },
           ]);
-          const { messages, shadowNotes } = await readJsonBody(req);
+          const body = await readJsonBody(req);
+          if (body.scriptureContextOnly === true) {
+            const query = typeof body.query === 'string' ? body.query.trim() : '';
+            assertStringLength(query, 800, 'Scripture query');
+            sendJson(res, 200, { scriptureContext: getKjvScriptureContext(query) });
+            return;
+          }
+          const { messages, shadowNotes } = body;
           if (shadowNotes !== undefined && shadowNotes !== null) {
             assertStringLength(shadowNotes, 2_000, 'Shadow notes');
           }

@@ -47,6 +47,17 @@ type VoiceEligibilityResponse = {
   error?: string;
 };
 
+type ScriptureToolCall = {
+  id?: string;
+  name?: string;
+  args?: Record<string, unknown>;
+};
+
+type ScriptureContextResponse = {
+  scriptureContext?: string | null;
+  error?: string;
+};
+
 class VoiceStartError extends Error {
   readonly code: VoiceErrorCode;
   readonly retryAfterSeconds: number | null;
@@ -310,6 +321,58 @@ export function useGeminiLive({
     setState(nextState);
   }, [clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, releaseAudio]);
 
+  const handleScriptureToolCall = useCallback(async (
+    session: GeminiLiveSession,
+    functionCalls: ScriptureToolCall[],
+  ) => {
+    const functionResponses = await Promise.all(functionCalls.map(async (call) => {
+      const responseBase = {
+        id: call.id,
+        name: call.name || "lookup_scripture",
+      };
+
+      if (call.name !== "lookup_scripture") {
+        return {
+          ...responseBase,
+          response: { error: "Unknown Scripture tool." },
+        };
+      }
+
+      const query = typeof call.args?.query === "string" ? call.args.query.trim().slice(0, 800) : "";
+      if (!query) {
+        return {
+          ...responseBase,
+          response: { error: "A Bible question or passage reference is required." },
+        };
+      }
+
+      try {
+        const response = await apiFetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scriptureContextOnly: true, query }),
+        });
+        const data = (await response.json().catch(() => ({}))) as ScriptureContextResponse;
+        if (!response.ok) throw new Error(data.error || "Scripture lookup failed.");
+
+        return {
+          ...responseBase,
+          response: {
+            scriptureContext: data.scriptureContext || "No matching KJV passage was found. Answer without quoting an exact verse.",
+          },
+        };
+      } catch {
+        return {
+          ...responseBase,
+          response: { error: "Scripture lookup was unavailable. Answer without quoting an exact verse." },
+        };
+      }
+    }));
+
+    if (stopRequestedRef.current || sessionRef.current !== session) return;
+    session.sendToolResponse({ functionResponses });
+  }, []);
+
   const handleConnectionFailure = useCallback((
     failedSession: GeminiLiveSession,
     message: string,
@@ -496,6 +559,10 @@ export function useGeminiLive({
           },
           onmessage: (message) => {
             if (stopRequestedRef.current) return;
+            const functionCalls = message.toolCall?.functionCalls;
+            if (functionCalls?.length) {
+              void handleScriptureToolCall(session, functionCalls);
+            }
             const serverContent = message.serverContent;
             const inputText = serverContent?.inputTranscription?.text?.trim();
             const outputText = serverContent?.outputTranscription?.text?.trim();
@@ -624,7 +691,7 @@ export function useGeminiLive({
     } finally {
       startingRef.current = false;
     }
-  }, [finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, onReservationChange, playAudioChunk, releaseAudio, stop, stopPlayback]);
+  }, [finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, handleScriptureToolCall, history, onReservationChange, playAudioChunk, releaseAudio, stop, stopPlayback]);
 
   useEffect(() => {
     startRef.current = start;

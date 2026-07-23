@@ -1,4 +1,5 @@
 import { getClientErrorMessage } from "../chat-api.js";
+import { getKjvScriptureContext } from "../kjv-context.js";
 import { createReflectionResponse } from "../server-api.js";
 import {
   assertStringLength,
@@ -48,7 +49,15 @@ export default async function handler(req: any, res: any) {
       { key: `chat:ip:${ip}`, limit: 60 },
     ]);
 
-    const { messages, shadowNotes } = getBody(req);
+    const body = getBody(req);
+    if (body.scriptureContextOnly === true) {
+      const query = typeof body.query === "string" ? body.query.trim() : "";
+      assertStringLength(query, 800, "Scripture query");
+      res.status(200).json({ scriptureContext: getKjvScriptureContext(query) });
+      return;
+    }
+
+    const { messages, shadowNotes } = body;
     if (shadowNotes !== undefined && shadowNotes !== null) {
       assertStringLength(shadowNotes, 2_000, "Shadow notes");
     }
