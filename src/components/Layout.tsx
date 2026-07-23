@@ -365,7 +365,7 @@ export default function Layout() {
 
         <nav
           className={cn(
-            "z-50 overflow-hidden px-4 transition-all duration-200 sm:px-6",
+            "app-bottom-nav z-50 mt-auto overflow-hidden px-3 transition-all duration-200 sm:px-6",
             hideBottomNavigation
               ? "max-h-0 pb-0 pt-0 opacity-0"
               : isShortPhone
@@ -375,7 +375,7 @@ export default function Layout() {
           aria-hidden={hideBottomNavigation}
           style={{ pointerEvents: hideBottomNavigation ? "none" : undefined }}
         >
-          <div className="app-nav-shell flex w-full max-w-xl items-center justify-between gap-1 rounded-shell p-1">
+          <div className="app-nav-shell flex w-full max-w-xl items-center justify-between gap-1 rounded-[1.6rem] p-1.5">
             <NavItem to="/" icon={<Home strokeWidth={1.6} className="h-5 w-5" />} label="Home" />
             <NavItem to="/breathe" icon={<Wind strokeWidth={1.6} className="h-5 w-5" />} label="Breathe" />
             <NavItem to="/intentions" icon={<Heart strokeWidth={1.6} className="h-5 w-5" />} label="Intentions" />
@@ -866,7 +866,7 @@ function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label
   return (
     <NavLink
       to={to}
-      className="touch-target relative flex flex-1 flex-col items-center justify-center gap-1 rounded-pill py-2 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+      className="touch-target relative flex min-h-[58px] flex-1 flex-col items-center justify-center gap-1.5 rounded-pill py-2 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
       style={{ color: "var(--app-text-muted)" }}
     >
       {({ isActive }) => (
@@ -890,7 +890,7 @@ function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label
             {icon}
           </div>
           <span
-            className="relative z-10 text-[11px] font-semibold tracking-wide transition-colors duration-200"
+            className="relative z-10 text-[13px] font-semibold tracking-wide transition-colors duration-200"
             style={{
               color: isActive ? "var(--app-accent)" : "var(--app-text-muted)",
               opacity: isActive ? 1 : 0.6,

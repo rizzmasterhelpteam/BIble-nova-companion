@@ -7,8 +7,8 @@ import {
   Mic,
   MicOff,
   Pause,
-  Play,
   RotateCcw,
+  Sparkles,
 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useNavigate } from "react-router-dom";
@@ -219,19 +219,19 @@ export default function VoiceMode({
   const sessionNoticeIsError = Boolean(live.error) && !premiumRequired;
 
   return (
-    <div className="relative flex min-h-0 flex-1 overflow-hidden bg-transparent">
+    <div className="voice-mode relative flex min-h-0 flex-1 overflow-hidden bg-transparent">
       <div className={cn(
-        "app-scroll-region flex min-h-0 flex-1 flex-col scrollbar-hide",
+        "voice-scroll-region app-scroll-region flex min-h-0 flex-1 flex-col scrollbar-hide",
         isCompactPhone ? "px-4 py-3" : "px-5 py-4 sm:px-6 sm:py-6",
       )}>
-        <main className="mx-auto flex w-full max-w-[680px] flex-1 flex-col">
+        <main className="voice-content mx-auto flex w-full max-w-[680px] flex-1 flex-col">
           <div className={cn(
-            "flex flex-1 flex-col justify-center",
+            "voice-hero flex flex-1 flex-col justify-center",
             isShortPhone ? "py-2" : "py-6 sm:py-10",
           )}>
             <div className="flex flex-col items-center text-center" aria-live="polite">
               <div
-                className="mb-5 inline-flex min-h-8 items-center gap-2 rounded-pill border px-3 py-1.5 text-xs font-medium"
+                className="voice-privacy-pill mb-5 inline-flex min-h-8 items-center gap-2 rounded-pill border px-3 py-1.5 text-xs font-medium"
                 style={{
                   color: "var(--app-text-muted)",
                   background: "var(--app-surface-muted)",
@@ -243,47 +243,40 @@ export default function VoiceMode({
               </div>
 
               <div className={cn(
-                "relative mb-5 flex items-center justify-center",
-                isShortPhone ? "h-[76px] w-[76px]" : "h-24 w-24 sm:h-[100px] sm:w-[100px]",
+                "voice-presence relative mb-5 flex items-center justify-center",
+                isShortPhone ? "h-[128px] w-[128px]" : "h-36 w-36 sm:h-40 sm:w-40",
               )}>
                 {presenceShouldMove && (
                   <motion.div
                     aria-hidden="true"
-                    className="absolute inset-0 rounded-full border"
-                    animate={{ scale: [1, 1.04, 1], opacity: [0.42, 0.82, 0.42] }}
+                    className="voice-presence-ring absolute inset-0 rounded-full border"
+                    animate={{ scale: [1, 1.035, 1], opacity: [0.45, 0.88, 0.45] }}
                     transition={{ duration: live.state === "assistant-speaking" ? 1.2 : 2.8, repeat: Infinity, ease: "easeInOut" }}
-                    style={{ borderColor: "color-mix(in srgb, var(--app-accent) 58%, transparent)" }}
                   />
                 )}
                 <div
-                  className="relative flex h-16 w-16 items-center justify-center rounded-full border sm:h-20 sm:w-20"
-                  style={{
-                    color: "var(--app-accent)",
-                    background: "var(--app-surface-muted)",
-                    borderColor: "var(--app-card-border)",
-                  }}
+                  className="voice-presence-core relative flex h-24 w-24 items-center justify-center rounded-full border sm:h-28 sm:w-28"
                 >
-                  <Mic className="h-7 w-7 sm:h-8 sm:w-8" strokeWidth={1.7} aria-hidden="true" />
+                  <Mic className="h-10 w-10 sm:h-12 sm:w-12" strokeWidth={1.5} aria-hidden="true" />
                 </div>
                 {isSpeaking && (
                   <div className="absolute -bottom-1 flex h-4 items-end gap-1" aria-hidden="true">
                     {[0, 1, 2].map((bar) => (
                       <motion.span
                         key={bar}
-                        className="w-1 rounded-pill"
+                        className="voice-audio-bar w-1 rounded-pill"
                         animate={prefersReducedMotion ? { height: 8 } : { height: [6, 14, 8, 6] }}
                         transition={{ duration: 0.8, delay: bar * 0.12, repeat: Infinity, ease: "easeInOut" }}
-                        style={{ background: "var(--app-accent)" }}
                       />
                     ))}
                   </div>
                 )}
               </div>
 
-              <h2 className="app-heading max-w-[20ch] text-[28px] font-semibold leading-tight tracking-[-0.02em] sm:text-[34px]">
+              <h2 className="voice-state-title app-heading max-w-[20ch] font-serif text-[38px] font-semibold leading-tight tracking-[-0.02em] sm:text-[48px]">
                 {STATE_HEADLINES[live.state]}
               </h2>
-              <p className="app-muted mt-2 max-w-md text-[15px] leading-relaxed sm:text-base">
+              <p className="voice-state-description app-muted mt-2 max-w-md text-[15px] leading-relaxed sm:text-[17px]">
                 {STATE_DESCRIPTIONS[live.state]}
               </p>
             </div>
@@ -291,7 +284,7 @@ export default function VoiceMode({
 
           {hasTranscript && (
             <div
-              className="w-full rounded-[1.25rem] border px-4 py-3.5 text-left sm:px-5"
+              className="voice-transcript w-full rounded-[1.25rem] border px-4 py-3.5 text-left sm:px-5"
               style={{
                 background: "var(--app-surface-muted)",
                 borderColor: "var(--app-card-border)",
@@ -309,7 +302,7 @@ export default function VoiceMode({
           {sessionNotice && (
             <div
               role="status"
-              className="mt-3 flex w-full items-start gap-2.5 rounded-[1rem] border px-3.5 py-3 text-left text-sm leading-relaxed"
+              className="voice-session-notice mt-3 flex w-full items-start gap-2.5 rounded-[1rem] border px-3.5 py-3 text-left text-sm leading-relaxed"
               style={{
                 background: sessionNoticeIsError ? "var(--app-danger-soft)" : "var(--app-accent-soft)",
                 borderColor: sessionNoticeIsError ? "color-mix(in srgb, var(--app-danger) 22%, transparent)" : "color-mix(in srgb, var(--app-accent) 22%, transparent)",
@@ -321,15 +314,15 @@ export default function VoiceMode({
             </div>
           )}
 
-          <div className={cn("mt-4 w-full pb-safe", isShortPhone ? "pt-1" : "pt-2")}>
+          <div className={cn("voice-actions mt-4 w-full pb-safe", isShortPhone ? "pt-1" : "pt-2")}>
             {showStartButton ? (
               <button
                 type="button"
                 onClick={() => premiumRequired ? navigate("/paywall") : void live.start()}
                 disabled={isTyping || cooldownActive}
-                className="touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 text-[15px] font-semibold text-white shadow-md transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="voice-primary-action touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 text-[15px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {premiumRequired ? <LockKeyhole className="h-5 w-5" /> : live.state === "error" || live.state === "permission-denied" || live.state === "offline" ? <RotateCcw className="h-5 w-5" /> : <Play className="h-5 w-5 fill-current" />}
+                {premiumRequired ? <LockKeyhole className="h-5 w-5" /> : live.state === "error" || live.state === "permission-denied" || live.state === "offline" ? <RotateCcw className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
                 {startLabel}
               </button>
             ) : (
@@ -338,7 +331,7 @@ export default function VoiceMode({
                   type="button"
                   onClick={live.toggleMute}
                   aria-label={live.isMuted ? "Unmute microphone" : "Mute microphone"}
-                  className="touch-target app-secondary-button flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] px-2 text-[13px] font-medium"
+                  className="voice-control-button touch-target app-secondary-button flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] px-2 text-[13px] font-medium"
                 >
                   {live.isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                   <span>{live.isMuted ? "Unmute" : "Mute"}</span>
@@ -348,7 +341,7 @@ export default function VoiceMode({
                     type="button"
                     onClick={live.interrupt}
                     aria-label="Stop assistant response"
-                    className="touch-target app-secondary-button flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] px-2 text-[13px] font-medium"
+                    className="voice-control-button touch-target app-secondary-button flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] px-2 text-[13px] font-medium"
                   >
                     <Pause className="h-4 w-4" />
                     <span>Stop response</span>
@@ -358,7 +351,7 @@ export default function VoiceMode({
                   type="button"
                   onClick={() => void handleEnd()}
                   aria-label="End voice conversation"
-                  className="touch-target flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] border px-2 text-[13px] font-medium"
+                  className="voice-control-button voice-end-button touch-target flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] border px-2 text-[13px] font-medium"
                   style={{ color: "var(--app-danger)", borderColor: "color-mix(in srgb, var(--app-danger) 30%, transparent)", background: "var(--app-danger-soft)" }}
                 >
                   <CircleStop className="h-4 w-4" />
@@ -367,7 +360,7 @@ export default function VoiceMode({
               </div>
             )}
 
-            <div className="mt-2 flex w-full flex-wrap items-center justify-center gap-2">
+            <div className="voice-secondary-actions mt-2 flex w-full flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => setShowCaptions((current) => !current)}

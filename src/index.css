@@ -656,6 +656,85 @@
     backdrop-filter: none;
   }
 
+  .voice-page {
+    isolation: isolate;
+    background-color: var(--bg-base);
+    background-image:
+      linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 78%, transparent) 0%, color-mix(in srgb, var(--bg-base) 42%, transparent) 42%, color-mix(in srgb, var(--bg-base) 72%, transparent) 100%),
+      url("./assets/voice-sanctuary-bg.png");
+    background-position: center, center bottom;
+    background-repeat: no-repeat;
+    background-size: cover, cover;
+  }
+
+  .voice-page .voice-mode-row {
+    position: relative;
+    z-index: 2;
+  }
+
+  .voice-page .voice-mode-row > div > div {
+    background-color: color-mix(in srgb, var(--app-surface-solid) 56%, transparent) !important;
+    border-color: color-mix(in srgb, var(--app-accent) 26%, var(--app-card-border)) !important;
+    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .voice-page .voice-privacy-pill {
+    color: var(--app-text);
+    background-color: color-mix(in srgb, var(--app-surface-solid) 56%, transparent) !important;
+    border-color: color-mix(in srgb, var(--app-accent) 28%, var(--app-card-border)) !important;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .voice-page .voice-presence-ring {
+    border-color: color-mix(in srgb, var(--app-accent) 70%, transparent);
+  }
+
+  .voice-page .voice-presence-core {
+    color: var(--app-accent);
+    background-color: color-mix(in srgb, var(--app-surface-elevated) 88%, transparent);
+    border-color: color-mix(in srgb, var(--app-accent) 72%, var(--app-card-border));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-accent) 22%, transparent), 0 18px 44px color-mix(in srgb, var(--app-accent) 20%, transparent);
+  }
+
+  .voice-page .voice-audio-bar {
+    background-color: var(--app-accent);
+  }
+
+  .voice-page .voice-state-title {
+    text-shadow: 0 3px 18px rgba(0, 0, 0, 0.34);
+  }
+
+  .voice-page .voice-state-description {
+    color: color-mix(in srgb, var(--app-heading) 76%, var(--app-text-muted));
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.28);
+  }
+
+  .voice-page .voice-transcript,
+  .voice-page .voice-session-notice {
+    background-color: color-mix(in srgb, var(--app-surface-solid) 66%, transparent) !important;
+    border-color: color-mix(in srgb, var(--app-card-border) 76%, transparent) !important;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  }
+
+  .voice-page .voice-primary-action {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--app-accent) 58%, white) 0%, var(--app-accent) 62%, var(--app-accent-strong) 100%);
+    color: var(--app-heading);
+    box-shadow: 0 16px 36px color-mix(in srgb, var(--app-accent) 34%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.46);
+  }
+
+  .voice-page .voice-control-button {
+    background-color: color-mix(in srgb, var(--app-surface-solid) 54%, transparent);
+    border-color: color-mix(in srgb, var(--app-card-border) 90%, transparent);
+  }
+
+  .voice-page .voice-end-button {
+    background-color: color-mix(in srgb, var(--app-danger-soft) 74%, transparent);
+  }
+
+  .voice-page .voice-secondary-actions button {
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.24);
+  }
+
   .app-divider {
     border-color: var(--app-divider);
   }

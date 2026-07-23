@@ -754,17 +754,21 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   };
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent">
+    <div className={cn(
+      "relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent",
+      isVoiceMode && "voice-page",
+    )}>
       <header
         className={cn(
-          "z-20 flex shrink-0 items-center justify-between border-b pr-14 backdrop-blur-xl transition-colors duration-200",
+          "z-20 flex shrink-0 items-center justify-between border-b pr-14 transition-colors duration-200",
+          !isVoiceMode && "backdrop-blur-xl",
           isCompactPhone ? "min-h-[64px] px-4 py-2" : "min-h-[72px] px-5 py-3 sm:px-6",
         )}
         style={{
-          backgroundColor: "var(--app-surface-solid)",
-          backgroundImage: "var(--app-shell-highlight)",
-          borderColor: "color-mix(in srgb, var(--app-divider) 50%, transparent)",
-          boxShadow: "0 4px 24px rgba(0,0,0,0.08), inset 0 -1px 0 color-mix(in srgb, var(--app-divider) 40%, transparent)",
+          backgroundColor: isVoiceMode ? "transparent" : "var(--app-surface-solid)",
+          backgroundImage: isVoiceMode ? "none" : "var(--app-shell-highlight)",
+          borderColor: isVoiceMode ? "transparent" : "color-mix(in srgb, var(--app-divider) 50%, transparent)",
+          boxShadow: isVoiceMode ? "none" : "0 4px 24px rgba(0,0,0,0.08), inset 0 -1px 0 color-mix(in srgb, var(--app-divider) 40%, transparent)",
         }}
       >
         <div className={cn("flex items-center", isCompactPhone ? "gap-3" : "gap-4")}>
@@ -784,10 +788,10 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
             />
           </div>
           <div className="min-w-0">
-            <h3 className={cn("app-heading font-semibold tracking-wide", isCompactPhone ? "text-[14px]" : "text-[16px]")}>
+            <h3 className={cn("app-heading font-serif font-semibold tracking-tight", isCompactPhone ? "text-[18px]" : "text-[21px] sm:text-[23px]")}>
               Bible Nova Companion
             </h3>
-            <p className="app-kicker mt-0.5 truncate text-[10px]">
+            <p className="app-kicker mt-1 truncate text-[10px] sm:text-[11px]">
               {isCompactPhone ? "Private space" : "Private reflection space"}
             </p>
           </div>
@@ -795,7 +799,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       </header>
 
       {onModeChange && (
-        <div className="shrink-0 px-4 pt-2 sm:px-6 sm:pt-3">
+        <div className="voice-mode-row shrink-0 px-4 pt-1 sm:px-6 sm:pt-2">
           <div className="mx-auto flex w-full max-w-[680px] justify-center sm:justify-start">
             <VoiceModeToggle
               value={mode}

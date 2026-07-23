@@ -15,7 +15,7 @@ export function VoiceModeToggle({ value, onChange, className }: VoiceModeToggleP
       role="group"
       aria-label="Home mode"
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-pill border p-1",
+        "inline-flex min-h-12 shrink-0 items-center gap-1 rounded-pill border p-1.5",
         className,
       )}
       style={{
@@ -34,7 +34,7 @@ export function VoiceModeToggle({ value, onChange, className }: VoiceModeToggleP
             type="button"
             aria-pressed={isSelected}
             onClick={() => onChange(mode)}
-            className="touch-target inline-flex min-h-10 items-center justify-center gap-1.5 rounded-pill px-4 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            className="touch-target inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-pill px-4 text-[14px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:min-w-40"
             style={{
               background: isSelected ? "var(--app-surface-solid)" : "transparent",
               color: isSelected ? "var(--app-accent)" : "var(--app-text-muted)",
