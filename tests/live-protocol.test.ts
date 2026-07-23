@@ -10,7 +10,7 @@ import {
 import type { ConversationMessage } from "../src/types/live";
 
 describe("Gemini Live protocol helpers", () => {
-  it("completes initial history before realtime audio begins", () => {
+  it("waits after history that ends with a model response", () => {
     const history: ConversationMessage[] = [
       { id: "welcome", role: "ai", content: "Welcome" },
       { id: "1", role: "user", content: "I feel overwhelmed." },
@@ -23,6 +23,18 @@ describe("Gemini Live protocol helpers", () => {
         { role: "user", parts: [{ text: "I feel overwhelmed." }] },
         { role: "model", parts: [{ text: "Let us slow down." }] },
       ],
+      turnComplete: false,
+    });
+  });
+
+  it("does not send empty history and completes only an unanswered user turn", () => {
+    expect(createInitialHistoryPayload([
+      { id: "welcome", role: "ai", content: "Welcome" },
+    ])).toBeNull();
+    expect(createInitialHistoryPayload([
+      { id: "1", role: "user", content: "Please help me." },
+    ])).toEqual({
+      turns: [{ role: "user", parts: [{ text: "Please help me." }] }],
       turnComplete: true,
     });
   });

@@ -4,6 +4,7 @@ import type {
   LiveConnectConfig,
 } from "@google/genai";
 import { apiFetch } from "../lib/apiClient";
+import { isNativePlatform } from "../lib/native/platform";
 import {
   createInitialHistoryPayload,
   getLiveReconnectDelay,
@@ -19,6 +20,7 @@ type LiveTokenResponse = {
   model?: string;
   maxMinutes?: number;
   expiresAt?: string;
+  leaseId?: string;
   error?: string;
 };
 
@@ -138,6 +140,8 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
   const reconnectTimerRef = useRef<number | null>(null);
   const noticeTimerRef = useRef<number | null>(null);
   const endTimerRef = useRef<number | null>(null);
+  const leaseIdRef = useRef<string | null>(null);
+  const failureHandledRef = useRef(false);
 
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -182,6 +186,17 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       void audioContext.close().catch(() => undefined);
     }
   }, [stopPlayback]);
+
+  const releaseLease = useCallback(() => {
+    const leaseId = leaseIdRef.current;
+    leaseIdRef.current = null;
+    if (!leaseId) return Promise.resolve();
+    return apiFetch("/api/live/session", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leaseId }),
+    }).then(() => undefined).catch(() => undefined);
+  }, []);
 
   const finalizeUserTranscript = useCallback(() => {
     const finalText = userTranscriptRef.current.trim();
@@ -248,11 +263,49 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     const session = sessionRef.current;
     sessionRef.current = null;
     session?.close();
+    void releaseLease();
     setIsMuted(false);
     audioStreamEndedRef.current = true;
     setSessionNotice(null);
     setState(nextState);
-  }, [clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, releaseAudio]);
+  }, [clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, releaseAudio, releaseLease]);
+
+  const handleConnectionFailure = useCallback((
+    failedSession: GeminiLiveSession,
+    message: string,
+  ) => {
+    if (stopRequestedRef.current || failureHandledRef.current || sessionRef.current !== failedSession) return;
+
+    failureHandledRef.current = true;
+    playbackGenerationRef.current += 1;
+    audioStreamEndedRef.current = signalAudioStreamEnd(failedSession, audioStreamEndedRef.current);
+    suppressPlaybackRef.current = false;
+    releaseAudio();
+    sessionRef.current = null;
+    try {
+      failedSession.close();
+    } catch {
+      // The transport may already be closed.
+    }
+    const leaseRelease = releaseLease();
+
+    if (shouldReconnectLiveSession(reconnectAttemptsRef.current, MAX_RECONNECT_ATTEMPTS)) {
+      reconnectAttemptsRef.current += 1;
+      const attempt = reconnectAttemptsRef.current;
+      setState("reconnecting");
+      setError(null);
+      void leaseRelease.finally(() => {
+        reconnectTimerRef.current = window.setTimeout(() => {
+          reconnectTimerRef.current = null;
+          failureHandledRef.current = false;
+          if (!stopRequestedRef.current) void startRef.current?.(true);
+        }, getLiveReconnectDelay(attempt));
+      });
+      return;
+    }
+    setState("error");
+    setError(message);
+  }, [releaseAudio, releaseLease]);
 
   const start = useCallback(async (isReconnect = false) => {
     if (startingRef.current || sessionRef.current) return;
@@ -262,6 +315,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     audioStreamEndedRef.current = true;
     suppressPlaybackRef.current = false;
     stopRequestedRef.current = false;
+    failureHandledRef.current = false;
     setError(null);
     setSessionNotice(null);
     setUserTranscript("");
@@ -294,6 +348,8 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       if (!response.ok || !data.token || !data.model) {
         throw new Error(data.error || "Voice is temporarily unavailable. You can continue in Chat.");
       }
+      if (!data.leaseId) throw new Error("Voice session protection is unavailable.");
+      leaseIdRef.current = data.leaseId;
 
       const { GoogleGenAI, Modality } = await import("@google/genai");
       const client = new GoogleGenAI({
@@ -311,11 +367,12 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
         realtimeInputConfig: {
           automaticActivityDetection: {
             prefixPaddingMs: 240,
-            silenceDurationMs: 700,
+            silenceDurationMs: 1_300,
           },
         },
       };
-      const session = await client.live.connect({
+      let session: GeminiLiveSession;
+      session = await client.live.connect({
         model: data.model,
         config: liveConfig,
         callbacks: {
@@ -336,7 +393,10 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
               userTranscriptRef.current = mergeLiveTranscript(userTranscriptRef.current, inputText);
               setUserTranscript(userTranscriptRef.current);
               setState("user-speaking");
-              if (serverContent?.inputTranscription?.finished) finalizeUserTranscript();
+              if (serverContent?.inputTranscription?.finished) {
+                finalizeUserTranscript();
+                setState("thinking");
+              }
             }
 
             if (outputText) {
@@ -370,40 +430,22 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
               if (!playbackSourcesRef.current.length) setState("listening");
             }
           },
-          onerror: () => {
-            if (stopRequestedRef.current) return;
-            setState("error");
-            setError("Voice is temporarily unavailable. You can continue in Chat.");
-          },
+          onerror: () => handleConnectionFailure(
+            session,
+            "Voice is temporarily unavailable. You can continue in Chat.",
+          ),
           onclose: () => {
-            if (stopRequestedRef.current) return;
-            playbackGenerationRef.current += 1;
-            audioStreamEndedRef.current = true;
-            suppressPlaybackRef.current = false;
-            releaseAudio();
-            sessionRef.current = null;
-            if (shouldReconnectLiveSession(
-              reconnectAttemptsRef.current,
-              MAX_RECONNECT_ATTEMPTS,
-            )) {
-              reconnectAttemptsRef.current += 1;
-              const attempt = reconnectAttemptsRef.current;
-              setState("reconnecting");
-              setError(null);
-              reconnectTimerRef.current = window.setTimeout(() => {
-                reconnectTimerRef.current = null;
-                if (!stopRequestedRef.current) void startRef.current?.(true);
-              }, getLiveReconnectDelay(attempt));
-              return;
-            }
-            setState("error");
-            setError("The voice connection ended. You can try again or continue in Chat.");
+            handleConnectionFailure(
+              session,
+              "The voice connection ended. You can try again or continue in Chat.",
+            );
           },
         },
       });
 
       sessionRef.current = session;
-      session.sendClientContent(createInitialHistoryPayload(history));
+      const initialHistory = createInitialHistoryPayload(history);
+      if (initialHistory) session.sendClientContent(initialHistory);
 
       const audioContext = getAudioContext();
       audioContextRef.current = audioContext;
@@ -444,6 +486,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       releaseAudio();
       sessionRef.current?.close();
       sessionRef.current = null;
+      void releaseLease();
       const message = startError instanceof Error ? startError.message : "Voice could not start.";
       if (message.toLowerCase().includes("permission") || message.toLowerCase().includes("notallowed")) {
         setState("permission-denied");
@@ -458,7 +501,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     } finally {
       startingRef.current = false;
     }
-  }, [finalizeAssistantTranscript, finalizeUserTranscript, history, playAudioChunk, releaseAudio, stop, stopPlayback]);
+  }, [finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, playAudioChunk, releaseAudio, releaseLease, stop, stopPlayback]);
 
   useEffect(() => {
     startRef.current = start;
@@ -492,6 +535,26 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [stop]);
+
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    let listener: { remove: () => Promise<void> } | null = null;
+    let disposed = false;
+    void import("@capacitor/app")
+      .then(({ App }) => App.addListener("appStateChange", ({ isActive }) => {
+        if (!isActive && sessionRef.current) void stop("ended");
+      }))
+      .then((handle) => {
+        if (disposed) void handle.remove();
+        else listener = handle;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      if (listener) void listener.remove();
+    };
   }, [stop]);
 
   useEffect(() => () => {

@@ -82,6 +82,63 @@ export const requireAuthenticatedRequest = async (req: RequestLike) => {
   };
 };
 
+export const acquireVoiceSessionLease = async (
+  userId: string,
+  maxMinutes: number,
+  dailyMinutes = 60,
+) => {
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client.rpc("acquire_voice_session_lease", {
+    p_user_id: userId,
+    p_max_minutes: maxMinutes,
+    p_daily_minutes: dailyMinutes,
+  });
+  if (error) {
+    const message = error.message.toLowerCase();
+    if (message.includes("premium subscription")) {
+      throw new HttpError("An active premium subscription is required for Voice mode.", 403);
+    }
+    if (message.includes("already active")) {
+      throw new HttpError("A Voice session is already active for this account.", 409);
+    }
+    if (message.includes("daily voice allowance")) {
+      throw new HttpError("Your daily Voice allowance has been reached.", 429);
+    }
+    console.error("Voice lease acquisition failed:", error.message);
+    throw new HttpError("Voice session protection is temporarily unavailable.", 503);
+  }
+  if (typeof data !== "string" || !data) {
+    throw new HttpError("Voice session protection is temporarily unavailable.", 503);
+  }
+  return data;
+};
+
+export const releaseVoiceSessionLease = async (userId: string, leaseId: string) => {
+  const client = getSupabaseAdminClient();
+  const { error } = await client.rpc("release_voice_session_lease", {
+    p_user_id: userId,
+    p_lease_id: leaseId,
+  });
+  if (error) {
+    console.error("Voice lease release failed:", error.message);
+    throw new HttpError("Voice session could not be released.", 503);
+  }
+};
+
+export const getServerShadowNotes = async (userId: string) => {
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .from("user_shadow_notes")
+    .select("notes")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    console.error("Voice context lookup failed:", error.message);
+    throw new HttpError("Voice context is temporarily unavailable.", 503);
+  }
+  return typeof data?.notes === "string" ? data.notes.trim().slice(0, 1_500) : "";
+};
+
 export const getRateLimitStorageKey = (key: string) => {
   if (!key.includes(":ip:")) return key;
   // A dedicated salt is preferred, but the persistent limiter already

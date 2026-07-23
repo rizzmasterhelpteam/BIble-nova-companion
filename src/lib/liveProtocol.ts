@@ -15,16 +15,21 @@ export const mergeLiveTranscript = (current: string, next: string) => {
   return `${current} ${normalizedNext}`.trim();
 };
 
-export const createInitialHistoryPayload = (history: ConversationMessage[]) => ({
-  turns: history
+export const createInitialHistoryPayload = (history: ConversationMessage[]) => {
+  const turns = history
     .filter((message) => message.id !== "welcome" && message.tone !== "error")
     .slice(-LIVE_CONTEXT_MESSAGES)
     .map((message) => ({
       role: message.role === "ai" ? "model" : "user",
       parts: [{ text: message.content.slice(0, 2_000) }],
-    })),
-  turnComplete: true as const,
-});
+    }));
+
+  if (!turns.length) return null;
+  return {
+    turns,
+    turnComplete: turns.at(-1)?.role === "user",
+  };
+};
 
 export const signalAudioStreamEnd = (
   session: RealtimeInputSession | null,

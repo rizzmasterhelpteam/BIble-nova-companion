@@ -1,5 +1,12 @@
-import { createGeminiLiveEphemeralToken } from "../../live-api.js";
-import { enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../../server-security.js";
+import { createGeminiLiveEphemeralToken, getVoiceSessionConfig } from "../../live-api.js";
+import {
+  acquireVoiceSessionLease,
+  enforceRateLimits,
+  getHttpErrorDetails,
+  getServerShadowNotes,
+  releaseVoiceSessionLease,
+  requireAuthenticatedRequest,
+} from "../../server-security.js";
 
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
@@ -23,12 +30,24 @@ export default async function handler(req: any, res: any) {
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
-      { key: `live-token:user:${userId}`, limit: 20 },
-      { key: `live-token:ip:${ip}`, limit: 40 },
+      { key: `live-token:user:${userId}`, limit: 6 },
+      { key: `live-token:ip:${ip}`, limit: 12 },
     ]);
 
-    const session = await createGeminiLiveEphemeralToken();
-    res.status(200).json(session);
+    const { maxMinutes } = getVoiceSessionConfig();
+    const configuredDailyMinutes = Number(process.env.VOICE_DAILY_MAX_MINUTES || 60);
+    const dailyMinutes = Number.isFinite(configuredDailyMinutes)
+      ? Math.max(maxMinutes, Math.min(240, Math.floor(configuredDailyMinutes)))
+      : 60;
+    const leaseId = await acquireVoiceSessionLease(userId, maxMinutes, dailyMinutes);
+    try {
+      const shadowNotes = await getServerShadowNotes(userId);
+      const session = await createGeminiLiveEphemeralToken(shadowNotes);
+      res.status(200).json({ ...session, leaseId });
+    } catch (error) {
+      await releaseVoiceSessionLease(userId, leaseId).catch(() => undefined);
+      throw error;
+    }
   } catch (error) {
     console.error("Gemini Live token request failed:", error instanceof Error ? error.message : error);
     const details = getHttpErrorDetails(error);
