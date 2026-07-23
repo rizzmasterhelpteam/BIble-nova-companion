@@ -2,11 +2,15 @@ import { createGeminiLiveEphemeralToken, getVoiceSessionConfig } from "../../liv
 import {
   acquireVoiceSessionLease,
   cancelUnstartedVoiceSessionLease,
+  claimVoiceSessionRenewal,
   createVoiceReservationHandle,
   enforceRateLimits,
   getHttpErrorDetails,
   getServerShadowNotes,
   getVoiceUsageLimits,
+  finalizeVoiceSessionRenewal,
+  hashVoiceReservationHandle,
+  rollbackVoiceSessionRenewal,
   requireAuthenticatedRequest,
 } from "../../server-security.js";
 
@@ -35,6 +39,34 @@ export default async function handler(req: any, res: any) {
       { key: `live-token:user:${userId}`, limit: 6 },
       { key: `live-token:ip:${ip}`, limit: 12 },
     ]);
+
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
+    if (body.reservationHandle !== undefined) {
+      const handleHash = hashVoiceReservationHandle(body.reservationHandle);
+      if (!handleHash) {
+        res.status(400).json({
+          error: "This Voice reservation is invalid.",
+          reason: "reservation_invalid",
+        });
+        return;
+      }
+
+      const renewal = await claimVoiceSessionRenewal(userId, handleHash);
+      try {
+        const shadowNotes = await getServerShadowNotes(userId);
+        const session = await createGeminiLiveEphemeralToken(shadowNotes);
+        await finalizeVoiceSessionRenewal(userId, renewal.claimHash);
+        res.status(200).json({
+          ...session,
+          reservationHandle: body.reservationHandle,
+          reservationExpiresAt: renewal.expiresAt,
+        });
+      } catch (error) {
+        await rollbackVoiceSessionRenewal(userId, renewal.claimHash);
+        throw error;
+      }
+      return;
+    }
 
     const { maxMinutes } = getVoiceSessionConfig();
     const { dailyMinutes, resetOffsetMinutes } = getVoiceUsageLimits(maxMinutes);
@@ -73,7 +105,9 @@ export default async function handler(req: any, res: any) {
         details.statusCode === 403
           ? "subscription_required"
           : details.statusCode === 409
-            ? "session_active"
+            ? details.message.toLowerCase().includes("cannot be renewed")
+              ? "renewal_unavailable"
+              : "session_active"
             : details.statusCode === 429 && details.message.toLowerCase().includes("daily")
               ? "daily_limit"
               : "connection_failed",

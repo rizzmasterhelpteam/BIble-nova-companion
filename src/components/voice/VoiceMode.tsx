@@ -74,6 +74,7 @@ export default function VoiceMode({
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const [showCaptions, setShowCaptions] = useState(true);
+  const [cooldownNow, setCooldownNow] = useState(() => Date.now());
   const persistTimerRef = useRef<number | null>(null);
   const messagesRef = useRef(messages);
   const lastPersistedVoiceCountRef = useRef(0);
@@ -96,10 +97,19 @@ export default function VoiceMode({
     onAssistantTranscript: handleAssistantTranscript,
   });
   const premiumRequired = live.errorCode === "subscription_required";
+  useEffect(() => {
+    if (!live.retryUntil) return;
+    setCooldownNow(Date.now());
+    const timer = window.setInterval(() => setCooldownNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [live.retryUntil]);
+  const cooldownSeconds = live.retryUntil
+    ? Math.max(0, Math.ceil((live.retryUntil - cooldownNow) / 1_000))
+    : 0;
   const cooldownActive =
     (live.errorCode === "session_active" || live.errorCode === "daily_limit") &&
-    Boolean(live.retryAfterSeconds);
-  const cooldownMinutes = Math.max(1, Math.ceil((live.retryAfterSeconds || 0) / 60));
+    cooldownSeconds > 0;
+  const cooldownMinutes = Math.max(1, Math.ceil(cooldownSeconds / 60));
 
   const persistVoiceNotes = useCallback(async () => {
     const voiceMessages = messagesRef.current.filter(isVoiceMessage);

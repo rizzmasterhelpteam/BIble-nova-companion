@@ -186,18 +186,20 @@ export const getVoiceSessionAvailability = async (
   };
 };
 
-export const renewVoiceSessionLease = async (userId: string, handleHash: string) => {
+export const claimVoiceSessionRenewal = async (userId: string, handleHash: string) => {
   const client = getSupabaseAdminClient();
-  const { data, error } = await client.rpc("renew_voice_session_lease", {
+  const claimHash = randomBytes(32).toString("hex");
+  const { data, error } = await client.rpc("claim_voice_session_renewal", {
     p_user_id: userId,
     p_handle_hash: handleHash,
+    p_claim_hash: claimHash,
   });
   if (error) {
     const message = error.message.toLowerCase();
     if (message.includes("renewal limit") || message.includes("reservation unavailable")) {
       throw new HttpError("This Voice reservation cannot be renewed.", 409);
     }
-    console.error("Voice lease renewal failed:", error.message);
+    console.error("Voice renewal claim failed:", error.message);
     throw new HttpError("Voice reconnection is temporarily unavailable.", 503);
   }
   const result = Array.isArray(data) ? data[0] : data;
@@ -207,7 +209,26 @@ export const renewVoiceSessionLease = async (userId: string, handleHash: string)
   return {
     leaseId: String(result.lease_id),
     expiresAt: String(result.lease_expires_at),
+    claimHash,
   };
+};
+
+export const finalizeVoiceSessionRenewal = async (userId: string, claimHash: string) => {
+  const client = getSupabaseAdminClient();
+  const { error } = await client.rpc("finalize_voice_session_renewal", {
+    p_user_id: userId,
+    p_claim_hash: claimHash,
+  });
+  if (error) console.error("Voice renewal finalization failed:", error.message);
+};
+
+export const rollbackVoiceSessionRenewal = async (userId: string, claimHash: string) => {
+  const client = getSupabaseAdminClient();
+  const { error } = await client.rpc("rollback_voice_session_renewal", {
+    p_user_id: userId,
+    p_claim_hash: claimHash,
+  });
+  if (error) console.error("Voice renewal rollback failed:", error.message);
 };
 
 export const cancelUnstartedVoiceSessionLease = async (userId: string, leaseId: string) => {

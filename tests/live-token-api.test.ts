@@ -7,6 +7,10 @@ const security = vi.hoisted(() => ({
   notes: vi.fn(),
   auth: vi.fn(),
   createHandle: vi.fn(),
+  hashHandle: vi.fn(),
+  claimRenewal: vi.fn(),
+  finalizeRenewal: vi.fn(),
+  rollbackRenewal: vi.fn(),
 }));
 const createToken = vi.hoisted(() => vi.fn());
 
@@ -14,6 +18,8 @@ vi.mock("../server-security", () => ({
   acquireVoiceSessionLease: security.acquire,
   cancelUnstartedVoiceSessionLease: security.cancel,
   enforceRateLimits: security.limits,
+  claimVoiceSessionRenewal: security.claimRenewal,
+  finalizeVoiceSessionRenewal: security.finalizeRenewal,
   getHttpErrorDetails: (error: unknown) => ({
     statusCode: 500,
     message: error instanceof Error ? error.message : String(error),
@@ -21,6 +27,8 @@ vi.mock("../server-security", () => ({
   getServerShadowNotes: security.notes,
   getVoiceUsageLimits: () => ({ dailyMinutes: 60, resetOffsetMinutes: 330 }),
   createVoiceReservationHandle: security.createHandle,
+  hashVoiceReservationHandle: security.hashHandle,
+  rollbackVoiceSessionRenewal: security.rollbackRenewal,
   requireAuthenticatedRequest: security.auth,
 }));
 
@@ -64,7 +72,43 @@ describe("Gemini Live token endpoint", () => {
     });
     security.notes.mockResolvedValue("Prefers short prayers.");
     security.cancel.mockResolvedValue(undefined);
+    security.hashHandle.mockReturnValue("b".repeat(64));
+    security.claimRenewal.mockResolvedValue({
+      leaseId: "11111111-1111-4111-8111-111111111111",
+      expiresAt: "2026-07-23T12:00:00.000Z",
+      claimHash: "c".repeat(64),
+    });
+    security.finalizeRenewal.mockResolvedValue(undefined);
+    security.rollbackRenewal.mockResolvedValue(undefined);
     createToken.mockResolvedValue({ token: "ephemeral", model: "live", maxMinutes: 10 });
+  });
+
+  it("renews through the existing token route without creating another lease", async () => {
+    const response = createResponse();
+    await tokenHandler({
+      method: "POST",
+      headers: {},
+      body: { reservationHandle: "existing-opaque-handle" },
+    }, response);
+    expect(security.claimRenewal).toHaveBeenCalledWith("user-1", "b".repeat(64));
+    expect(security.acquire).not.toHaveBeenCalled();
+    expect(security.finalizeRenewal).toHaveBeenCalledWith("user-1", "c".repeat(64));
+    expect(response.body).toMatchObject({
+      token: "ephemeral",
+      reservationHandle: "existing-opaque-handle",
+    });
+  });
+
+  it("rolls back a renewal claim when Gemini token minting fails", async () => {
+    createToken.mockRejectedValueOnce(new Error("Gemini token failure"));
+    const response = createResponse();
+    await tokenHandler({
+      method: "POST",
+      headers: {},
+      body: { reservationHandle: "existing-opaque-handle" },
+    }, response);
+    expect(security.rollbackRenewal).toHaveBeenCalledWith("user-1", "c".repeat(64));
+    expect(response.statusCode).toBe(500);
   });
 
   it("returns only an opaque reservation handle, never the database lease identifier", async () => {

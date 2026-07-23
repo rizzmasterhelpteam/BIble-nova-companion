@@ -146,6 +146,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<VoiceErrorCode | null>(null);
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
+  const [retryUntil, setRetryUntil] = useState<number | null>(null);
   const [userTranscript, setUserTranscript] = useState("");
   const [assistantTranscript, setAssistantTranscript] = useState("");
   const [isMuted, setIsMuted] = useState(false);
@@ -338,6 +339,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     setError(null);
     setErrorCode(null);
     setRetryAfterSeconds(null);
+    setRetryUntil(null);
     setSessionNotice(null);
     setUserTranscript("");
     setAssistantTranscript("");
@@ -406,7 +408,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
         ? reservationHandleRef.current
         : null;
       const response = await apiFetch(
-        renewingHandle ? "/api/live/reconnect-token" : "/api/live/token",
+        "/api/live/token",
         renewingHandle
           ? {
               method: "POST",
@@ -568,6 +570,11 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
         setState("error");
         setErrorCode(startError.code);
         setRetryAfterSeconds(startError.retryAfterSeconds);
+        setRetryUntil(
+          startError.retryAfterSeconds
+            ? Date.now() + startError.retryAfterSeconds * 1_000
+            : null,
+        );
         setError(startError.message);
       } else if (message.toLowerCase().includes("permission") || message.toLowerCase().includes("notallowed")) {
         setState("permission-denied");
@@ -619,6 +626,27 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
   }, [stop]);
 
   useEffect(() => {
+    if (!retryUntil) return;
+    const remaining = retryUntil - Date.now();
+    if (remaining <= 0) {
+      setRetryUntil(null);
+      setRetryAfterSeconds(null);
+      setErrorCode(null);
+      setError(null);
+      setState("idle");
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setRetryUntil(null);
+      setRetryAfterSeconds(null);
+      setErrorCode(null);
+      setError(null);
+      setState("idle");
+    }, remaining);
+    return () => window.clearTimeout(timer);
+  }, [retryUntil]);
+
+  useEffect(() => {
     if (!isNativePlatform()) return;
     let listener: { remove: () => Promise<void> } | null = null;
     let disposed = false;
@@ -647,6 +675,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     error,
     errorCode,
     retryAfterSeconds,
+    retryUntil,
     userTranscript,
     assistantTranscript,
     isMuted,
