@@ -1,10 +1,10 @@
 import { createGeminiLiveEphemeralToken, getVoiceSessionConfig } from "../../live-api.js";
 import {
   acquireVoiceSessionLease,
+  cancelUnstartedVoiceSessionLease,
   enforceRateLimits,
   getHttpErrorDetails,
   getServerShadowNotes,
-  releaseVoiceSessionLease,
   requireAuthenticatedRequest,
 } from "../../server-security.js";
 
@@ -39,13 +39,17 @@ export default async function handler(req: any, res: any) {
     const dailyMinutes = Number.isFinite(configuredDailyMinutes)
       ? Math.max(maxMinutes, Math.min(240, Math.floor(configuredDailyMinutes)))
       : 60;
-    const leaseId = await acquireVoiceSessionLease(userId, maxMinutes, dailyMinutes);
+    const configuredOffset = Number(process.env.VOICE_DAILY_RESET_OFFSET_MINUTES || 330);
+    const resetOffsetMinutes = Number.isFinite(configuredOffset)
+      ? Math.max(-720, Math.min(840, Math.trunc(configuredOffset)))
+      : 330;
+    const leaseId = await acquireVoiceSessionLease(userId, maxMinutes, dailyMinutes, resetOffsetMinutes);
     try {
       const shadowNotes = await getServerShadowNotes(userId);
       const session = await createGeminiLiveEphemeralToken(shadowNotes);
-      res.status(200).json({ ...session, leaseId });
+      res.status(200).json(session);
     } catch (error) {
-      await releaseVoiceSessionLease(userId, leaseId).catch(() => undefined);
+      await cancelUnstartedVoiceSessionLease(userId, leaseId);
       throw error;
     }
   } catch (error) {

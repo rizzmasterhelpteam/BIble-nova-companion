@@ -20,7 +20,6 @@ type LiveTokenResponse = {
   model?: string;
   maxMinutes?: number;
   expiresAt?: string;
-  leaseId?: string;
   error?: string;
 };
 
@@ -140,7 +139,6 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
   const reconnectTimerRef = useRef<number | null>(null);
   const noticeTimerRef = useRef<number | null>(null);
   const endTimerRef = useRef<number | null>(null);
-  const leaseIdRef = useRef<string | null>(null);
   const failureHandledRef = useRef(false);
 
   useEffect(() => {
@@ -186,17 +184,6 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       void audioContext.close().catch(() => undefined);
     }
   }, [stopPlayback]);
-
-  const releaseLease = useCallback(() => {
-    const leaseId = leaseIdRef.current;
-    leaseIdRef.current = null;
-    if (!leaseId) return Promise.resolve();
-    return apiFetch("/api/live/session", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leaseId }),
-    }).then(() => undefined).catch(() => undefined);
-  }, []);
 
   const finalizeUserTranscript = useCallback(() => {
     const finalText = userTranscriptRef.current.trim();
@@ -263,12 +250,11 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     const session = sessionRef.current;
     sessionRef.current = null;
     session?.close();
-    void releaseLease();
     setIsMuted(false);
     audioStreamEndedRef.current = true;
     setSessionNotice(null);
     setState(nextState);
-  }, [clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, releaseAudio, releaseLease]);
+  }, [clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, releaseAudio]);
 
   const handleConnectionFailure = useCallback((
     failedSession: GeminiLiveSession,
@@ -287,25 +273,21 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     } catch {
       // The transport may already be closed.
     }
-    const leaseRelease = releaseLease();
-
     if (shouldReconnectLiveSession(reconnectAttemptsRef.current, MAX_RECONNECT_ATTEMPTS)) {
       reconnectAttemptsRef.current += 1;
       const attempt = reconnectAttemptsRef.current;
       setState("reconnecting");
       setError(null);
-      void leaseRelease.finally(() => {
-        reconnectTimerRef.current = window.setTimeout(() => {
-          reconnectTimerRef.current = null;
-          failureHandledRef.current = false;
-          if (!stopRequestedRef.current) void startRef.current?.(true);
-        }, getLiveReconnectDelay(attempt));
-      });
+      reconnectTimerRef.current = window.setTimeout(() => {
+        reconnectTimerRef.current = null;
+        failureHandledRef.current = false;
+        if (!stopRequestedRef.current) void startRef.current?.(true);
+      }, getLiveReconnectDelay(attempt));
       return;
     }
     setState("error");
     setError(message);
-  }, [releaseAudio, releaseLease]);
+  }, [releaseAudio]);
 
   const start = useCallback(async (isReconnect = false) => {
     if (startingRef.current || sessionRef.current) return;
@@ -334,6 +316,17 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
 
     try {
       setState("requesting-permission");
+      const eligibilityResponse = await apiFetch("/api/live/eligibility", { method: "GET" });
+      const eligibility = (await eligibilityResponse.json().catch(() => ({}))) as {
+        eligible?: boolean;
+        error?: string;
+      };
+      if (!eligibilityResponse.ok) {
+        throw new Error(eligibility.error || "Voice eligibility could not be checked.");
+      }
+      if (!eligibility.eligible) {
+        throw new Error("Voice mode requires an active premium subscription.");
+      }
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Voice is not supported on this device.");
       }
@@ -348,9 +341,6 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       if (!response.ok || !data.token || !data.model) {
         throw new Error(data.error || "Voice is temporarily unavailable. You can continue in Chat.");
       }
-      if (!data.leaseId) throw new Error("Voice session protection is unavailable.");
-      leaseIdRef.current = data.leaseId;
-
       const { GoogleGenAI, Modality } = await import("@google/genai");
       const client = new GoogleGenAI({
         apiKey: data.token,
@@ -378,7 +368,6 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
         callbacks: {
           onopen: () => {
             if (!stopRequestedRef.current) {
-              reconnectAttemptsRef.current = 0;
               setState("ready");
             }
           },
@@ -424,6 +413,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
             }
 
             if (serverContent?.turnComplete) {
+              reconnectAttemptsRef.current = 0;
               suppressPlaybackRef.current = false;
               finalizeUserTranscript();
               finalizeAssistantTranscript();
@@ -486,7 +476,6 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       releaseAudio();
       sessionRef.current?.close();
       sessionRef.current = null;
-      void releaseLease();
       const message = startError instanceof Error ? startError.message : "Voice could not start.";
       if (message.toLowerCase().includes("permission") || message.toLowerCase().includes("notallowed")) {
         setState("permission-denied");
@@ -501,7 +490,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     } finally {
       startingRef.current = false;
     }
-  }, [finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, playAudioChunk, releaseAudio, releaseLease, stop, stopPlayback]);
+  }, [finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, playAudioChunk, releaseAudio, stop, stopPlayback]);
 
   useEffect(() => {
     startRef.current = start;

@@ -7,6 +7,7 @@ vi.mock("@supabase/supabase-js", () => ({
 }));
 
 import {
+  acquireVoiceSessionLease,
   assertStringLength,
   enforceRateLimits,
   getRateLimitStorageKey,
@@ -63,6 +64,31 @@ describe("server security", () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: { message: "missing function" } });
     await expect(enforceRateLimits([{ key: "chat:user:user-1", limit: 1 }])).rejects.toMatchObject({
       statusCode: 503,
+    });
+  });
+
+  it.each([
+    ["Active premium subscription required", 403],
+    ["Voice session already active", 409],
+    ["Daily voice allowance reached", 429],
+  ])("maps protected Voice lease rejection '%s' to HTTP %i", async (message, statusCode) => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message } });
+    await expect(acquireVoiceSessionLease("user-1", 10, 60, 330)).rejects.toMatchObject({
+      statusCode,
+    });
+  });
+
+  it("passes the configured reset offset into the atomic lease RPC", async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: "11111111-1111-4111-8111-111111111111",
+      error: null,
+    });
+    await acquireVoiceSessionLease("user-1", 10, 60, 330);
+    expect(rpcMock).toHaveBeenCalledWith("acquire_voice_session_lease", {
+      p_user_id: "user-1",
+      p_max_minutes: 10,
+      p_daily_minutes: 60,
+      p_reset_offset_minutes: 330,
     });
   });
 

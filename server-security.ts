@@ -86,12 +86,14 @@ export const acquireVoiceSessionLease = async (
   userId: string,
   maxMinutes: number,
   dailyMinutes = 60,
+  resetOffsetMinutes = 330,
 ) => {
   const client = getSupabaseAdminClient();
   const { data, error } = await client.rpc("acquire_voice_session_lease", {
     p_user_id: userId,
     p_max_minutes: maxMinutes,
     p_daily_minutes: dailyMinutes,
+    p_reset_offset_minutes: resetOffsetMinutes,
   });
   if (error) {
     const message = error.message.toLowerCase();
@@ -113,16 +115,30 @@ export const acquireVoiceSessionLease = async (
   return data;
 };
 
-export const releaseVoiceSessionLease = async (userId: string, leaseId: string) => {
+export const hasActiveVoiceEntitlement = async (userId: string) => {
   const client = getSupabaseAdminClient();
-  const { error } = await client.rpc("release_voice_session_lease", {
+  const { data, error } = await client
+    .from("subscription_entitlements")
+    .select("id")
+    .eq("user_id", userId)
+    .in("status", ["active", "grace_period"])
+    .or(`expiry_time.is.null,expiry_time.gt.${new Date().toISOString()}`)
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error("Voice entitlement check failed:", error.message);
+    throw new HttpError("Voice eligibility is temporarily unavailable.", 503);
+  }
+  return Boolean(data?.id);
+};
+
+export const cancelUnstartedVoiceSessionLease = async (userId: string, leaseId: string) => {
+  const client = getSupabaseAdminClient();
+  const { error } = await client.rpc("cancel_unstarted_voice_session_lease", {
     p_user_id: userId,
     p_lease_id: leaseId,
   });
-  if (error) {
-    console.error("Voice lease release failed:", error.message);
-    throw new HttpError("Voice session could not be released.", 503);
-  }
+  if (error) console.error("Unstarted Voice lease cancellation failed:", error.message);
 };
 
 export const getServerShadowNotes = async (userId: string) => {

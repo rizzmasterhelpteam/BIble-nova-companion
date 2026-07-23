@@ -10,6 +10,7 @@ import {
   Volume2,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useNavigate } from "react-router-dom";
 import { AppLogo } from "../AppLogo";
 import { apiFetch } from "../../lib/apiClient";
 import { cn } from "../../lib/utils";
@@ -70,6 +71,7 @@ export default function VoiceMode({
   onContinueInChat,
 }: VoiceModeProps) {
   const { isCompactPhone, isShortPhone } = useMobileViewport();
+  const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const [showCaptions, setShowCaptions] = useState(true);
   const persistTimerRef = useRef<number | null>(null);
@@ -93,6 +95,7 @@ export default function VoiceMode({
     onUserTranscript: handleUserTranscript,
     onAssistantTranscript: handleAssistantTranscript,
   });
+  const premiumRequired = live.error?.toLowerCase().includes("premium subscription") ?? false;
 
   const persistVoiceNotes = useCallback(async () => {
     const voiceMessages = messagesRef.current.filter(isVoiceMessage);
@@ -155,7 +158,11 @@ export default function VoiceMode({
     onContinueInChat();
   };
 
-  const startLabel = live.state === "ended" ? "Start a new reflection" : "Start conversation";
+  const startLabel = premiumRequired
+    ? "Unlock Voice"
+    : live.state === "ended"
+      ? "Start a new reflection"
+      : "Start conversation";
   const showStartButton = !active;
   const showErrorAction = Boolean(live.error) || live.state === "permission-denied" || live.state === "offline";
 
@@ -257,7 +264,7 @@ export default function VoiceMode({
           {showStartButton ? (
             <button
               type="button"
-              onClick={() => void live.start()}
+              onClick={() => premiumRequired ? navigate("/paywall") : void live.start()}
               disabled={isTyping}
               className="touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-6 text-base font-semibold text-white shadow-lg transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-not-allowed disabled:opacity-50"
             >
