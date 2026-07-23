@@ -13,6 +13,8 @@ import {
   syncNativeSubscription,
   transcribeAudio,
 } from "./server-api";
+import { createGeminiLiveEphemeralToken } from "./live-api";
+import { createShadowNotes, type ChatMessage } from "./chat-api";
 import {
   assertStringLength,
   enforceRateLimits,
@@ -30,6 +32,70 @@ app.use(express.json({ limit: "12mb" }));
 
 app.get("/api/status", (_req, res) => {
   res.json(getApiStatus());
+});
+
+app.post("/api/live/token", async (req, res) => {
+  try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    await enforceRateLimits([
+      { key: `live-token:user:${userId}`, limit: 20 },
+      { key: `live-token:ip:${ip}`, limit: 40 },
+    ]);
+    res.json(await createGeminiLiveEphemeralToken());
+  } catch (error) {
+    console.error("Gemini Live token request failed:", error instanceof Error ? error.message : error);
+    const details = getHttpErrorDetails(error);
+    if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
+    res.status(details.statusCode).json({
+      error: details.statusCode === 500
+        ? "Voice is temporarily unavailable. You can continue in Chat."
+        : details.message,
+    });
+  }
+});
+
+app.post("/api/live/shadow-notes", async (req, res) => {
+  try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    await enforceRateLimits([
+      { key: `live-shadow-notes:user:${userId}`, limit: 10 },
+      { key: `live-shadow-notes:ip:${ip}`, limit: 20 },
+    ]);
+    const messages = Array.isArray(req.body?.messages) ? req.body.messages.slice(-12) : [];
+    const normalizedMessages = messages
+      .map((message: any) => {
+        const content = typeof message?.content === "string" ? message.content.trim() : "";
+        if (!content) return null;
+        assertStringLength(content, 2_000, "Voice transcript");
+        return {
+          role: message?.role === "ai" ? "ai" : "user",
+          content,
+        } satisfies ChatMessage;
+      })
+      .filter((message: ChatMessage | null): message is ChatMessage => Boolean(message));
+    const existingShadowNotes = typeof req.body?.shadowNotes === "string" ? req.body.shadowNotes.trim() : "";
+    assertStringLength(existingShadowNotes, 2_000, "Shadow notes");
+
+    if (!normalizedMessages.length) {
+      res.json({ shadowNotes: existingShadowNotes || null });
+      return;
+    }
+
+    const generatedShadowNotes = await createShadowNotes(normalizedMessages, existingShadowNotes || null);
+    const shadowNotes = generatedShadowNotes
+      ? await saveShadowNotes(userId, generatedShadowNotes)
+      : null;
+    res.json({ shadowNotes });
+  } catch (error) {
+    console.error("Gemini Live shadow-note request failed:", error instanceof Error ? error.message : error);
+    const details = getHttpErrorDetails(error);
+    if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
+    res.status(details.statusCode).json({
+      error: details.statusCode === 500
+        ? "Voice notes could not be updated. Your conversation is still safe."
+        : details.message,
+    });
+  }
 });
 
 app.post("/api/chat", async (req, res) => {

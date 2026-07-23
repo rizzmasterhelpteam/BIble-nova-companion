@@ -248,8 +248,7 @@ Safety & Security Boundaries:
   throw lastError instanceof Error ? lastError : new Error("All configured reflection providers failed.");
 }
 
-export async function createReflection(messages: ChatMessage[], shadowNotes?: string | null) {
-  const draft = await createChatCompletion(messages, shadowNotes || undefined);
+export async function createShadowNotes(messages: ChatMessage[], shadowNotes?: string | null) {
   const existingShadowNotes = normalizeShadowNotes(shadowNotes);
 
   try {
@@ -270,17 +269,21 @@ export async function createReflection(messages: ChatMessage[], shadowNotes?: st
       existingShadowNotes || undefined,
     );
 
-    return {
-      message: draft.trim(),
-      shadowNotes: normalizeShadowNotes(nextShadowNotes),
-    };
+    return normalizeShadowNotes(nextShadowNotes);
   } catch (error) {
     console.error("Shadow note refresh failed:", error instanceof Error ? error.message : error);
-    return {
-      message: draft.trim(),
-      shadowNotes: existingShadowNotes,
-    };
+    return existingShadowNotes;
   }
+}
+
+export async function createReflection(messages: ChatMessage[], shadowNotes?: string | null) {
+  const draft = await createChatCompletion(messages, shadowNotes || undefined);
+  const nextShadowNotes = await createShadowNotes(messages, shadowNotes);
+
+  return {
+    message: draft.trim(),
+    shadowNotes: nextShadowNotes,
+  };
 }
 
 export function getClientErrorMessage(error: unknown) {

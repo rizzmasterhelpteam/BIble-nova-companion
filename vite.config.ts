@@ -15,6 +15,8 @@ import {
   syncNativeSubscription,
   transcribeAudio,
 } from './server-api';
+import { createGeminiLiveEphemeralToken } from './live-api';
+import { createShadowNotes, type ChatMessage } from './chat-api';
 import {
   assertStringLength,
   enforceRateLimits,
@@ -64,6 +66,83 @@ const localApiPlugin = () => ({
           return;
         }
         sendJson(res, 200, getApiStatus());
+        return;
+      }
+
+      if (pathname === '/api/live/token') {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'Method not allowed.' });
+          return;
+        }
+
+        try {
+          const { userId, ip } = await requireAuthenticatedRequest(req);
+          await enforceRateLimits([
+            { key: `live-token:user:${userId}`, limit: 20 },
+            { key: `live-token:ip:${ip}`, limit: 40 },
+          ]);
+          sendJson(res, 200, await createGeminiLiveEphemeralToken());
+        } catch (error) {
+          console.error('Vite local API Gemini Live token error:', error instanceof Error ? error.message : error);
+          const details = getHttpErrorDetails(error);
+          if (details.retryAfterSeconds) res.setHeader('Retry-After', String(details.retryAfterSeconds));
+          sendJson(res, details.statusCode, {
+            error: details.statusCode === 500
+              ? 'Voice is temporarily unavailable. You can continue in Chat.'
+              : details.message,
+          });
+        }
+        return;
+      }
+
+      if (pathname === '/api/live/shadow-notes') {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'Method not allowed.' });
+          return;
+        }
+
+        try {
+          const { userId, ip } = await requireAuthenticatedRequest(req);
+          await enforceRateLimits([
+            { key: `live-shadow-notes:user:${userId}`, limit: 10 },
+            { key: `live-shadow-notes:ip:${ip}`, limit: 20 },
+          ]);
+          const body = await readJsonBody(req);
+          const messages = Array.isArray(body?.messages) ? body.messages.slice(-12) : [];
+          const normalizedMessages = messages
+            .map((message: any) => {
+              const content = typeof message?.content === 'string' ? message.content.trim() : '';
+              if (!content) return null;
+              assertStringLength(content, 2_000, 'Voice transcript');
+              return {
+                role: message?.role === 'ai' ? 'ai' : 'user',
+                content,
+              } satisfies ChatMessage;
+            })
+            .filter((message: ChatMessage | null): message is ChatMessage => Boolean(message));
+          const existingShadowNotes = typeof body?.shadowNotes === 'string' ? body.shadowNotes.trim() : '';
+          assertStringLength(existingShadowNotes, 2_000, 'Shadow notes');
+
+          if (!normalizedMessages.length) {
+            sendJson(res, 200, { shadowNotes: existingShadowNotes || null });
+            return;
+          }
+
+          const generatedShadowNotes = await createShadowNotes(normalizedMessages, existingShadowNotes || null);
+          const shadowNotes = generatedShadowNotes
+            ? await saveShadowNotes(userId, generatedShadowNotes)
+            : null;
+          sendJson(res, 200, { shadowNotes });
+        } catch (error) {
+          console.error('Vite local API Gemini Live shadow-note error:', error instanceof Error ? error.message : error);
+          const details = getHttpErrorDetails(error);
+          if (details.retryAfterSeconds) res.setHeader('Retry-After', String(details.retryAfterSeconds));
+          sendJson(res, details.statusCode, {
+            error: details.statusCode === 500
+              ? 'Voice notes could not be updated. Your conversation is still safe.'
+              : details.message,
+          });
+        }
         return;
       }
 

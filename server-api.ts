@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { JWT } from "google-auth-library";
 import { MAX_SHADOW_NOTES_CHARS, createChatCompletion, createReflection, hasChatApiKey } from "./chat-api.js";
+import { getGeminiLiveStatus } from "./live-api.js";
 export {
   createReflection,
   getClientErrorMessage,
@@ -61,6 +62,7 @@ export const getApiStatus = () => ({
   prayerReady: hasPrayerApiKey(),
   speechReady: hasSpeechApiKey(),
   nativeSubscriptionSyncReady: hasNativeSubscriptionSyncConfig(),
+  ...getGeminiLiveStatus(),
 });
 
 type UserSubscriptionMetadata = {

@@ -16,7 +16,7 @@ import { initializeNativeApp } from "./lib/native/app";
 import { startup } from "./lib/startup";
 
 const Layout = lazy(() => import("./components/Layout"));
-const Chat = lazy(() => import("./pages/Chat"));
+const Home = lazy(() => import("./pages/Home"));
 const Breathe = lazy(() => import("./pages/Breathe"));
 const Intentions = lazy(() => import("./pages/Intentions"));
 const Confession = lazy(() => import("./pages/Confession"));
@@ -135,7 +135,7 @@ const AnimatedRoutes = () => {
         <Route path="/onboarding" element={<AuthGuard><PageFade><Onboarding /></PageFade></AuthGuard>} />
         <Route path="/paywall" element={<AuthGuard><PageFade><Paywall /></PageFade></AuthGuard>} />
         <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
-          <Route index element={<Chat />} />
+          <Route index element={<Home />} />
           <Route path="breathe" element={<Breathe />} />
           <Route path="intentions" element={<Intentions />} />
           <Route path="confess" element={<Confession />} />

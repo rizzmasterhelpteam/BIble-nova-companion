@@ -30,14 +30,11 @@ import {
   createTextToSpeechSession,
   type TextToSpeechSession,
 } from "../lib/textToSpeech";
+import { VoiceModeToggle } from "../components/voice/VoiceModeToggle";
+import VoiceMode from "../components/voice/VoiceMode";
+import type { ConversationMessage, HomeMode } from "../types/live";
 
-type Message = {
-  id: string;
-  role: "user" | "ai";
-  content: string;
-  reference?: string;
-  tone?: "default" | "error";
-};
+export type Message = ConversationMessage;
 
 type ApiStatus = {
   chatReady: boolean;
@@ -223,7 +220,12 @@ const ChatMessage = React.memo(function ChatMessage({
   );
 });
 
-export default function Chat() {
+type ChatProps = {
+  mode?: HomeMode;
+  onModeChange?: (mode: HomeMode) => void;
+};
+
+export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   useDocumentTitle("Bible Nova Companion");
   const location = useLocation();
   const navigate = useNavigate();
@@ -253,6 +255,7 @@ export default function Chat() {
   const lastScrolledMessageCountRef = useRef(0);
   const isNearBottomRef = useRef(true);
   const showQuickPrompts = messages.length === 1 && !isTyping;
+  const isVoiceMode = mode === "voice";
   const chatUnavailable = apiStatus?.chatReady === false;
   const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
   const shouldAutoFocusInput = !isNativePlatform() && width >= 768;
@@ -394,13 +397,16 @@ export default function Chat() {
     };
   }, []);
 
-  const appendAiMessage = useCallback((content: string, tone: "default" | "error" = "default") => {
+  const appendUserMessage = useCallback((content: string, source: "voice" | "chat" = "chat") => {
+    const trimmedContent = content.trim();
+    if (!trimmedContent) return;
+
     const nextMessage: Message = {
       id: crypto.randomUUID(),
-      role: "ai",
-      content,
-      reference: tone === "default" ? extractReference(content) : undefined,
-      tone,
+      role: "user",
+      content: trimmedContent,
+      source,
+      createdAt: new Date().toISOString(),
     };
 
     setMessages((prev) => {
@@ -409,6 +415,36 @@ export default function Chat() {
       return nextMessages;
     });
   }, []);
+
+  const appendAiMessage = useCallback((content: string, tone: "default" | "error" = "default", source: "voice" | "chat" = "chat") => {
+    const nextMessage: Message = {
+      id: crypto.randomUUID(),
+      role: "ai",
+      content,
+      reference: tone === "default" ? extractReference(content) : undefined,
+      tone,
+      source,
+      createdAt: new Date().toISOString(),
+    };
+
+    setMessages((prev) => {
+      const nextMessages = trimStoredMessages([...prev, nextMessage]);
+      messagesRef.current = nextMessages;
+      return nextMessages;
+    });
+  }, []);
+
+  const appendVoiceUserMessage = useCallback((content: string) => {
+    appendUserMessage(content, "voice");
+  }, [appendUserMessage]);
+
+  const appendVoiceAssistantMessage = useCallback((content: string) => {
+    appendAiMessage(content, "default", "voice");
+  }, [appendAiMessage]);
+
+  const continueInChat = useCallback(() => {
+    onModeChange?.("chat");
+  }, [onModeChange]);
 
   const handleSend = useCallback(async (text: string) => {
     if (isTyping || apiStatus?.chatReady === false) return;
@@ -436,6 +472,8 @@ export default function Chat() {
       id: crypto.randomUUID(),
       role: "user",
       content: trimmedText,
+      source: "chat",
+      createdAt: new Date().toISOString(),
     };
 
     const nextMessages = trimStoredMessages([...messagesRef.current, userMessage]);
@@ -714,8 +752,27 @@ export default function Chat() {
             </p>
           </div>
         </div>
+        {onModeChange && (
+          <VoiceModeToggle
+            value={mode}
+            onChange={onModeChange}
+            className={cn("mr-1", isCompactPhone ? "scale-[0.9] origin-right" : "")}
+          />
+        )}
       </header>
 
+      {isVoiceMode ? (
+        <VoiceMode
+          messages={messages}
+          shadowNotes={shadowNotes}
+          isTyping={isTyping}
+          onAppendUserMessage={appendVoiceUserMessage}
+          onAppendAssistantMessage={appendVoiceAssistantMessage}
+          onUpdateShadowNotes={updateShadowNotes}
+          onContinueInChat={continueInChat}
+        />
+      ) : (
+      <>
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
@@ -984,6 +1041,8 @@ export default function Chat() {
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }
