@@ -659,9 +659,12 @@
   .voice-page {
     isolation: isolate;
     background-color: var(--bg-base);
-    background-image: linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 94%, transparent) 0%, var(--bg-base) 100%);
+    background-image:
+      linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 78%, transparent) 0%, color-mix(in srgb, var(--bg-base) 42%, transparent) 42%, color-mix(in srgb, var(--bg-base) 72%, transparent) 100%),
+      url("./assets/voice-sanctuary-bg.png");
+    background-position: center, center bottom;
     background-repeat: no-repeat;
-    background-size: cover;
+    background-size: cover, cover;
   }
 
   .voice-page .voice-mode-row {
@@ -680,42 +683,6 @@
     background-color: color-mix(in srgb, var(--app-surface-solid) 56%, transparent) !important;
     border-color: color-mix(in srgb, var(--app-accent) 28%, var(--app-card-border)) !important;
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-
-  .voice-page .voice-hero {
-    position: relative;
-    isolation: isolate;
-    min-height: clamp(360px, 56dvh, 620px);
-    overflow: hidden;
-    border-radius: 2rem;
-    padding: clamp(1.25rem, 4vw, 2rem) 0;
-  }
-
-  .voice-page .voice-hero::before,
-  .voice-page .voice-hero::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-  }
-
-  .voice-page .voice-hero::before {
-    z-index: -2;
-    background-image: url("./assets/voice-sanctuary-bg.png");
-    background-position: center 54%;
-    background-repeat: no-repeat;
-    background-size: cover;
-    opacity: 0.98;
-  }
-
-  .voice-page .voice-hero::after {
-    z-index: -1;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 68%, transparent) 0%, transparent 35%, color-mix(in srgb, var(--bg-base) 64%, transparent) 100%);
-  }
-
-  .voice-page .voice-hero > * {
-    position: relative;
-    z-index: 1;
   }
 
   .voice-page .voice-presence-ring {
@@ -747,12 +714,6 @@
     background-color: color-mix(in srgb, var(--app-surface-solid) 66%, transparent) !important;
     border-color: color-mix(in srgb, var(--app-card-border) 76%, transparent) !important;
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
-  }
-
-  .voice-page .voice-actions {
-    border-radius: 1.5rem;
-    padding-inline: clamp(0.5rem, 3vw, 1rem);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 82%, transparent) 0%, var(--bg-base) 32%);
   }
 
   .voice-page .voice-primary-action {
