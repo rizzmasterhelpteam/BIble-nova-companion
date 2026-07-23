@@ -251,9 +251,9 @@ export default function VoiceMode({
         "voice-scroll-region app-scroll-region flex min-h-0 flex-1 flex-col scrollbar-hide",
         isCompactPhone ? "px-4 py-3" : "px-5 py-4 sm:px-6 sm:py-6",
       )}>
-        <main className="voice-content mx-auto flex w-full max-w-[680px] flex-1 flex-col">
+        <main className="voice-content mx-auto flex min-h-0 w-full max-w-[680px] flex-1 flex-col">
           <div className={cn(
-            "voice-hero flex flex-1 flex-col justify-center",
+            "voice-hero flex min-h-0 flex-1 flex-col justify-center",
             isShortPhone ? "py-2" : "py-6 sm:py-10",
           )}>
             <div className="flex flex-col items-center text-center" aria-live="polite">

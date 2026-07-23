@@ -658,6 +658,8 @@
 
   .voice-page {
     isolation: isolate;
+    overflow: hidden;
+    overscroll-behavior: none;
     background-color: var(--bg-base);
     background-image:
       linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 78%, transparent) 0%, color-mix(in srgb, var(--bg-base) 42%, transparent) 42%, color-mix(in srgb, var(--bg-base) 72%, transparent) 100%),
@@ -665,6 +667,12 @@
     background-position: center, center bottom;
     background-repeat: no-repeat;
     background-size: cover, cover;
+  }
+
+  .voice-page .voice-scroll-region {
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: manipulation;
   }
 
   .voice-page .voice-mode-row {
