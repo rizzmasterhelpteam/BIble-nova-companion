@@ -30,8 +30,8 @@ const WEB_RECORDING_MIME_TYPES = [
 
 type RecognitionMode = "web" | "native";
 
-const canPreferNativeSpeechRecognition = () =>
-  isNativePlatform() && getNativePlatform() === "android" && !isWebRecordingSupported();
+const isAndroidNativeSpeech = () =>
+  isNativePlatform() && getNativePlatform() === "android";
 
 const isWebRecordingSupported = () =>
   Boolean(
@@ -131,7 +131,7 @@ export const createSpeechRecognitionSession = ({
   };
 
   const resolveRecognitionMode = async (): Promise<RecognitionMode> => {
-    if (!canPreferNativeSpeechRecognition()) {
+    if (!isAndroidNativeSpeech()) {
       return "web";
     }
 
@@ -246,12 +246,12 @@ export const createSpeechRecognitionSession = ({
 
   return {
     isSupported: async () => {
-      if (canPreferNativeSpeechRecognition()) {
+      if (isAndroidNativeSpeech()) {
         try {
           const { available } = await NativeSpeechRecognition.available();
-          return available;
+          return available || isWebRecordingSupported();
         } catch {
-          return false;
+          return isWebRecordingSupported();
         }
       }
 
@@ -361,7 +361,7 @@ export const createSpeechRecognitionSession = ({
     destroy: async () => {
       isDestroyed = true;
 
-      if (activeMode === "native" || canPreferNativeSpeechRecognition()) {
+      if (activeMode === "native" || isAndroidNativeSpeech()) {
         await stopNativeRecognition();
         if (activeMode === "native") {
           activeMode = null;

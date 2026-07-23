@@ -129,7 +129,7 @@ export default function Onboarding() {
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [isAdvancing, setIsAdvancing] = useState(false);
   const continueTimerRef = useRef<number | null>(null);
-  const { completeOnboarding, updateShadowNotes } = useAuth();
+  const { completeOnboarding, isSubscribed, updateShadowNotes } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -200,7 +200,9 @@ export default function Onboarding() {
     completeOnboarding();
     const analysis = getAnalysisSummary(answers);
     void updateShadowNotes(analysis.overview);
-    window.requestAnimationFrame(() => navigate("/", { replace: true }));
+    const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
+    const nextPath = isAndroidNative && !isSubscribed ? "/paywall" : "/";
+    window.requestAnimationFrame(() => navigate(nextPath, { replace: true }));
   };
 
   // Staggered welcome screen
