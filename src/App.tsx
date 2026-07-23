@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { HapticsProvider } from "./context/HapticsContext";
 import { MobileViewportProvider } from "./context/MobileViewportContext";
+import { VoiceSessionProvider } from "./context/VoiceSessionContext";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { getNativePlatform, isNativePlatform } from "./lib/native/platform";
@@ -203,13 +204,15 @@ export default function App() {
       <MobileViewportProvider>
         <HapticsProvider>
           <AuthProvider>
-            <ErrorBoundary>
-              <Router>
-                <Suspense fallback={<FullScreenLoader />}>
-                  <AnimatedRoutes />
-                </Suspense>
-              </Router>
-            </ErrorBoundary>
+            <VoiceSessionProvider>
+              <ErrorBoundary>
+                <Router>
+                  <Suspense fallback={<FullScreenLoader />}>
+                    <AnimatedRoutes />
+                  </Suspense>
+                </Router>
+              </ErrorBoundary>
+            </VoiceSessionProvider>
           </AuthProvider>
         </HapticsProvider>
 

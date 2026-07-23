@@ -735,6 +735,27 @@
     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.24);
   }
 
+  .voice-session-shell {
+    transition: background-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .voice-session-active .voice-scroll-region {
+    padding-top: max(4.75rem, calc(env(safe-area-inset-top, 0px) + 3.5rem));
+  }
+
+  .voice-session-close {
+    color: var(--app-heading);
+    background-color: color-mix(in srgb, var(--app-surface-elevated) 72%, transparent);
+    border-color: color-mix(in srgb, var(--app-card-border) 92%, transparent);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(18px);
+  }
+
+  .voice-session-close:hover {
+    background-color: color-mix(in srgb, var(--app-accent) 18%, var(--app-surface-elevated));
+    border-color: color-mix(in srgb, var(--app-accent) 48%, var(--app-card-border));
+  }
+
   .app-divider {
     border-color: var(--app-divider);
   }

@@ -29,6 +29,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { useHaptics } from "../context/HapticsContext";
 import { useMobileViewport } from "../context/MobileViewportContext";
+import { useVoiceSession } from "../context/VoiceSessionContext";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
 import { cn } from "../lib/utils";
@@ -89,6 +90,7 @@ export default function Layout() {
   const { theme, setTheme } = useTheme();
   const { hapticsEnabled, setHapticsEnabled } = useHaptics();
   const { isCompactPhone, isKeyboardOpen, isShortPhone } = useMobileViewport();
+  const { isVoiceSessionActive } = useVoiceSession();
   const {
     user,
     profileName,
@@ -118,7 +120,8 @@ export default function Layout() {
   const isAccountBusy = isDeletingAccount || isSavingProfile || isProcessingAvatar;
   const nativeControlsAvailable = isNativePlatform();
   const isAndroidApp = nativeControlsAvailable && getNativePlatform() === "android";
-  const hideBottomNavigation = shouldHideBottomNavigation(isKeyboardOpen);
+  const hideGlobalChrome = isVoiceSessionActive && location.pathname === "/";
+  const hideBottomNavigation = shouldHideBottomNavigation(isKeyboardOpen) || hideGlobalChrome;
   const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "1.1.4";
 
   useEffect(() => {
@@ -314,6 +317,10 @@ export default function Layout() {
     setProfileAvatarDraft(profileAvatarUrl);
   }, [displayName, profileAvatarUrl, profileEditorOpen, settingsOpen]);
 
+  React.useEffect(() => {
+    if (hideGlobalChrome && settingsOpen) setSettingsOpen(false);
+  }, [hideGlobalChrome, settingsOpen]);
+
   return (
     <div className="app-screen relative flex w-full justify-center overflow-hidden font-sans sm:px-4 sm:py-6">
       <div className="app-atmosphere">
@@ -326,27 +333,30 @@ export default function Layout() {
         className={cn(
           "app-shell relative flex h-full w-full min-h-0 flex-col overflow-hidden ring-1 sm:max-w-lg sm:rounded-shell sm:ring-[color:var(--app-shell-ring)] xl:max-w-xl",
           isCompactPhone && "sm:max-w-md",
+          hideGlobalChrome && "voice-session-shell",
         )}
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 0px)" }}
       >
-        <button
-          onClick={() => setSettingsOpen(true)}
-          aria-label="Open settings"
-          className="touch-target absolute right-4 z-50 flex items-center justify-center overflow-hidden rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-95"
-          style={{
-            top: "calc(0.75rem + env(safe-area-inset-top, 0px))",
-            width: "2.4rem",
-            height: "2.4rem",
-            background: profileAvatarUrl ? "transparent" : "var(--app-accent-gradient)",
-            boxShadow: "var(--app-accent-shadow), inset 0 1px 0 rgba(255,255,255,0.15)",
-          }}
-        >
-          {profileAvatarUrl ? (
-            <img src={profileAvatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
-          ) : (
-            <span className="text-[13px] font-bold text-white/90 select-none">{accountInitial}</span>
-          )}
-        </button>
+        {!hideGlobalChrome && (
+          <button
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Open settings"
+            className="touch-target absolute right-4 z-50 flex items-center justify-center overflow-hidden rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-95"
+            style={{
+              top: "calc(0.75rem + env(safe-area-inset-top, 0px))",
+              width: "2.4rem",
+              height: "2.4rem",
+              background: profileAvatarUrl ? "transparent" : "var(--app-accent-gradient)",
+              boxShadow: "var(--app-accent-shadow), inset 0 1px 0 rgba(255,255,255,0.15)",
+            }}
+          >
+            {profileAvatarUrl ? (
+              <img src={profileAvatarUrl} alt="" className="h-full w-full rounded-full object-cover" />
+            ) : (
+              <span className="text-[13px] font-bold text-white/90 select-none">{accountInitial}</span>
+            )}
+          </button>
+        )}
 
         <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
           <AnimatePresence mode="wait" initial={false}>
@@ -384,7 +394,7 @@ export default function Layout() {
         </nav>
 
         <AnimatePresence>
-          {settingsOpen && (
+          {settingsOpen && !hideGlobalChrome && (
             <>
               <motion.div
                 initial={{ opacity: 0 }}

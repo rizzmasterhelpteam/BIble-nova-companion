@@ -18,6 +18,7 @@ import { cn, useDocumentTitle } from "../lib/utils";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { useMobileViewport } from "../context/MobileViewportContext";
+import { useVoiceSession } from "../context/VoiceSessionContext";
 import { apiFetch } from "../lib/apiClient";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { storageGetJson, storageSet } from "../lib/webStorage";
@@ -240,6 +241,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
     shadowNotes,
     acceptPersistedShadowNotes,
   } = useAuth();
+  const { isVoiceSessionActive, setVoiceSessionActive } = useVoiceSession();
   const { isCompactPhone, isKeyboardOpen, isShortPhone, width } = useMobileViewport();
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
@@ -267,6 +269,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const isNearBottomRef = useRef(true);
   const showQuickPrompts = messages.length === 1 && !isTyping;
   const isVoiceMode = mode === "voice";
+  const isImmersiveVoice = isVoiceMode && isVoiceSessionActive;
   const chatUnavailable = apiStatus?.chatReady === false;
   const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
   const shouldAutoFocusInput = !isNativePlatform() && width >= 768;
@@ -490,8 +493,9 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   }, [appendAiMessage]);
 
   const continueInChat = useCallback(() => {
+    setVoiceSessionActive(false);
     onModeChange?.("chat");
-  }, [onModeChange]);
+  }, [onModeChange, setVoiceSessionActive]);
 
   const handleModeChange = useCallback((nextMode: HomeMode) => {
     if (nextMode === "voice" && isTyping) {
@@ -757,8 +761,9 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
     <div className={cn(
       "relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent",
       isVoiceMode && "voice-page",
+      isImmersiveVoice && "voice-session-active",
     )}>
-      <header
+      {!isImmersiveVoice && <header
         className={cn(
           "z-20 flex shrink-0 items-center justify-between border-b pr-14 transition-colors duration-200",
           !isVoiceMode && "backdrop-blur-xl",
@@ -796,9 +801,9 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
             </p>
           </div>
         </div>
-      </header>
+      </header>}
 
-      {onModeChange && (
+      {!isImmersiveVoice && onModeChange && (
         <div className="voice-mode-row shrink-0 px-4 pt-1 sm:px-6 sm:pt-2">
           <div className="mx-auto flex w-full max-w-[680px] justify-center sm:justify-start">
             <VoiceModeToggle
@@ -819,6 +824,8 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           onAppendAssistantMessage={appendVoiceAssistantMessage}
           onAcceptShadowNotes={acceptPersistedShadowNotes}
           onContinueInChat={continueInChat}
+          onExitVoice={continueInChat}
+          onSessionActiveChange={setVoiceSessionActive}
           reservation={voiceReservation}
           onReservationChange={updateVoiceReservation}
         />

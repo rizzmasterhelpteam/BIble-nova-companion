@@ -9,6 +9,7 @@ import {
   Pause,
   RotateCcw,
   Sparkles,
+  X,
 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useNavigate } from "react-router-dom";
@@ -26,6 +27,8 @@ type VoiceModeProps = {
   onAppendAssistantMessage: (content: string) => void;
   onAcceptShadowNotes: (notes: string | null) => void;
   onContinueInChat: () => void;
+  onExitVoice: () => void;
+  onSessionActiveChange: (active: boolean) => void;
   reservation: { handle: string; expiresAt: string } | null;
   onReservationChange: (reservation: { handle: string; expiresAt: string } | null) => void;
 };
@@ -89,6 +92,8 @@ export default function VoiceMode({
   onAppendAssistantMessage,
   onAcceptShadowNotes,
   onContinueInChat,
+  onExitVoice,
+  onSessionActiveChange,
   reservation,
   onReservationChange,
 }: VoiceModeProps) {
@@ -181,6 +186,11 @@ export default function VoiceMode({
   }, [persistVoiceNotes]);
 
   const active = ACTIVE_STATES.includes(live.state);
+  useEffect(() => {
+    onSessionActiveChange(active);
+  }, [active, onSessionActiveChange]);
+  useEffect(() => () => onSessionActiveChange(false), [onSessionActiveChange]);
+
   const latestVoiceMessage = [...messages].reverse().find(isVoiceMessage);
   const latestTranscript = live.assistantTranscript || live.userTranscript || latestVoiceMessage?.content || "";
   const transcriptSpeaker = live.assistantTranscript
@@ -205,6 +215,12 @@ export default function VoiceMode({
     onContinueInChat();
   };
 
+  const handleExitVoice = async () => {
+    await live.stop("ended");
+    await persistVoiceNotes();
+    onExitVoice();
+  };
+
   const startLabel = premiumRequired
     ? "Unlock Voice"
     : cooldownActive
@@ -220,6 +236,17 @@ export default function VoiceMode({
 
   return (
     <div className="voice-mode relative flex min-h-0 flex-1 overflow-hidden bg-transparent">
+      {active && (
+        <button
+          type="button"
+          onClick={() => void handleExitVoice()}
+          aria-label="Back to Home"
+          className="voice-session-close touch-target absolute right-4 top-4 z-30 flex h-11 w-11 items-center justify-center rounded-full border transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:right-6 sm:top-6"
+        >
+          <X className="h-5 w-5" aria-hidden="true" />
+          <span className="sr-only">Back to Home</span>
+        </button>
+      )}
       <div className={cn(
         "voice-scroll-region app-scroll-region flex min-h-0 flex-1 flex-col scrollbar-hide",
         isCompactPhone ? "px-4 py-3" : "px-5 py-4 sm:px-6 sm:py-6",
@@ -370,14 +397,16 @@ export default function VoiceMode({
               >
                 <Captions className="h-4 w-4" /> Captions
               </button>
-              <button
-                type="button"
-                onClick={() => void handleContinueInChat()}
-                className="touch-target inline-flex min-h-10 items-center gap-1.5 rounded-pill px-3 py-2 text-[13px] font-medium"
-                style={{ color: "var(--app-text-muted)" }}
-              >
-                <MessageCircle className="h-4 w-4" /> Switch to Chat
-              </button>
+              {!active && (
+                <button
+                  type="button"
+                  onClick={() => void handleContinueInChat()}
+                  className="touch-target inline-flex min-h-10 items-center gap-1.5 rounded-pill px-3 py-2 text-[13px] font-medium"
+                  style={{ color: "var(--app-text-muted)" }}
+                >
+                  <MessageCircle className="h-4 w-4" /> Switch to Chat
+                </button>
+              )}
             </div>
 
             {isTyping && <p className="app-muted mt-1 text-center text-xs">Finishing your previous reflection...</p>}
