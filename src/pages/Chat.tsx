@@ -792,14 +792,19 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
             </p>
           </div>
         </div>
-        {onModeChange && (
-          <VoiceModeToggle
-            value={mode}
-            onChange={handleModeChange}
-            className={cn("mr-1", isCompactPhone ? "scale-[0.9] origin-right" : "")}
-          />
-        )}
       </header>
+
+      {onModeChange && (
+        <div className="shrink-0 px-4 pt-2 sm:px-6 sm:pt-3">
+          <div className="mx-auto flex w-full max-w-[680px] justify-center sm:justify-start">
+            <VoiceModeToggle
+              value={mode}
+              onChange={handleModeChange}
+              className="w-full justify-center sm:w-auto"
+            />
+          </div>
+        </div>
+      )}
 
       {isVoiceMode ? (
         <VoiceMode
