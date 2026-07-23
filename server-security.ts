@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 type RequestLike = {
@@ -87,6 +87,7 @@ export const acquireVoiceSessionLease = async (
   maxMinutes: number,
   dailyMinutes = 60,
   resetOffsetMinutes = 330,
+  handleHash = "",
 ) => {
   const client = getSupabaseAdminClient();
   const { data, error } = await client.rpc("acquire_voice_session_lease", {
@@ -94,6 +95,7 @@ export const acquireVoiceSessionLease = async (
     p_max_minutes: maxMinutes,
     p_daily_minutes: dailyMinutes,
     p_reset_offset_minutes: resetOffsetMinutes,
+    p_handle_hash: handleHash,
   });
   if (error) {
     const message = error.message.toLowerCase();
@@ -109,27 +111,103 @@ export const acquireVoiceSessionLease = async (
     console.error("Voice lease acquisition failed:", error.message);
     throw new HttpError("Voice session protection is temporarily unavailable.", 503);
   }
-  if (typeof data !== "string" || !data) {
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result?.lease_id || !result?.lease_expires_at) {
     throw new HttpError("Voice session protection is temporarily unavailable.", 503);
   }
-  return data;
+  return {
+    leaseId: String(result.lease_id),
+    expiresAt: String(result.lease_expires_at),
+  };
 };
 
-export const hasActiveVoiceEntitlement = async (userId: string) => {
+export const createVoiceReservationHandle = () => {
+  const handle = randomBytes(32).toString("base64url");
+  return { handle, handleHash: hashVoiceReservationHandle(handle) };
+};
+
+export const hashVoiceReservationHandle = (handle: string | null | undefined) => {
+  if (!handle || handle.length < 32 || handle.length > 128) return null;
+  return createHash("sha256").update(handle).digest("hex");
+};
+
+export const getVoiceUsageLimits = (maxMinutes: number) => {
+  const configuredDailyMinutes = Number(process.env.VOICE_DAILY_MAX_MINUTES || 60);
+  const configuredOffset = Number(process.env.VOICE_DAILY_RESET_OFFSET_MINUTES || 330);
+  return {
+    dailyMinutes: Number.isFinite(configuredDailyMinutes)
+      ? Math.max(maxMinutes, Math.min(240, Math.floor(configuredDailyMinutes)))
+      : 60,
+    resetOffsetMinutes: Number.isFinite(configuredOffset)
+      ? Math.max(-720, Math.min(840, Math.trunc(configuredOffset)))
+      : 330,
+  };
+};
+
+export type VoiceAvailability = {
+  eligible: boolean;
+  available: boolean;
+  reason: "available" | "subscription_required" | "session_active" | "daily_limit" | "reservation_resume";
+  retryAfterSeconds: number | null;
+  canRenew: boolean;
+};
+
+export const getVoiceSessionAvailability = async (
+  userId: string,
+  maxMinutes: number,
+  dailyMinutes: number,
+  resetOffsetMinutes: number,
+  handleHash: string | null,
+): Promise<VoiceAvailability> => {
   const client = getSupabaseAdminClient();
-  const { data, error } = await client
-    .from("subscription_entitlements")
-    .select("id")
-    .eq("user_id", userId)
-    .in("status", ["active", "grace_period"])
-    .or(`expiry_time.is.null,expiry_time.gt.${new Date().toISOString()}`)
-    .limit(1)
-    .maybeSingle();
+  const { data, error } = await client.rpc("get_voice_session_availability", {
+    p_user_id: userId,
+    p_max_minutes: maxMinutes,
+    p_daily_minutes: dailyMinutes,
+    p_reset_offset_minutes: resetOffsetMinutes,
+    p_handle_hash: handleHash,
+  });
   if (error) {
-    console.error("Voice entitlement check failed:", error.message);
+    console.error("Voice availability check failed:", error.message);
     throw new HttpError("Voice eligibility is temporarily unavailable.", 503);
   }
-  return Boolean(data?.id);
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result || typeof result.reason !== "string") {
+    throw new HttpError("Voice eligibility is temporarily unavailable.", 503);
+  }
+  return {
+    eligible: Boolean(result.eligible),
+    available: Boolean(result.available),
+    reason: result.reason as VoiceAvailability["reason"],
+    retryAfterSeconds: result.retry_after_seconds === null
+      ? null
+      : Math.max(1, Number(result.retry_after_seconds)),
+    canRenew: Boolean(result.can_renew),
+  };
+};
+
+export const renewVoiceSessionLease = async (userId: string, handleHash: string) => {
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client.rpc("renew_voice_session_lease", {
+    p_user_id: userId,
+    p_handle_hash: handleHash,
+  });
+  if (error) {
+    const message = error.message.toLowerCase();
+    if (message.includes("renewal limit") || message.includes("reservation unavailable")) {
+      throw new HttpError("This Voice reservation cannot be renewed.", 409);
+    }
+    console.error("Voice lease renewal failed:", error.message);
+    throw new HttpError("Voice reconnection is temporarily unavailable.", 503);
+  }
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result?.lease_id || !result?.lease_expires_at) {
+    throw new HttpError("This Voice reservation cannot be renewed.", 409);
+  }
+  return {
+    leaseId: String(result.lease_id),
+    expiresAt: String(result.lease_expires_at),
+  };
 };
 
 export const cancelUnstartedVoiceSessionLease = async (userId: string, leaseId: string) => {

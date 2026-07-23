@@ -95,7 +95,11 @@ export default function VoiceMode({
     onUserTranscript: handleUserTranscript,
     onAssistantTranscript: handleAssistantTranscript,
   });
-  const premiumRequired = live.error?.toLowerCase().includes("premium subscription") ?? false;
+  const premiumRequired = live.errorCode === "subscription_required";
+  const cooldownActive =
+    (live.errorCode === "session_active" || live.errorCode === "daily_limit") &&
+    Boolean(live.retryAfterSeconds);
+  const cooldownMinutes = Math.max(1, Math.ceil((live.retryAfterSeconds || 0) / 60));
 
   const persistVoiceNotes = useCallback(async () => {
     const voiceMessages = messagesRef.current.filter(isVoiceMessage);
@@ -160,6 +164,8 @@ export default function VoiceMode({
 
   const startLabel = premiumRequired
     ? "Unlock Voice"
+    : cooldownActive
+      ? `Available in ${cooldownMinutes} min`
     : live.state === "ended"
       ? "Start a new reflection"
       : "Start conversation";
@@ -265,7 +271,7 @@ export default function VoiceMode({
             <button
               type="button"
               onClick={() => premiumRequired ? navigate("/paywall") : void live.start()}
-              disabled={isTyping}
+              disabled={isTyping || cooldownActive}
               className="touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-6 text-base font-semibold text-white shadow-lg transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {live.state === "error" || live.state === "permission-denied" || live.state === "offline" ? <RotateCcw className="h-5 w-5" /> : <Play className="h-5 w-5 fill-current" />}

@@ -80,15 +80,19 @@ describe("server security", () => {
 
   it("passes the configured reset offset into the atomic lease RPC", async () => {
     rpcMock.mockResolvedValueOnce({
-      data: "11111111-1111-4111-8111-111111111111",
+      data: [{
+        lease_id: "11111111-1111-4111-8111-111111111111",
+        lease_expires_at: "2026-07-23T12:00:00.000Z",
+      }],
       error: null,
     });
-    await acquireVoiceSessionLease("user-1", 10, 60, 330);
+    await acquireVoiceSessionLease("user-1", 10, 60, 330, "a".repeat(64));
     expect(rpcMock).toHaveBeenCalledWith("acquire_voice_session_lease", {
       p_user_id: "user-1",
       p_max_minutes: 10,
       p_daily_minutes: 60,
       p_reset_offset_minutes: 330,
+      p_handle_hash: "a".repeat(64),
     });
   });
 

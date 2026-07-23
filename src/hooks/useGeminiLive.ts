@@ -20,8 +20,41 @@ type LiveTokenResponse = {
   model?: string;
   maxMinutes?: number;
   expiresAt?: string;
+  reservationHandle?: string;
+  reservationExpiresAt?: string;
+  reason?: VoiceErrorCode;
   error?: string;
 };
+
+type VoiceErrorCode =
+  | "subscription_required"
+  | "session_active"
+  | "daily_limit"
+  | "reservation_invalid"
+  | "renewal_unavailable"
+  | "eligibility_failed"
+  | "connection_failed";
+
+type VoiceEligibilityResponse = {
+  eligible?: boolean;
+  available?: boolean;
+  reason?: "available" | "subscription_required" | "session_active" | "daily_limit" | "reservation_resume";
+  retryAfterSeconds?: number | null;
+  canRenew?: boolean;
+  error?: string;
+};
+
+class VoiceStartError extends Error {
+  readonly code: VoiceErrorCode;
+  readonly retryAfterSeconds: number | null;
+
+  constructor(code: VoiceErrorCode, message: string, retryAfterSeconds: number | null = null) {
+    super(message);
+    this.name = "VoiceStartError";
+    this.code = code;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
 
 type UseGeminiLiveOptions = {
   history: ConversationMessage[];
@@ -111,6 +144,8 @@ const getAudioContext = () => {
 export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript }: UseGeminiLiveOptions) {
   const [state, setState] = useState<VoiceState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<VoiceErrorCode | null>(null);
+  const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
   const [userTranscript, setUserTranscript] = useState("");
   const [assistantTranscript, setAssistantTranscript] = useState("");
   const [isMuted, setIsMuted] = useState(false);
@@ -140,6 +175,8 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
   const noticeTimerRef = useRef<number | null>(null);
   const endTimerRef = useRef<number | null>(null);
   const failureHandledRef = useRef(false);
+  const reservationHandleRef = useRef<string | null>(null);
+  const reservationExpiresAtRef = useRef<string | null>(null);
 
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -299,6 +336,8 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     stopRequestedRef.current = false;
     failureHandledRef.current = false;
     setError(null);
+    setErrorCode(null);
+    setRetryAfterSeconds(null);
     setSessionNotice(null);
     setUserTranscript("");
     setAssistantTranscript("");
@@ -316,16 +355,43 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
 
     try {
       setState("requesting-permission");
-      const eligibilityResponse = await apiFetch("/api/live/eligibility", { method: "GET" });
-      const eligibility = (await eligibilityResponse.json().catch(() => ({}))) as {
-        eligible?: boolean;
-        error?: string;
-      };
-      if (!eligibilityResponse.ok) {
-        throw new Error(eligibility.error || "Voice eligibility could not be checked.");
+      const knownExpiry = reservationExpiresAtRef.current
+        ? Date.parse(reservationExpiresAtRef.current)
+        : Number.NaN;
+      if (Number.isFinite(knownExpiry) && knownExpiry <= Date.now()) {
+        reservationHandleRef.current = null;
+        reservationExpiresAtRef.current = null;
       }
-      if (!eligibility.eligible) {
-        throw new Error("Voice mode requires an active premium subscription.");
+      const reservationHandle = reservationHandleRef.current;
+      const eligibilityResponse = await apiFetch("/api/live/eligibility", {
+        method: "GET",
+        headers: reservationHandle
+          ? { "X-Voice-Reservation": reservationHandle }
+          : undefined,
+      });
+      const eligibility = (await eligibilityResponse.json().catch(() => ({}))) as VoiceEligibilityResponse;
+      if (!eligibilityResponse.ok) {
+        throw new VoiceStartError(
+          "eligibility_failed",
+          eligibility.error || "Voice eligibility could not be checked.",
+        );
+      }
+      if (!eligibility.available) {
+        const reason = eligibility.reason === "subscription_required"
+          ? "subscription_required"
+          : eligibility.reason === "daily_limit"
+            ? "daily_limit"
+            : "session_active";
+        const message = reason === "subscription_required"
+          ? "Voice mode requires an active premium subscription."
+          : reason === "daily_limit"
+            ? "Your daily Voice allowance has been reached."
+            : "Another Voice reservation is still active for this account.";
+        throw new VoiceStartError(reason, message, eligibility.retryAfterSeconds ?? null);
+      }
+      if (eligibility.reason !== "reservation_resume") {
+        reservationHandleRef.current = null;
+        reservationExpiresAtRef.current = null;
       }
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Voice is not supported on this device.");
@@ -336,11 +402,32 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       mediaStreamRef.current = stream;
 
       setState("connecting");
-      const response = await apiFetch("/api/live/token", { method: "POST" });
+      const renewingHandle = eligibility.reason === "reservation_resume"
+        ? reservationHandleRef.current
+        : null;
+      const response = await apiFetch(
+        renewingHandle ? "/api/live/reconnect-token" : "/api/live/token",
+        renewingHandle
+          ? {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reservationHandle: renewingHandle }),
+            }
+          : { method: "POST" },
+      );
       const data = (await response.json().catch(() => ({}))) as LiveTokenResponse;
       if (!response.ok || !data.token || !data.model) {
-        throw new Error(data.error || "Voice is temporarily unavailable. You can continue in Chat.");
+        if (data.reason === "reservation_invalid" || data.reason === "renewal_unavailable") {
+          reservationHandleRef.current = null;
+          reservationExpiresAtRef.current = null;
+        }
+        throw new VoiceStartError(
+          data.reason || "connection_failed",
+          data.error || "Voice is temporarily unavailable. You can continue in Chat.",
+        );
       }
+      if (data.reservationHandle) reservationHandleRef.current = data.reservationHandle;
+      if (data.reservationExpiresAt) reservationExpiresAtRef.current = data.reservationExpiresAt;
       const { GoogleGenAI, Modality } = await import("@google/genai");
       const client = new GoogleGenAI({
         apiKey: data.token,
@@ -477,7 +564,12 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       sessionRef.current?.close();
       sessionRef.current = null;
       const message = startError instanceof Error ? startError.message : "Voice could not start.";
-      if (message.toLowerCase().includes("permission") || message.toLowerCase().includes("notallowed")) {
+      if (startError instanceof VoiceStartError) {
+        setState("error");
+        setErrorCode(startError.code);
+        setRetryAfterSeconds(startError.retryAfterSeconds);
+        setError(startError.message);
+      } else if (message.toLowerCase().includes("permission") || message.toLowerCase().includes("notallowed")) {
         setState("permission-denied");
         setError("Microphone access is needed for Voice mode. You can continue in Chat.");
       } else if (!navigator.onLine) {
@@ -553,6 +645,8 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
   return {
     state,
     error,
+    errorCode,
+    retryAfterSeconds,
     userTranscript,
     assistantTranscript,
     isMuted,

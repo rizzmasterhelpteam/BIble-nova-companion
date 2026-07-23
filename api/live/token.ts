@@ -2,9 +2,11 @@ import { createGeminiLiveEphemeralToken, getVoiceSessionConfig } from "../../liv
 import {
   acquireVoiceSessionLease,
   cancelUnstartedVoiceSessionLease,
+  createVoiceReservationHandle,
   enforceRateLimits,
   getHttpErrorDetails,
   getServerShadowNotes,
+  getVoiceUsageLimits,
   requireAuthenticatedRequest,
 } from "../../server-security.js";
 
@@ -35,21 +37,25 @@ export default async function handler(req: any, res: any) {
     ]);
 
     const { maxMinutes } = getVoiceSessionConfig();
-    const configuredDailyMinutes = Number(process.env.VOICE_DAILY_MAX_MINUTES || 60);
-    const dailyMinutes = Number.isFinite(configuredDailyMinutes)
-      ? Math.max(maxMinutes, Math.min(240, Math.floor(configuredDailyMinutes)))
-      : 60;
-    const configuredOffset = Number(process.env.VOICE_DAILY_RESET_OFFSET_MINUTES || 330);
-    const resetOffsetMinutes = Number.isFinite(configuredOffset)
-      ? Math.max(-720, Math.min(840, Math.trunc(configuredOffset)))
-      : 330;
-    const leaseId = await acquireVoiceSessionLease(userId, maxMinutes, dailyMinutes, resetOffsetMinutes);
+    const { dailyMinutes, resetOffsetMinutes } = getVoiceUsageLimits(maxMinutes);
+    const { handle, handleHash } = createVoiceReservationHandle();
+    const lease = await acquireVoiceSessionLease(
+      userId,
+      maxMinutes,
+      dailyMinutes,
+      resetOffsetMinutes,
+      handleHash,
+    );
     try {
       const shadowNotes = await getServerShadowNotes(userId);
       const session = await createGeminiLiveEphemeralToken(shadowNotes);
-      res.status(200).json(session);
+      res.status(200).json({
+        ...session,
+        reservationHandle: handle,
+        reservationExpiresAt: lease.expiresAt,
+      });
     } catch (error) {
-      await cancelUnstartedVoiceSessionLease(userId, leaseId);
+      await cancelUnstartedVoiceSessionLease(userId, lease.leaseId);
       throw error;
     }
   } catch (error) {
@@ -63,6 +69,14 @@ export default async function handler(req: any, res: any) {
         details.statusCode === 500
           ? "Voice is temporarily unavailable. You can continue in Chat."
           : details.message,
+      reason:
+        details.statusCode === 403
+          ? "subscription_required"
+          : details.statusCode === 409
+            ? "session_active"
+            : details.statusCode === 429 && details.message.toLowerCase().includes("daily")
+              ? "daily_limit"
+              : "connection_failed",
     });
   }
 }

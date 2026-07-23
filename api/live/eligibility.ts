@@ -1,14 +1,17 @@
 import {
   enforceRateLimits,
+  getVoiceSessionAvailability,
+  getVoiceUsageLimits,
   getHttpErrorDetails,
-  hasActiveVoiceEntitlement,
+  hashVoiceReservationHandle,
   requireAuthenticatedRequest,
 } from "../../server-security.js";
+import { getVoiceSessionConfig } from "../../live-api.js";
 
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
   res.setHeader?.("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Voice-Reservation");
 };
 
 export default async function handler(req: any, res: any) {
@@ -22,8 +25,19 @@ export default async function handler(req: any, res: any) {
       { key: `live-eligibility:user:${userId}`, limit: 20 },
       { key: `live-eligibility:ip:${ip}`, limit: 40 },
     ]);
-    const eligible = await hasActiveVoiceEntitlement(userId);
-    return res.status(200).json({ eligible });
+    const reservationHeader = req.headers?.["x-voice-reservation"];
+    const reservationHandle = Array.isArray(reservationHeader) ? reservationHeader[0] : reservationHeader;
+    const handleHash = hashVoiceReservationHandle(reservationHandle);
+    const { maxMinutes } = getVoiceSessionConfig();
+    const { dailyMinutes, resetOffsetMinutes } = getVoiceUsageLimits(maxMinutes);
+    const availability = await getVoiceSessionAvailability(
+      userId,
+      maxMinutes,
+      dailyMinutes,
+      resetOffsetMinutes,
+      handleHash,
+    );
+    return res.status(200).json(availability);
   } catch (error) {
     const details = getHttpErrorDetails(error);
     return res.status(details.statusCode).json({

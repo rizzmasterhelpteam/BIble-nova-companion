@@ -6,6 +6,7 @@ const security = vi.hoisted(() => ({
   limits: vi.fn(),
   notes: vi.fn(),
   auth: vi.fn(),
+  createHandle: vi.fn(),
 }));
 const createToken = vi.hoisted(() => vi.fn());
 
@@ -18,6 +19,8 @@ vi.mock("../server-security", () => ({
     message: error instanceof Error ? error.message : String(error),
   }),
   getServerShadowNotes: security.notes,
+  getVoiceUsageLimits: () => ({ dailyMinutes: 60, resetOffsetMinutes: 330 }),
+  createVoiceReservationHandle: security.createHandle,
   requireAuthenticatedRequest: security.auth,
 }));
 
@@ -51,17 +54,30 @@ describe("Gemini Live token endpoint", () => {
     vi.clearAllMocks();
     security.auth.mockResolvedValue({ userId: "user-1", ip: "127.0.0.1" });
     security.limits.mockResolvedValue(undefined);
-    security.acquire.mockResolvedValue("11111111-1111-4111-8111-111111111111");
+    security.acquire.mockResolvedValue({
+      leaseId: "11111111-1111-4111-8111-111111111111",
+      expiresAt: "2026-07-23T12:00:00.000Z",
+    });
+    security.createHandle.mockReturnValue({
+      handle: "opaque-reservation-handle",
+      handleHash: "a".repeat(64),
+    });
     security.notes.mockResolvedValue("Prefers short prayers.");
     security.cancel.mockResolvedValue(undefined);
     createToken.mockResolvedValue({ token: "ephemeral", model: "live", maxMinutes: 10 });
   });
 
-  it("does not expose the database lease identifier to the client", async () => {
+  it("returns only an opaque reservation handle, never the database lease identifier", async () => {
     const response = createResponse();
     await tokenHandler({ method: "POST", headers: {} }, response);
     expect(response.statusCode).toBe(200);
-    expect(response.body).toEqual({ token: "ephemeral", model: "live", maxMinutes: 10 });
+    expect(response.body).toEqual({
+      token: "ephemeral",
+      model: "live",
+      maxMinutes: 10,
+      reservationHandle: "opaque-reservation-handle",
+      reservationExpiresAt: "2026-07-23T12:00:00.000Z",
+    });
     expect(response.body).not.toHaveProperty("leaseId");
   });
 
