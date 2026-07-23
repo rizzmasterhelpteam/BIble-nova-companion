@@ -1,0 +1,130 @@
+diff --git a/node_modules/@google/genai/dist/index.cjs b/node_modules/@google/genai/dist/index.cjs
+index b4300ab..f216ec5 100644
+--- a/node_modules/@google/genai/dist/index.cjs
++++ b/node_modules/@google/genai/dist/index.cjs
+@@ -15191,6 +15191,10 @@ function googleSearchToMldev$2(fromObject) {
+ }
+ function liveConnectConfigToMldev$1(fromObject, parentObject) {
+     const toObject = {};
++    const fromHistoryConfig = getValueByPath(fromObject, ['historyConfig']);
++    if (parentObject !== undefined && fromHistoryConfig != null) {
++        setValueByPath(parentObject, ['setup', 'historyConfig'], fromHistoryConfig);
++    }
+     const fromGenerationConfig = getValueByPath(fromObject, [
+         'generationConfig',
+     ]);
+@@ -22805,6 +22809,10 @@ function googleSearchToMldev(fromObject) {
+ }
+ function liveConnectConfigToMldev(fromObject, parentObject) {
+     const toObject = {};
++    const fromHistoryConfig = getValueByPath(fromObject, ['historyConfig']);
++    if (parentObject !== undefined && fromHistoryConfig != null) {
++        setValueByPath(parentObject, ['setup', 'historyConfig'], fromHistoryConfig);
++    }
+     const fromGenerationConfig = getValueByPath(fromObject, [
+         'generationConfig',
+     ]);
+diff --git a/node_modules/@google/genai/dist/index.mjs b/node_modules/@google/genai/dist/index.mjs
+index 9ebc2df..60b4c7e 100644
+--- a/node_modules/@google/genai/dist/index.mjs
++++ b/node_modules/@google/genai/dist/index.mjs
+@@ -15189,6 +15189,10 @@ function googleSearchToMldev$2(fromObject) {
+ }
+ function liveConnectConfigToMldev$1(fromObject, parentObject) {
+     const toObject = {};
++    const fromHistoryConfig = getValueByPath(fromObject, ['historyConfig']);
++    if (parentObject !== undefined && fromHistoryConfig != null) {
++        setValueByPath(parentObject, ['setup', 'historyConfig'], fromHistoryConfig);
++    }
+     const fromGenerationConfig = getValueByPath(fromObject, [
+         'generationConfig',
+     ]);
+@@ -22803,6 +22807,10 @@ function googleSearchToMldev(fromObject) {
+ }
+ function liveConnectConfigToMldev(fromObject, parentObject) {
+     const toObject = {};
++    const fromHistoryConfig = getValueByPath(fromObject, ['historyConfig']);
++    if (parentObject !== undefined && fromHistoryConfig != null) {
++        setValueByPath(parentObject, ['setup', 'historyConfig'], fromHistoryConfig);
++    }
+     const fromGenerationConfig = getValueByPath(fromObject, [
+         'generationConfig',
+     ]);
+diff --git a/node_modules/@google/genai/dist/node/index.cjs b/node_modules/@google/genai/dist/node/index.cjs
+index 86ebdb7..58b2393 100644
+--- a/node_modules/@google/genai/dist/node/index.cjs
++++ b/node_modules/@google/genai/dist/node/index.cjs
+@@ -8560,6 +8560,10 @@ function googleSearchToMldev$2(fromObject) {
+ }
+ function liveConnectConfigToMldev$1(fromObject, parentObject) {
+     const toObject = {};
++    const fromHistoryConfig = getValueByPath(fromObject, ['historyConfig']);
++    if (parentObject !== undefined && fromHistoryConfig != null) {
++        setValueByPath(parentObject, ['setup', 'historyConfig'], fromHistoryConfig);
++    }
+     const fromGenerationConfig = getValueByPath(fromObject, [
+         'generationConfig',
+     ]);
+@@ -17116,6 +17120,10 @@ function googleSearchToMldev(fromObject) {
+ }
+ function liveConnectConfigToMldev(fromObject, parentObject) {
+     const toObject = {};
++    const fromHistoryConfig = getValueByPath(fromObject, ['historyConfig']);
++    if (parentObject !== undefined && fromHistoryConfig != null) {
++        setValueByPath(parentObject, ['setup', 'historyConfig'], fromHistoryConfig);
++    }
+     const fromGenerationConfig = getValueByPath(fromObject, [
+         'generationConfig',
+     ]);
+diff --git a/node_modules/@google/genai/dist/node/index.mjs b/node_modules/@google/genai/dist/node/index.mjs
+index 615e411..e9bc76d 100644
+--- a/node_modules/@google/genai/dist/node/index.mjs
++++ b/node_modules/@google/genai/dist/node/index.mjs
+@@ -8538,6 +8538,10 @@ function googleSearchToMldev$2(fromObject) {
+ }
+ function liveConnectConfigToMldev$1(fromObject, parentObject) {
+     const toObject = {};
++    const fromHistoryConfig = getValueByPath(fromObject, ['historyConfig']);
++    if (parentObject !== undefined && fromHistoryConfig != null) {
++        setValueByPath(parentObject, ['setup', 'historyConfig'], fromHistoryConfig);
++    }
+     const fromGenerationConfig = getValueByPath(fromObject, [
+         'generationConfig',
+     ]);
+@@ -17094,6 +17098,10 @@ function googleSearchToMldev(fromObject) {
+ }
+ function liveConnectConfigToMldev(fromObject, parentObject) {
+     const toObject = {};
++    const fromHistoryConfig = getValueByPath(fromObject, ['historyConfig']);
++    if (parentObject !== undefined && fromHistoryConfig != null) {
++        setValueByPath(parentObject, ['setup', 'historyConfig'], fromHistoryConfig);
++    }
+     const fromGenerationConfig = getValueByPath(fromObject, [
+         'generationConfig',
+     ]);
+diff --git a/node_modules/@google/genai/dist/web/index.mjs b/node_modules/@google/genai/dist/web/index.mjs
+index 85445fd..be42523 100644
+--- a/node_modules/@google/genai/dist/web/index.mjs
++++ b/node_modules/@google/genai/dist/web/index.mjs
+@@ -8530,6 +8530,10 @@ function googleSearchToMldev$2(fromObject) {
+ }
+ function liveConnectConfigToMldev$1(fromObject, parentObject) {
+     const toObject = {};
++    const fromHistoryConfig = getValueByPath(fromObject, ['historyConfig']);
++    if (parentObject !== undefined && fromHistoryConfig != null) {
++        setValueByPath(parentObject, ['setup', 'historyConfig'], fromHistoryConfig);
++    }
+     const fromGenerationConfig = getValueByPath(fromObject, [
+         'generationConfig',
+     ]);
+@@ -17086,6 +17090,10 @@ function googleSearchToMldev(fromObject) {
+ }
+ function liveConnectConfigToMldev(fromObject, parentObject) {
+     const toObject = {};
++    const fromHistoryConfig = getValueByPath(fromObject, ['historyConfig']);
++    if (parentObject !== undefined && fromHistoryConfig != null) {
++        setValueByPath(parentObject, ['setup', 'historyConfig'], fromHistoryConfig);
++    }
+     const fromGenerationConfig = getValueByPath(fromObject, [
+         'generationConfig',
+     ]);

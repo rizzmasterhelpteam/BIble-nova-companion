@@ -24,6 +24,7 @@ type AuthContextType = {
   subscribe: (source: SubscriptionSource) => void;
   shadowNotes: string | null;
   updateShadowNotes: (notes: string) => Promise<void>;
+  acceptPersistedShadowNotes: (notes: string | null) => void;
 };
 
 type SubscriptionSource = "native_google_play" | "native_app_store";
@@ -61,6 +62,7 @@ const AuthContext = createContext<AuthContextType>({
   subscribe: () => {},
   shadowNotes: null,
   updateShadowNotes: async () => {},
+  acceptPersistedShadowNotes: () => {},
 });
 
 const AVATAR_NONE = "__none__";
@@ -621,6 +623,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setShadowNotes(trimmed);
   }, [user]);
 
+  const acceptPersistedShadowNotes = useCallback((notes: string | null) => {
+    const normalized = notes?.trim().slice(0, 2_000) || null;
+    setShadowNotes(normalized);
+  }, []);
+
   const value = useMemo(
     () => ({
       user,
@@ -639,6 +646,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       subscribe,
       shadowNotes,
       updateShadowNotes,
+      acceptPersistedShadowNotes,
     }),
     [
       completeOnboarding,
@@ -657,6 +665,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       user,
       shadowNotes,
       updateShadowNotes,
+      acceptPersistedShadowNotes,
     ],
   );
 

@@ -1,4 +1,9 @@
-import { ActivityHandling, GoogleGenAI, Modality } from "@google/genai";
+import {
+  ActivityHandling,
+  GoogleGenAI,
+  Modality,
+  ThinkingLevel,
+} from "@google/genai";
 
 export const DEFAULT_GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview";
 export const DEFAULT_VOICE_SESSION_MAX_MINUTES = 10;
@@ -41,6 +46,27 @@ For confession content, do not claim sacramental confession or absolution. Offer
 Keep spoken replies concise, usually 15-40 seconds. Understand natural multilingual speech where supported, but respond in English by default.
 `.trim();
 
+export const getGeminiLiveConstraintConfig = () => ({
+  responseModalities: [Modality.AUDIO],
+  systemInstruction: VOICE_SYSTEM_INSTRUCTION,
+  inputAudioTranscription: {},
+  outputAudioTranscription: {},
+  sessionResumption: {},
+  historyConfig: {
+    initialHistoryInClientContent: true,
+  },
+  realtimeInputConfig: {
+    automaticActivityDetection: {
+      prefixPaddingMs: 240,
+      silenceDurationMs: 700,
+    },
+    activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
+  },
+  thinkingConfig: {
+    thinkingLevel: ThinkingLevel.LOW,
+  },
+});
+
 export async function createGeminiLiveEphemeralToken() {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
@@ -58,21 +84,7 @@ export async function createGeminiLiveEphemeralToken() {
       newSessionExpireTime: new Date(now + 60 * 1000).toISOString(),
       liveConnectConstraints: {
         model,
-        config: {
-          responseModalities: [Modality.AUDIO],
-          systemInstruction: VOICE_SYSTEM_INSTRUCTION,
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-          sessionResumption: {},
-          realtimeInputConfig: {
-            automaticActivityDetection: {
-              prefixPaddingMs: 240,
-              silenceDurationMs: 700,
-            },
-            activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
-          },
-          thinkingConfig: { thinkingBudget: 256 },
-        },
+        config: getGeminiLiveConstraintConfig(),
       },
     },
   });

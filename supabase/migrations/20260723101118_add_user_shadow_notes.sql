@@ -7,6 +7,9 @@ create table if not exists public.user_shadow_notes (
 
 alter table public.user_shadow_notes enable row level security;
 
+revoke all on table public.user_shadow_notes from public, anon, authenticated;
+grant select, insert, update on table public.user_shadow_notes to service_role;
+
 drop policy if exists "Permanent users manage own shadow notes" on public.user_shadow_notes;
 
 create policy "Permanent users manage own shadow notes"

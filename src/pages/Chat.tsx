@@ -229,7 +229,11 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   useDocumentTitle("Bible Nova Companion");
   const location = useLocation();
   const navigate = useNavigate();
-  const { identityKey, shadowNotes, updateShadowNotes } = useAuth();
+  const {
+    identityKey,
+    shadowNotes,
+    acceptPersistedShadowNotes,
+  } = useAuth();
   const { isCompactPhone, isKeyboardOpen, isShortPhone, width } = useMobileViewport();
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
@@ -446,6 +450,15 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
     onModeChange?.("chat");
   }, [onModeChange]);
 
+  const handleModeChange = useCallback((nextMode: HomeMode) => {
+    if (nextMode === "voice" && isTyping) {
+      requestControllerRef.current?.abort();
+      requestControllerRef.current = null;
+      setIsTyping(false);
+    }
+    onModeChange?.(nextMode);
+  }, [isTyping, onModeChange]);
+
   const handleSend = useCallback(async (text: string) => {
     if (isTyping || apiStatus?.chatReady === false) return;
 
@@ -520,9 +533,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       }
 
       if (typeof data.shadowNotes === "string" && data.shadowNotes.trim() && data.shadowNotes !== shadowNotes) {
-        void updateShadowNotes(data.shadowNotes).catch((error) => {
-          console.error("Shadow notes sync failed:", error);
-        });
+        acceptPersistedShadowNotes(data.shadowNotes);
       }
 
       appendAiMessage(data.message || "I could not form a response just now.");
@@ -544,7 +555,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
         textareaRef.current?.focus();
       }
     }
-  }, [apiStatus?.chatReady, appendAiMessage, isRecording, isTyping, shadowNotes, updateShadowNotes]);
+  }, [acceptPersistedShadowNotes, apiStatus?.chatReady, appendAiMessage, isRecording, isTyping, shadowNotes]);
 
   useEffect(() => {
     if (!hasLoadedMessages) {
@@ -575,23 +586,9 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       return;
     }
 
-    setSpeechError(null);
-    const session = speechSessionRef.current;
-    if (!session) {
-      navigate(location.pathname, { replace: true, state: {} });
-      return;
-    }
-
-    void session.start(input)
-      .catch((error) => {
-        setSpeechError(
-          error instanceof Error ? error.message : "Speech recognition could not start.",
-        );
-      })
-      .finally(() => {
-        navigate(location.pathname, { replace: true, state: {} });
-      });
-  }, [handleSend, hasLoadedMessages, input, location.pathname, location.state, navigate]);
+    handleModeChange("voice");
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [handleModeChange, handleSend, hasLoadedMessages, location.pathname, location.state, navigate]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -755,7 +752,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
         {onModeChange && (
           <VoiceModeToggle
             value={mode}
-            onChange={onModeChange}
+            onChange={handleModeChange}
             className={cn("mr-1", isCompactPhone ? "scale-[0.9] origin-right" : "")}
           />
         )}
@@ -768,7 +765,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           isTyping={isTyping}
           onAppendUserMessage={appendVoiceUserMessage}
           onAppendAssistantMessage={appendVoiceAssistantMessage}
-          onUpdateShadowNotes={updateShadowNotes}
+          onAcceptShadowNotes={acceptPersistedShadowNotes}
           onContinueInChat={continueInChat}
         />
       ) : (

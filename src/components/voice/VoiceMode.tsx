@@ -23,7 +23,7 @@ type VoiceModeProps = {
   isTyping: boolean;
   onAppendUserMessage: (content: string, source?: "voice" | "chat") => void;
   onAppendAssistantMessage: (content: string) => void;
-  onUpdateShadowNotes: (notes: string) => Promise<void>;
+  onAcceptShadowNotes: (notes: string | null) => void;
   onContinueInChat: () => void;
 };
 
@@ -66,7 +66,7 @@ export default function VoiceMode({
   isTyping,
   onAppendUserMessage,
   onAppendAssistantMessage,
-  onUpdateShadowNotes,
+  onAcceptShadowNotes,
   onContinueInChat,
 }: VoiceModeProps) {
   const { isCompactPhone, isShortPhone } = useMobileViewport();
@@ -109,13 +109,13 @@ export default function VoiceMode({
       });
       const data = (await response.json().catch(() => ({}))) as { shadowNotes?: string | null };
       if (response.ok && typeof data.shadowNotes === "string" && data.shadowNotes.trim()) {
-        await onUpdateShadowNotes(data.shadowNotes);
+        onAcceptShadowNotes(data.shadowNotes);
       }
       if (response.ok) lastPersistedVoiceCountRef.current = voiceMessages.length;
     } catch {
       // Voice remains usable if note persistence is temporarily unavailable.
     }
-  }, [onUpdateShadowNotes, shadowNotes]);
+  }, [onAcceptShadowNotes, shadowNotes]);
 
   useEffect(() => {
     const voiceMessageCount = messages.filter(isVoiceMessage).length;
@@ -147,6 +147,12 @@ export default function VoiceMode({
   const handleEnd = async () => {
     await live.stop("ended");
     await persistVoiceNotes();
+  };
+
+  const handleContinueInChat = async () => {
+    await live.stop("ended");
+    await persistVoiceNotes();
+    onContinueInChat();
   };
 
   const startLabel = live.state === "ended" ? "Start a new reflection" : "Start conversation";
@@ -252,7 +258,8 @@ export default function VoiceMode({
             <button
               type="button"
               onClick={() => void live.start()}
-              className="touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-6 text-base font-semibold text-white shadow-lg transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              disabled={isTyping}
+              className="touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-6 text-base font-semibold text-white shadow-lg transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {live.state === "error" || live.state === "permission-denied" || live.state === "offline" ? <RotateCcw className="h-5 w-5" /> : <Play className="h-5 w-5 fill-current" />}
               {startLabel}
@@ -271,10 +278,10 @@ export default function VoiceMode({
                 type="button"
                 onClick={live.interrupt}
                 disabled={live.state !== "assistant-speaking"}
-                aria-label="Interrupt Bible Nova"
+                aria-label="Stop assistant audio"
                 className="touch-target app-secondary-button flex h-12 min-w-28 items-center justify-center gap-2 rounded-pill px-4 text-sm font-semibold disabled:opacity-40"
               >
-                <Pause className="h-4 w-4" /> Interrupt
+                <Pause className="h-4 w-4" /> Stop audio
               </button>
               <button
                 type="button"
@@ -300,7 +307,7 @@ export default function VoiceMode({
             </button>
             <button
               type="button"
-              onClick={onContinueInChat}
+              onClick={() => void handleContinueInChat()}
               className="touch-target inline-flex items-center gap-1.5 rounded-pill px-2 py-2 text-xs font-medium"
               style={{ color: "var(--app-text-muted)" }}
             >

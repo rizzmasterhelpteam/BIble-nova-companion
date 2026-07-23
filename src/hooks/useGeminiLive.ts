@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GoogleGenAI as GoogleGenAIType } from "@google/genai";
+import type {
+  GoogleGenAI as GoogleGenAIType,
+  LiveConnectConfig,
+} from "@google/genai";
 import { apiFetch } from "../lib/apiClient";
+import {
+  createInitialHistoryPayload,
+  getLiveReconnectDelay,
+  mergeLiveTranscript,
+  shouldReconnectLiveSession,
+  shouldResumeListeningAfterPlayback,
+  signalAudioStreamEnd,
+} from "../lib/liveProtocol";
 import type { ConversationMessage, VoiceState } from "../types/live";
 
 type LiveTokenResponse = {
@@ -18,20 +29,15 @@ type UseGeminiLiveOptions = {
 };
 
 type GeminiLiveSession = Awaited<ReturnType<GoogleGenAIType["live"]["connect"]>>;
+type Gemini31LiveConnectConfig = LiveConnectConfig & {
+  historyConfig: {
+    initialHistoryInClientContent: true;
+  };
+};
 
-const LIVE_CONTEXT_MESSAGES = 8;
 const INPUT_SAMPLE_RATE = 16_000;
 const OUTPUT_SAMPLE_RATE = 24_000;
 const MAX_RECONNECT_ATTEMPTS = 2;
-
-const mergeTranscript = (current: string, next: string) => {
-  const normalizedNext = next.trim().replace(/\s+/g, " ");
-  if (!normalizedNext) return current;
-  if (!current) return normalizedNext;
-  if (normalizedNext.startsWith(current)) return normalizedNext;
-  if (current.endsWith(normalizedNext)) return current;
-  return `${current} ${normalizedNext}`.trim();
-};
 
 const base64ToBytes = (value: string) => {
   const binary = window.atob(value);
@@ -101,15 +107,6 @@ const getAudioContext = () => {
   return new AudioContextConstructor({ sampleRate: INPUT_SAMPLE_RATE });
 };
 
-const getRecentHistory = (history: ConversationMessage[]) =>
-  history
-    .filter((message) => message.id !== "welcome" && message.tone !== "error")
-    .slice(-LIVE_CONTEXT_MESSAGES)
-    .map((message) => ({
-      role: message.role === "ai" ? "model" : "user",
-      parts: [{ text: message.content.slice(0, 2_000) }],
-    }));
-
 export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript }: UseGeminiLiveOptions) {
   const [state, setState] = useState<VoiceState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +128,9 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
   const assistantTranscriptRef = useRef("");
   const userTranscriptFinalizedRef = useRef(false);
   const assistantTranscriptFinalizedRef = useRef(false);
+  const audioStreamEndedRef = useRef(true);
+  const suppressPlaybackRef = useRef(false);
+  const playbackGenerationRef = useRef(0);
   const stopRequestedRef = useRef(false);
   const startingRef = useRef(false);
   const startRef = useRef<((isReconnect?: boolean) => Promise<void>) | null>(null);
@@ -203,9 +203,10 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
 
   const playAudioChunk = useCallback(async (data: string, mimeType?: string) => {
     const audioContext = audioContextRef.current;
-    if (!audioContext || !data) return;
+    if (!audioContext || !data || suppressPlaybackRef.current || stopRequestedRef.current) return;
     if (audioContext.state === "suspended") await audioContext.resume();
 
+    const playbackGeneration = playbackGenerationRef.current;
     const sampleRate = Number(mimeType?.match(/rate=(\d+)/)?.[1] || OUTPUT_SAMPLE_RATE);
     const buffer = decodePcmAudio(audioContext, data, sampleRate);
     const source = audioContext.createBufferSource();
@@ -218,15 +219,26 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     playbackSourcesRef.current.push(source);
     source.addEventListener("ended", () => {
       playbackSourcesRef.current = playbackSourcesRef.current.filter((item) => item !== source);
-      if (!playbackSourcesRef.current.length && state !== "ending" && state !== "ended") {
+      if (shouldResumeListeningAfterPlayback({
+        playbackGeneration,
+        currentGeneration: playbackGenerationRef.current,
+        stopRequested: stopRequestedRef.current,
+        remainingSources: playbackSourcesRef.current.length,
+      })) {
         setState("listening");
       }
     });
     setState("assistant-speaking");
-  }, [state]);
+  }, []);
 
   const stop = useCallback(async (nextState: VoiceState = "ended") => {
     stopRequestedRef.current = true;
+    playbackGenerationRef.current += 1;
+    audioStreamEndedRef.current = signalAudioStreamEnd(
+      sessionRef.current,
+      audioStreamEndedRef.current,
+    );
+    suppressPlaybackRef.current = false;
     setState("ending");
     clearTimers();
     finalizeUserTranscript();
@@ -237,6 +249,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     sessionRef.current = null;
     session?.close();
     setIsMuted(false);
+    audioStreamEndedRef.current = true;
     setSessionNotice(null);
     setState(nextState);
   }, [clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, releaseAudio]);
@@ -245,6 +258,9 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     if (startingRef.current || sessionRef.current) return;
     startingRef.current = true;
     if (!isReconnect) reconnectAttemptsRef.current = 0;
+    playbackGenerationRef.current += 1;
+    audioStreamEndedRef.current = true;
+    suppressPlaybackRef.current = false;
     stopRequestedRef.current = false;
     setError(null);
     setSessionNotice(null);
@@ -284,20 +300,24 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
         apiKey: data.token,
         httpOptions: { apiVersion: "v1alpha" },
       });
-      const session = await client.live.connect({
-        model: data.model,
-        config: {
-          responseModalities: [Modality.AUDIO],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-          sessionResumption: {},
-          realtimeInputConfig: {
-            automaticActivityDetection: {
-              prefixPaddingMs: 240,
-              silenceDurationMs: 700,
-            },
+      const liveConfig: Gemini31LiveConnectConfig = {
+        responseModalities: [Modality.AUDIO],
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+        sessionResumption: {},
+        historyConfig: {
+          initialHistoryInClientContent: true,
+        },
+        realtimeInputConfig: {
+          automaticActivityDetection: {
+            prefixPaddingMs: 240,
+            silenceDurationMs: 700,
           },
         },
+      };
+      const session = await client.live.connect({
+        model: data.model,
+        config: liveConfig,
         callbacks: {
           onopen: () => {
             if (!stopRequestedRef.current) {
@@ -313,7 +333,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
 
             if (inputText) {
               userTranscriptFinalizedRef.current = false;
-              userTranscriptRef.current = mergeTranscript(userTranscriptRef.current, inputText);
+              userTranscriptRef.current = mergeLiveTranscript(userTranscriptRef.current, inputText);
               setUserTranscript(userTranscriptRef.current);
               setState("user-speaking");
               if (serverContent?.inputTranscription?.finished) finalizeUserTranscript();
@@ -321,24 +341,30 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
 
             if (outputText) {
               assistantTranscriptFinalizedRef.current = false;
-              assistantTranscriptRef.current = mergeTranscript(assistantTranscriptRef.current, outputText);
+              assistantTranscriptRef.current = mergeLiveTranscript(assistantTranscriptRef.current, outputText);
               setAssistantTranscript(assistantTranscriptRef.current);
               if (serverContent?.outputTranscription?.finished) finalizeAssistantTranscript();
             }
 
             if (serverContent?.interrupted) {
+              suppressPlaybackRef.current = false;
               stopPlayback();
               setState("interrupted");
             }
 
             const parts = serverContent?.modelTurn?.parts || [];
             for (const part of parts) {
-              if (part.inlineData?.data) {
+              if (
+                part.inlineData?.data &&
+                !serverContent?.interrupted &&
+                !suppressPlaybackRef.current
+              ) {
                 void playAudioChunk(part.inlineData.data, part.inlineData.mimeType);
               }
             }
 
             if (serverContent?.turnComplete) {
+              suppressPlaybackRef.current = false;
               finalizeUserTranscript();
               finalizeAssistantTranscript();
               if (!playbackSourcesRef.current.length) setState("listening");
@@ -351,9 +377,15 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
           },
           onclose: () => {
             if (stopRequestedRef.current) return;
+            playbackGenerationRef.current += 1;
+            audioStreamEndedRef.current = true;
+            suppressPlaybackRef.current = false;
             releaseAudio();
             sessionRef.current = null;
-            if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+            if (shouldReconnectLiveSession(
+              reconnectAttemptsRef.current,
+              MAX_RECONNECT_ATTEMPTS,
+            )) {
               reconnectAttemptsRef.current += 1;
               const attempt = reconnectAttemptsRef.current;
               setState("reconnecting");
@@ -361,7 +393,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
               reconnectTimerRef.current = window.setTimeout(() => {
                 reconnectTimerRef.current = null;
                 if (!stopRequestedRef.current) void startRef.current?.(true);
-              }, 700 * attempt);
+              }, getLiveReconnectDelay(attempt));
               return;
             }
             setState("error");
@@ -371,10 +403,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       });
 
       sessionRef.current = session;
-      const recentHistory = getRecentHistory(history);
-      if (recentHistory.length) {
-        session.sendClientContent({ turns: recentHistory, turnComplete: false });
-      }
+      session.sendClientContent(createInitialHistoryPayload(history));
 
       const audioContext = getAudioContext();
       audioContextRef.current = audioContext;
@@ -385,6 +414,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       muteGain.gain.value = 0;
       processor.onaudioprocess = (event) => {
         if (stopRequestedRef.current || isMutedRef.current) return;
+        audioStreamEndedRef.current = false;
         const channel = event.inputBuffer.getChannelData(0);
         const pcm = floatToPcm16(resample(channel, event.inputBuffer.sampleRate, INPUT_SAMPLE_RATE));
         session.sendRealtimeInput({
@@ -435,11 +465,21 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
   }, [start]);
 
   const toggleMute = useCallback(() => {
-    setIsMuted((current) => !current);
+    setIsMuted((current) => {
+      const nextMuted = !current;
+      if (nextMuted) {
+        audioStreamEndedRef.current = signalAudioStreamEnd(
+          sessionRef.current,
+          audioStreamEndedRef.current,
+        );
+      }
+      return nextMuted;
+    });
     setState((current) => current === "assistant-speaking" ? current : "listening");
   }, []);
 
   const interrupt = useCallback(() => {
+    suppressPlaybackRef.current = true;
     stopPlayback();
     setState("interrupted");
   }, [stopPlayback]);

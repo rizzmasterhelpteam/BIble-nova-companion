@@ -71,3 +71,5 @@ For native Google sign-in on mobile:
 ### Voice-first home
 
 The authenticated home screen opens in Voice mode for new users and remembers each user's Voice/Chat selection. Voice mode connects directly to Gemini Live using an ephemeral token from `/api/live/token`; Chat continues using the existing Groq GPT-OSS flow. Voice transcripts share the existing local conversation timeline and are batched through `/api/live/shadow-notes` for compact Supabase shadow-note updates. If Live is unavailable, users can switch to Chat without losing confirmed transcript messages.
+
+Gemini 3.1 Live requires `historyConfig.initialHistoryInClientContent` before initial history is sent. `@google/genai` is pinned and patched during `postinstall` because its current high-level Live serializer does not yet forward that documented setup field. Keep `patches/@google+genai+2.13.0.patch` in sync when upgrading the SDK. Production also requires every committed Supabase migration, including `20260723101118_add_user_shadow_notes.sql`.

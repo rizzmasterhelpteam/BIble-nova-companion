@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
+    "verify:production": "npm run lint && npm run test && npm run build",
     "start": "tsx server.ts",
     "test": "vitest run",
     "preview": "vite preview",
     "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist',{recursive:true,force:true});\"",
-    "postinstall": "node scripts/patch-native-purchases.mjs",
+    "postinstall": "patch-package && node scripts/patch-native-purchases.mjs",
     "lint": "tsc --noEmit",
     "assets:native": "powershell -ExecutionPolicy Bypass -File scripts/generate-native-assets.ps1",
     "fix:ios-spm": "node scripts/fix-capacitor-ios-spm.mjs",
@@ -37,7 +38,7 @@
     "@capacitor/status-bar": "^8.0.2",
     "@capgo/capacitor-social-login": "^8.3.22",
     "@capgo/native-purchases": "^8.3.10",
-    "@google/genai": "^1.29.0",
+    "@google/genai": "2.13.0",
     "@supabase/supabase-js": "^2.104.1",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
@@ -57,10 +58,11 @@
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
+    "patch-package": "8.0.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
-    "vitest": "^2.1.9"
+    "vitest": "4.1.10"
   }
 }
