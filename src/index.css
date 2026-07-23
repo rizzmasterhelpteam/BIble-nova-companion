@@ -164,19 +164,23 @@
       radial-gradient(circle at 0% 62%, rgba(111, 214, 255, 0.2), transparent 40%),
       radial-gradient(circle at 100% 100%, rgba(40, 76, 128, 0.14), transparent 38%),
       linear-gradient(180deg, #d9e9f7 0%, #eef6fd 48%, #dcecf8 100%);
-    --app-shell-bg: linear-gradient(180deg, rgba(229, 241, 251, 0.86) 0%, rgba(249, 252, 255, 0.94) 48%, rgba(229, 241, 251, 0.9) 100%);
+    --app-shell-bg:
+      radial-gradient(ellipse at 50% 78%, rgba(255, 221, 154, 0.3), transparent 31%),
+      radial-gradient(ellipse at 0% 26%, rgba(255, 255, 255, 0.46), transparent 32%),
+      radial-gradient(ellipse at 100% 52%, rgba(150, 208, 239, 0.24), transparent 34%),
+      linear-gradient(180deg, rgba(178, 216, 241, 0.9) 0%, rgba(225, 242, 252, 0.94) 46%, rgba(255, 247, 221, 0.9) 72%, rgba(211, 233, 248, 0.94) 100%);
     --app-shell-border: rgba(63, 94, 141, 0.12);
     --app-shell-ring: rgba(255, 255, 255, 0.5);
     --app-shell-shadow: 0 28px 90px rgba(25, 50, 88, 0.16);
     --app-shell-highlight: linear-gradient(145deg, rgba(255, 255, 255, 0.36), transparent 62%);
-    --app-card-bg: rgba(245, 249, 255, 0.72);
-    --app-card-strong: rgba(251, 253, 255, 0.92);
+    --app-card-bg: rgba(248, 252, 255, 0.7);
+    --app-card-strong: rgba(252, 254, 255, 0.88);
     --app-card-soft: rgba(16, 24, 39, 0.04);
-    --app-card-border: rgba(63, 94, 141, 0.11);
+    --app-card-border: rgba(53, 123, 174, 0.16);
     --app-card-hover: rgba(255, 255, 255, 0.95);
     --app-text: #22324b;
     --app-heading: #0d1829;
-    --app-text-muted: #667792;
+    --app-text-muted: #59748e;
     --app-text-soft: #97a4b7;
     --app-accent: #1b9ed8;
     --app-accent-strong: #116e9c;
@@ -190,8 +194,10 @@
     --app-input-bg: rgba(249, 252, 255, 0.74);
     --app-input-border: rgba(63, 94, 141, 0.16);
     --app-input-focus: rgba(27, 158, 216, 0.24);
-    --app-nav-bg: rgba(246, 251, 255, 0.9);
-    --app-nav-active: rgba(27, 158, 216, 0.18);
+    --app-nav-bg: rgba(247, 252, 255, 0.88);
+    --app-nav-active: linear-gradient(135deg, rgba(255, 241, 182, 0.92) 0%, rgba(196, 233, 250, 0.96) 100%);
+    --app-nav-border: rgba(42, 126, 178, 0.24);
+    --app-nav-shadow: 0 18px 46px rgba(44, 91, 129, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.72);
     --app-overlay: rgba(8, 13, 23, 0.28);
     --app-divider: rgba(63, 94, 141, 0.11);
     --app-success: #2a9b84;
@@ -547,6 +553,31 @@
     border: 1px solid var(--app-card-border);
   }
 
+  :root.light[data-design="nocturne"] .app-scroll-region {
+    background:
+      radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.22), transparent 38%),
+      linear-gradient(180deg, rgba(213, 235, 249, 0.08), rgba(255, 244, 213, 0.1) 62%, rgba(204, 229, 246, 0.14));
+  }
+
+  :root.light[data-design="nocturne"] .app-panel,
+  :root.light[data-design="nocturne"] .app-panel-strong,
+  :root.light[data-design="nocturne"] .app-panel-soft {
+    border-color: rgba(53, 123, 174, 0.18);
+    box-shadow: 0 14px 34px rgba(44, 91, 129, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  }
+
+  :root.light[data-design="nocturne"] .app-panel {
+    background-color: rgba(248, 252, 255, 0.68);
+  }
+
+  :root.light[data-design="nocturne"] .app-panel-strong {
+    background-color: rgba(252, 254, 255, 0.84);
+  }
+
+  :root.light[data-design="nocturne"] .app-panel-soft {
+    background-color: rgba(237, 246, 252, 0.66);
+  }
+
   .app-scroll-region {
     min-height: 0;
     overflow-x: hidden;
@@ -652,8 +683,8 @@
   .app-nav-shell {
     background-color: var(--app-nav-bg);
     background-image: var(--app-shell-highlight);
-    border: 1px solid var(--app-card-border);
-    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.08);
+    border: 1px solid var(--app-nav-border, var(--app-card-border));
+    box-shadow: var(--app-nav-shadow, 0 18px 46px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.08));
     backdrop-filter: none;
   }
 
