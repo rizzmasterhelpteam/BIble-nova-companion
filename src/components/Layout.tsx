@@ -386,7 +386,7 @@ export default function Layout() {
           style={{ pointerEvents: hideBottomNavigation ? "none" : undefined }}
         >
           <div className="app-nav-shell flex w-full max-w-xl items-center justify-between gap-1 rounded-[1.6rem] p-1.5">
-            <NavItem to="/" icon={<Home strokeWidth={1.6} className="h-5 w-5" />} label="Home" />
+            <NavItem to="/" end icon={<Home strokeWidth={1.6} className="h-5 w-5" />} label="Home" />
             <NavItem to="/breathe" icon={<Wind strokeWidth={1.6} className="h-5 w-5" />} label="Breathe" />
             <NavItem to="/intentions" icon={<Heart strokeWidth={1.6} className="h-5 w-5" />} label="Intentions" />
             <NavItem to="/confess" icon={<Flame strokeWidth={1.6} className="h-5 w-5" />} label="Confess" />
@@ -872,10 +872,11 @@ export default function Layout() {
   );
 }
 
-function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label: string }) {
+function NavItem({ to, end = false, icon, label }: { to: string; end?: boolean; icon: React.ReactNode; label: string }) {
   return (
     <NavLink
       to={to}
+      end={end}
       className="touch-target relative flex min-h-[58px] flex-1 flex-col items-center justify-center gap-1.5 rounded-pill py-2 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
       style={{ color: "var(--app-text-muted)" }}
     >
@@ -900,10 +901,10 @@ function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label
             {icon}
           </div>
           <span
-            className="relative z-10 text-[13px] font-semibold tracking-wide transition-colors duration-200"
+            className="app-nav-label relative z-10 text-[13px] font-semibold tracking-wide transition-colors duration-200"
             style={{
               color: isActive ? "var(--app-accent)" : "var(--app-text-muted)",
-              opacity: isActive ? 1 : 0.6,
+              opacity: isActive ? 1 : undefined,
             }}
           >
             {label}
