@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const security = vi.hoisted(() => ({
   acquire: vi.fn(),
@@ -59,6 +59,8 @@ const createResponse = () => {
 
 describe("Gemini Live token endpoint", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-23T11:50:00.000Z"));
     vi.clearAllMocks();
     security.auth.mockResolvedValue({ userId: "user-1", ip: "127.0.0.1" });
     security.limits.mockResolvedValue(undefined);
@@ -81,6 +83,10 @@ describe("Gemini Live token endpoint", () => {
     security.finalizeRenewal.mockResolvedValue(undefined);
     security.rollbackRenewal.mockResolvedValue(undefined);
     createToken.mockResolvedValue({ token: "ephemeral", model: "live", maxMinutes: 10 });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("renews through the existing token route without creating another lease", async () => {
@@ -121,6 +127,7 @@ describe("Gemini Live token endpoint", () => {
       maxMinutes: 10,
       reservationHandle: "opaque-reservation-handle",
       reservationExpiresAt: "2026-07-23T12:00:00.000Z",
+      remainingSeconds: 600,
     });
     expect(response.body).not.toHaveProperty("leaseId");
   });

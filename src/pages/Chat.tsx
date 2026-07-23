@@ -21,6 +21,12 @@ import { useMobileViewport } from "../context/MobileViewportContext";
 import { apiFetch } from "../lib/apiClient";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { storageGetJson, storageSet } from "../lib/webStorage";
+import {
+  clearVoiceReservation,
+  loadVoiceReservation,
+  saveVoiceReservation,
+  type VoiceReservation,
+} from "../lib/voiceReservation";
 import { getChatScrollBehavior } from "../lib/mobileLayout";
 import {
   createSpeechRecognitionSession,
@@ -246,6 +252,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [voiceSupported, setVoiceSupported] = useState(false);
+  const [voiceReservation, setVoiceReservation] = useState<VoiceReservation | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -264,6 +271,42 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
   const shouldAutoFocusInput = !isNativePlatform() && width >= 768;
   const shouldAutoFocusInputRef = useRef(shouldAutoFocusInput);
+  const previousIdentityKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const previousIdentityKey = previousIdentityKeyRef.current;
+    if (previousIdentityKey && previousIdentityKey !== identityKey) {
+      clearVoiceReservation(previousIdentityKey);
+    }
+    previousIdentityKeyRef.current = identityKey;
+    setVoiceReservation(identityKey ? loadVoiceReservation(identityKey) : null);
+  }, [identityKey]);
+
+  const updateVoiceReservation = useCallback(
+    (reservation: { handle: string; expiresAt: string } | null) => {
+      if (!identityKey) return;
+      if (!reservation) {
+        clearVoiceReservation(identityKey);
+        setVoiceReservation(null);
+        return;
+      }
+      const next = { ...reservation, userId: identityKey };
+      saveVoiceReservation(next);
+      setVoiceReservation(next);
+    },
+    [identityKey],
+  );
+
+  useEffect(() => {
+    if (!voiceReservation || !identityKey) return;
+    const remaining = Date.parse(voiceReservation.expiresAt) - Date.now();
+    if (remaining <= 0) {
+      updateVoiceReservation(null);
+      return;
+    }
+    const timer = window.setTimeout(() => updateVoiceReservation(null), remaining);
+    return () => window.clearTimeout(timer);
+  }, [identityKey, updateVoiceReservation, voiceReservation]);
 
   useEffect(() => {
     shouldAutoFocusInputRef.current = shouldAutoFocusInput;
@@ -767,6 +810,8 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           onAppendAssistantMessage={appendVoiceAssistantMessage}
           onAcceptShadowNotes={acceptPersistedShadowNotes}
           onContinueInChat={continueInChat}
+          reservation={voiceReservation}
+          onReservationChange={updateVoiceReservation}
         />
       ) : (
       <>

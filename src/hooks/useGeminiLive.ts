@@ -22,6 +22,7 @@ type LiveTokenResponse = {
   expiresAt?: string;
   reservationHandle?: string;
   reservationExpiresAt?: string;
+  remainingSeconds?: number;
   reason?: VoiceErrorCode;
   error?: string;
 };
@@ -60,6 +61,8 @@ type UseGeminiLiveOptions = {
   history: ConversationMessage[];
   onUserTranscript: (text: string) => void;
   onAssistantTranscript: (text: string) => void;
+  reservation: { handle: string; expiresAt: string } | null;
+  onReservationChange: (reservation: { handle: string; expiresAt: string } | null) => void;
 };
 
 type GeminiLiveSession = Awaited<ReturnType<GoogleGenAIType["live"]["connect"]>>;
@@ -141,7 +144,13 @@ const getAudioContext = () => {
   return new AudioContextConstructor({ sampleRate: INPUT_SAMPLE_RATE });
 };
 
-export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript }: UseGeminiLiveOptions) {
+export function useGeminiLive({
+  history,
+  onUserTranscript,
+  onAssistantTranscript,
+  reservation,
+  onReservationChange,
+}: UseGeminiLiveOptions) {
   const [state, setState] = useState<VoiceState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<VoiceErrorCode | null>(null);
@@ -176,12 +185,17 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
   const noticeTimerRef = useRef<number | null>(null);
   const endTimerRef = useRef<number | null>(null);
   const failureHandledRef = useRef(false);
-  const reservationHandleRef = useRef<string | null>(null);
-  const reservationExpiresAtRef = useRef<string | null>(null);
+  const reservationHandleRef = useRef<string | null>(reservation?.handle ?? null);
+  const reservationExpiresAtRef = useRef<string | null>(reservation?.expiresAt ?? null);
 
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
+
+  useEffect(() => {
+    reservationHandleRef.current = reservation?.handle ?? null;
+    reservationExpiresAtRef.current = reservation?.expiresAt ?? null;
+  }, [reservation]);
 
   const clearTimers = useCallback(() => {
     if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
@@ -363,6 +377,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       if (Number.isFinite(knownExpiry) && knownExpiry <= Date.now()) {
         reservationHandleRef.current = null;
         reservationExpiresAtRef.current = null;
+        onReservationChange(null);
       }
       const reservationHandle = reservationHandleRef.current;
       const eligibilityResponse = await apiFetch("/api/live/eligibility", {
@@ -394,6 +409,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       if (eligibility.reason !== "reservation_resume") {
         reservationHandleRef.current = null;
         reservationExpiresAtRef.current = null;
+        onReservationChange(null);
       }
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Voice is not supported on this device.");
@@ -422,14 +438,21 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
         if (data.reason === "reservation_invalid" || data.reason === "renewal_unavailable") {
           reservationHandleRef.current = null;
           reservationExpiresAtRef.current = null;
+          onReservationChange(null);
         }
         throw new VoiceStartError(
           data.reason || "connection_failed",
           data.error || "Voice is temporarily unavailable. You can continue in Chat.",
         );
       }
-      if (data.reservationHandle) reservationHandleRef.current = data.reservationHandle;
-      if (data.reservationExpiresAt) reservationExpiresAtRef.current = data.reservationExpiresAt;
+      if (data.reservationHandle && data.reservationExpiresAt) {
+        reservationHandleRef.current = data.reservationHandle;
+        reservationExpiresAtRef.current = data.reservationExpiresAt;
+        onReservationChange({
+          handle: data.reservationHandle,
+          expiresAt: data.reservationExpiresAt,
+        });
+      }
       const { GoogleGenAI, Modality } = await import("@google/genai");
       const client = new GoogleGenAI({
         apiKey: data.token,
@@ -549,11 +572,18 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
       processorNodeRef.current = processor;
       muteGainRef.current = muteGain;
 
-      const maxMinutes = Math.max(1, Math.min(15, Number(data.maxMinutes || 10)));
-      const maxDuration = maxMinutes * 60 * 1000;
-      noticeTimerRef.current = window.setTimeout(() => {
-        setSessionNotice("This reflection is nearly complete. We can continue in a new session.");
-      }, Math.max(30_000, maxDuration - 60_000));
+      const fallbackSeconds = Math.max(60, Math.min(900, Number(data.maxMinutes || 10) * 60));
+      const serverRemainingSeconds = Number(data.remainingSeconds);
+      const remainingSeconds =
+        Number.isFinite(serverRemainingSeconds) && serverRemainingSeconds > 0
+          ? Math.max(1, Math.min(900, Math.floor(serverRemainingSeconds)))
+          : fallbackSeconds;
+      const maxDuration = remainingSeconds * 1_000;
+      if (maxDuration > 60_000) {
+        noticeTimerRef.current = window.setTimeout(() => {
+          setSessionNotice("This reflection is nearly complete. We can continue in a new session.");
+        }, maxDuration - 60_000);
+      }
       endTimerRef.current = window.setTimeout(() => {
         setSessionNotice("This reflection has ended. Start a new session whenever you are ready.");
         void stop("ended");
@@ -589,7 +619,7 @@ export function useGeminiLive({ history, onUserTranscript, onAssistantTranscript
     } finally {
       startingRef.current = false;
     }
-  }, [finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, playAudioChunk, releaseAudio, stop, stopPlayback]);
+  }, [finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, onReservationChange, playAudioChunk, releaseAudio, stop, stopPlayback]);
 
   useEffect(() => {
     startRef.current = start;

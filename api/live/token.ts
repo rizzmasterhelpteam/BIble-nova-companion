@@ -20,6 +20,9 @@ const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization");
 };
 
+const getRemainingSeconds = (expiresAt: string) =>
+  Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1_000));
+
 export default async function handler(req: any, res: any) {
   setCorsHeaders(res);
 
@@ -60,6 +63,7 @@ export default async function handler(req: any, res: any) {
           ...session,
           reservationHandle: body.reservationHandle,
           reservationExpiresAt: renewal.expiresAt,
+          remainingSeconds: getRemainingSeconds(renewal.expiresAt),
         });
       } catch (error) {
         await rollbackVoiceSessionRenewal(userId, renewal.claimHash);
@@ -85,14 +89,17 @@ export default async function handler(req: any, res: any) {
         ...session,
         reservationHandle: handle,
         reservationExpiresAt: lease.expiresAt,
+        remainingSeconds: getRemainingSeconds(lease.expiresAt),
       });
     } catch (error) {
       await cancelUnstartedVoiceSessionLease(userId, lease.leaseId);
       throw error;
     }
   } catch (error) {
-    console.error("Gemini Live token request failed:", error instanceof Error ? error.message : error);
     const details = getHttpErrorDetails(error);
+    if (details.statusCode >= 500) {
+      console.error("Gemini Live token request failed:", error instanceof Error ? error.message : error);
+    }
     if (details.retryAfterSeconds) {
       res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
     }

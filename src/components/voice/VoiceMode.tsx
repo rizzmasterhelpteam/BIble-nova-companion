@@ -26,6 +26,8 @@ type VoiceModeProps = {
   onAppendAssistantMessage: (content: string) => void;
   onAcceptShadowNotes: (notes: string | null) => void;
   onContinueInChat: () => void;
+  reservation: { handle: string; expiresAt: string } | null;
+  onReservationChange: (reservation: { handle: string; expiresAt: string } | null) => void;
 };
 
 const STATE_COPY: Record<VoiceState, string> = {
@@ -69,6 +71,8 @@ export default function VoiceMode({
   onAppendAssistantMessage,
   onAcceptShadowNotes,
   onContinueInChat,
+  reservation,
+  onReservationChange,
 }: VoiceModeProps) {
   const { isCompactPhone, isShortPhone } = useMobileViewport();
   const navigate = useNavigate();
@@ -95,6 +99,8 @@ export default function VoiceMode({
     history: messages,
     onUserTranscript: handleUserTranscript,
     onAssistantTranscript: handleAssistantTranscript,
+    reservation,
+    onReservationChange,
   });
   const premiumRequired = live.errorCode === "subscription_required";
   useEffect(() => {
