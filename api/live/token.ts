@@ -1,4 +1,8 @@
-import { createGeminiLiveEphemeralToken, getVoiceSessionConfig } from "../../live-api.js";
+import {
+  createGeminiLiveEphemeralToken,
+  getVoiceSessionConfig,
+  VoiceTokenTimingError,
+} from "../../live-api.js";
 import {
   acquireVoiceSessionLease,
   cancelUnstartedVoiceSessionLease,
@@ -57,7 +61,10 @@ export default async function handler(req: any, res: any) {
       const renewal = await claimVoiceSessionRenewal(userId, handleHash);
       try {
         const shadowNotes = await getServerShadowNotes(userId);
-        const session = await createGeminiLiveEphemeralToken(shadowNotes);
+        const session = await createGeminiLiveEphemeralToken({
+          shadowNotes,
+          reservationExpiresAt: renewal.expiresAt,
+        });
         await finalizeVoiceSessionRenewal(userId, renewal.claimHash);
         res.status(200).json({
           ...session,
@@ -84,7 +91,10 @@ export default async function handler(req: any, res: any) {
     );
     try {
       const shadowNotes = await getServerShadowNotes(userId);
-      const session = await createGeminiLiveEphemeralToken(shadowNotes);
+      const session = await createGeminiLiveEphemeralToken({
+        shadowNotes,
+        reservationExpiresAt: lease.expiresAt,
+      });
       res.status(200).json({
         ...session,
         reservationHandle: handle,
@@ -96,7 +106,14 @@ export default async function handler(req: any, res: any) {
       throw error;
     }
   } catch (error) {
-    const details = getHttpErrorDetails(error);
+    const tokenTimingError = error instanceof VoiceTokenTimingError ? error : null;
+    const details = tokenTimingError
+      ? {
+          statusCode: tokenTimingError.statusCode,
+          message: tokenTimingError.message,
+          retryAfterSeconds: undefined,
+        }
+      : getHttpErrorDetails(error);
     if (details.statusCode >= 500) {
       console.error("Gemini Live token request failed:", error instanceof Error ? error.message : error);
     }
@@ -109,7 +126,9 @@ export default async function handler(req: any, res: any) {
           ? "Voice is temporarily unavailable. You can continue in Chat."
           : details.message,
       reason:
-        details.statusCode === 403
+        tokenTimingError
+          ? tokenTimingError.reason
+          : details.statusCode === 403
           ? "subscription_required"
           : details.statusCode === 409
             ? details.message.toLowerCase().includes("cannot be renewed")

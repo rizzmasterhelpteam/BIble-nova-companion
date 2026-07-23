@@ -8,6 +8,8 @@ import { isNativePlatform } from "../lib/native/platform";
 import {
   createInitialHistoryPayload,
   getLiveReconnectDelay,
+  getLiveSessionDurationMs,
+  guardLiveTokenTiming,
   mergeLiveTranscript,
   shouldReconnectLiveSession,
   shouldResumeListeningAfterPlayback,
@@ -445,6 +447,15 @@ export function useGeminiLive({
           data.error || "Voice is temporarily unavailable. You can continue in Chat.",
         );
       }
+      if (!guardLiveTokenTiming(data, releaseAudio)) {
+        reservationHandleRef.current = null;
+        reservationExpiresAtRef.current = null;
+        onReservationChange(null);
+        throw new VoiceStartError(
+          "renewal_unavailable",
+          "This Voice reservation is no longer available.",
+        );
+      }
       if (data.reservationHandle && data.reservationExpiresAt) {
         reservationHandleRef.current = data.reservationHandle;
         reservationExpiresAtRef.current = data.reservationExpiresAt;
@@ -572,13 +583,7 @@ export function useGeminiLive({
       processorNodeRef.current = processor;
       muteGainRef.current = muteGain;
 
-      const fallbackSeconds = Math.max(60, Math.min(900, Number(data.maxMinutes || 10) * 60));
-      const serverRemainingSeconds = Number(data.remainingSeconds);
-      const remainingSeconds =
-        Number.isFinite(serverRemainingSeconds) && serverRemainingSeconds > 0
-          ? Math.max(1, Math.min(900, Math.floor(serverRemainingSeconds)))
-          : fallbackSeconds;
-      const maxDuration = remainingSeconds * 1_000;
+      const maxDuration = getLiveSessionDurationMs(data);
       if (maxDuration > 60_000) {
         noticeTimerRef.current = window.setTimeout(() => {
           setSessionNotice("This reflection is nearly complete. We can continue in a new session.");

@@ -7,6 +7,25 @@ import {
 
 export const DEFAULT_GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview";
 export const DEFAULT_VOICE_SESSION_MAX_MINUTES = 10;
+export const MIN_TOKEN_REMAINING_SECONDS = 30;
+export const PROVIDER_TOKEN_MAX_LIFETIME_MS = 30 * 60 * 1000;
+export const NEW_SESSION_START_WINDOW_MS = 60 * 1000;
+
+export class VoiceTokenTimingError extends Error {
+  readonly statusCode: number;
+  readonly reason: "renewal_unavailable" | "connection_failed";
+
+  constructor(
+    message: string,
+    statusCode: number,
+    reason: "renewal_unavailable" | "connection_failed",
+  ) {
+    super(message);
+    this.name = "VoiceTokenTimingError";
+    this.statusCode = statusCode;
+    this.reason = reason;
+  }
+}
 
 const getGeminiLiveModel = () =>
   process.env.GEMINI_LIVE_MODEL?.trim() || DEFAULT_GEMINI_LIVE_MODEL;
@@ -78,7 +97,60 @@ export const getGeminiLiveConstraintConfig = (shadowNotes = "") => ({
   },
 });
 
-export async function createGeminiLiveEphemeralToken(shadowNotes = "") {
+type CreateGeminiLiveEphemeralTokenOptions = {
+  shadowNotes?: string;
+  reservationExpiresAt: string;
+};
+
+const getConstrainedTokenTimes = (reservationExpiresAt: string, now = Date.now()) => {
+  if (
+    typeof reservationExpiresAt !== "string" ||
+    !reservationExpiresAt.includes("T")
+  ) {
+    throw new VoiceTokenTimingError(
+      "Voice reservation expiry is invalid.",
+      500,
+      "connection_failed",
+    );
+  }
+
+  const reservationExpiryMs = Date.parse(reservationExpiresAt);
+  if (!Number.isFinite(reservationExpiryMs)) {
+    throw new VoiceTokenTimingError(
+      "Voice reservation expiry is invalid.",
+      500,
+      "connection_failed",
+    );
+  }
+
+  const remainingMs = reservationExpiryMs - now;
+  if (remainingMs < MIN_TOKEN_REMAINING_SECONDS * 1000) {
+    throw new VoiceTokenTimingError(
+      "This Voice reservation is nearly complete.",
+      409,
+      "renewal_unavailable",
+    );
+  }
+
+  const effectiveExpiryMs = Math.min(
+    reservationExpiryMs,
+    now + PROVIDER_TOKEN_MAX_LIFETIME_MS,
+  );
+  const effectiveNewSessionExpiryMs = Math.min(
+    now + NEW_SESSION_START_WINDOW_MS,
+    effectiveExpiryMs,
+  );
+
+  return {
+    expireTime: new Date(effectiveExpiryMs).toISOString(),
+    newSessionExpireTime: new Date(effectiveNewSessionExpiryMs).toISOString(),
+  };
+};
+
+export async function createGeminiLiveEphemeralToken({
+  shadowNotes = "",
+  reservationExpiresAt,
+}: CreateGeminiLiveEphemeralTokenOptions) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("Gemini Live is not configured on the server.");
@@ -87,12 +159,13 @@ export async function createGeminiLiveEphemeralToken(shadowNotes = "") {
   const model = getGeminiLiveModel();
   const maxMinutes = getVoiceSessionMaxMinutes();
   const client = new GoogleGenAI({ apiKey });
-  const now = Date.now();
+  const { expireTime, newSessionExpireTime } =
+    getConstrainedTokenTimes(reservationExpiresAt);
   const token = await client.authTokens.create({
     config: {
       uses: 1,
-      expireTime: new Date(now + 30 * 60 * 1000).toISOString(),
-      newSessionExpireTime: new Date(now + 60 * 1000).toISOString(),
+      expireTime,
+      newSessionExpireTime,
       liveConnectConstraints: {
         model,
         config: getGeminiLiveConstraintConfig(shadowNotes),
@@ -108,6 +181,6 @@ export async function createGeminiLiveEphemeralToken(shadowNotes = "") {
     token: token.name,
     model,
     maxMinutes,
-    expiresAt: new Date(now + 30 * 60 * 1000).toISOString(),
+    expiresAt: expireTime,
   };
 }

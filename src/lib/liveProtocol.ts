@@ -6,6 +6,55 @@ type RealtimeInputSession = {
   sendRealtimeInput: (params: { audioStreamEnd?: boolean }) => void;
 };
 
+type LiveTokenTiming = {
+  expiresAt?: string;
+  reservationExpiresAt?: string;
+};
+
+export const isLiveTokenTimingValid = (
+  { expiresAt, reservationExpiresAt }: LiveTokenTiming,
+  now = Date.now(),
+) => {
+  const tokenExpiry = typeof expiresAt === "string" ? Date.parse(expiresAt) : Number.NaN;
+  const reservationExpiry =
+    typeof reservationExpiresAt === "string"
+      ? Date.parse(reservationExpiresAt)
+      : Number.NaN;
+  return (
+    Number.isFinite(tokenExpiry) &&
+    Number.isFinite(reservationExpiry) &&
+    tokenExpiry > now &&
+    reservationExpiry > now &&
+    tokenExpiry <= reservationExpiry
+  );
+};
+
+export const guardLiveTokenTiming = (
+  timing: LiveTokenTiming,
+  onInvalid: () => void,
+  now = Date.now(),
+) => {
+  if (isLiveTokenTimingValid(timing, now)) return true;
+  onInvalid();
+  return false;
+};
+
+export const getLiveSessionDurationMs = ({
+  remainingSeconds,
+  maxMinutes,
+}: {
+  remainingSeconds?: number;
+  maxMinutes?: number;
+}) => {
+  const fallbackSeconds = Math.max(60, Math.min(900, Number(maxMinutes || 10) * 60));
+  const serverRemainingSeconds = Number(remainingSeconds);
+  const effectiveSeconds =
+    Number.isFinite(serverRemainingSeconds) && serverRemainingSeconds > 0
+      ? Math.max(1, Math.min(900, Math.floor(serverRemainingSeconds)))
+      : fallbackSeconds;
+  return effectiveSeconds * 1_000;
+};
+
 export const mergeLiveTranscript = (current: string, next: string) => {
   const normalizedNext = next.trim().replace(/\s+/g, " ");
   if (!normalizedNext) return current;

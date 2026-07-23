@@ -35,8 +35,23 @@ vi.mock("../server-security", () => ({
 vi.mock("../live-api", () => ({
   createGeminiLiveEphemeralToken: createToken,
   getVoiceSessionConfig: () => ({ maxMinutes: 10 }),
+  VoiceTokenTimingError: class VoiceTokenTimingError extends Error {
+    statusCode: number;
+    reason: "renewal_unavailable" | "connection_failed";
+
+    constructor(
+      message: string,
+      statusCode: number,
+      reason: "renewal_unavailable" | "connection_failed",
+    ) {
+      super(message);
+      this.statusCode = statusCode;
+      this.reason = reason;
+    }
+  },
 }));
 
+import { VoiceTokenTimingError } from "../live-api";
 import tokenHandler from "../api/live/token";
 
 const createResponse = () => {
@@ -82,7 +97,12 @@ describe("Gemini Live token endpoint", () => {
     });
     security.finalizeRenewal.mockResolvedValue(undefined);
     security.rollbackRenewal.mockResolvedValue(undefined);
-    createToken.mockResolvedValue({ token: "ephemeral", model: "live", maxMinutes: 10 });
+    createToken.mockResolvedValue({
+      token: "ephemeral",
+      model: "live",
+      maxMinutes: 10,
+      expiresAt: "2026-07-23T12:00:00.000Z",
+    });
   });
 
   afterEach(() => {
@@ -97,6 +117,10 @@ describe("Gemini Live token endpoint", () => {
       body: { reservationHandle: "existing-opaque-handle" },
     }, response);
     expect(security.claimRenewal).toHaveBeenCalledWith("user-1", "b".repeat(64));
+    expect(createToken).toHaveBeenCalledWith({
+      shadowNotes: "Prefers short prayers.",
+      reservationExpiresAt: "2026-07-23T12:00:00.000Z",
+    });
     expect(security.acquire).not.toHaveBeenCalled();
     expect(security.finalizeRenewal).toHaveBeenCalledWith("user-1", "c".repeat(64));
     expect(response.body).toMatchObject({
@@ -125,11 +149,19 @@ describe("Gemini Live token endpoint", () => {
       token: "ephemeral",
       model: "live",
       maxMinutes: 10,
+      expiresAt: "2026-07-23T12:00:00.000Z",
       reservationHandle: "opaque-reservation-handle",
       reservationExpiresAt: "2026-07-23T12:00:00.000Z",
       remainingSeconds: 600,
     });
     expect(response.body).not.toHaveProperty("leaseId");
+    expect(Date.parse((response.body as { expiresAt: string }).expiresAt)).toBeLessThanOrEqual(
+      Date.parse((response.body as { reservationExpiresAt: string }).reservationExpiresAt),
+    );
+    expect(createToken).toHaveBeenCalledWith({
+      shadowNotes: "Prefers short prayers.",
+      reservationExpiresAt: "2026-07-23T12:00:00.000Z",
+    });
   });
 
   it("cancels only the unstarted lease when token creation fails", async () => {
@@ -141,5 +173,31 @@ describe("Gemini Live token endpoint", () => {
       "11111111-1111-4111-8111-111111111111",
     );
     expect(response.statusCode).toBe(500);
+  });
+
+  it("returns a stable 409 and rolls back when a renewal is nearly expired", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const timingError = new VoiceTokenTimingError(
+      "This Voice reservation is nearly complete.",
+      409,
+      "renewal_unavailable",
+    );
+    createToken.mockRejectedValueOnce(timingError);
+    const response = createResponse();
+
+    await tokenHandler({
+      method: "POST",
+      headers: {},
+      body: { reservationHandle: "existing-opaque-handle" },
+    }, response);
+
+    expect(security.rollbackRenewal).toHaveBeenCalledWith("user-1", "c".repeat(64));
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toEqual({
+      error: "This Voice reservation is nearly complete.",
+      reason: "renewal_unavailable",
+    });
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });

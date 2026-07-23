@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createInitialHistoryPayload,
   getLiveReconnectDelay,
+  getLiveSessionDurationMs,
+  guardLiveTokenTiming,
+  isLiveTokenTimingValid,
   mergeLiveTranscript,
   shouldReconnectLiveSession,
   shouldResumeListeningAfterPlayback,
@@ -76,5 +79,35 @@ describe("Gemini Live protocol helpers", () => {
     expect(shouldReconnectLiveSession(2, 2)).toBe(false);
     expect(getLiveReconnectDelay(1)).toBe(700);
     expect(getLiveReconnectDelay(2)).toBe(1_400);
+  });
+
+  it("accepts only live token timing bounded by the reservation", () => {
+    const now = Date.parse("2026-07-23T11:50:00.000Z");
+    expect(isLiveTokenTimingValid({
+      expiresAt: "2026-07-23T11:59:00.000Z",
+      reservationExpiresAt: "2026-07-23T12:00:00.000Z",
+    }, now)).toBe(true);
+    expect(isLiveTokenTimingValid({
+      expiresAt: "2026-07-23T12:01:00.000Z",
+      reservationExpiresAt: "2026-07-23T12:00:00.000Z",
+    }, now)).toBe(false);
+  });
+
+  it("rejects an expired token response and invokes audio cleanup", () => {
+    const releaseAudio = vi.fn();
+    const accepted = guardLiveTokenTiming({
+      expiresAt: "2026-07-23T11:49:59.000Z",
+      reservationExpiresAt: "2026-07-23T12:00:00.000Z",
+    }, releaseAudio, Date.parse("2026-07-23T11:50:00.000Z"));
+
+    expect(accepted).toBe(false);
+    expect(releaseAudio).toHaveBeenCalledOnce();
+  });
+
+  it("uses reservation remainingSeconds for the client session timer", () => {
+    expect(getLiveSessionDurationMs({
+      remainingSeconds: 45,
+      maxMinutes: 10,
+    })).toBe(45_000);
   });
 });

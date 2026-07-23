@@ -15,7 +15,7 @@ import {
   syncNativeSubscription,
   transcribeAudio,
 } from './server-api';
-import { createGeminiLiveEphemeralToken } from './live-api';
+import liveTokenHandler from './api/live/token';
 import { createShadowNotes, type ChatMessage } from './chat-api';
 import {
   assertStringLength,
@@ -76,21 +76,21 @@ const localApiPlugin = () => ({
         }
 
         try {
-          const { userId, ip } = await requireAuthenticatedRequest(req);
-          await enforceRateLimits([
-            { key: `live-token:user:${userId}`, limit: 20 },
-            { key: `live-token:ip:${ip}`, limit: 40 },
-          ]);
-          sendJson(res, 200, await createGeminiLiveEphemeralToken());
-        } catch (error) {
-          console.error('Vite local API Gemini Live token error:', error instanceof Error ? error.message : error);
-          const details = getHttpErrorDetails(error);
-          if (details.retryAfterSeconds) res.setHeader('Retry-After', String(details.retryAfterSeconds));
-          sendJson(res, details.statusCode, {
-            error: details.statusCode === 500
-              ? 'Voice is temporarily unavailable. You can continue in Chat.'
-              : details.message,
+          const request = Object.assign(req, { body: await readJsonBody(req) });
+          const response = Object.assign(res, {
+            status(statusCode: number) {
+              res.statusCode = statusCode;
+              return response;
+            },
+            json(data: unknown) {
+              sendJson(res, res.statusCode || 200, data);
+              return response;
+            },
           });
+          await liveTokenHandler(request, response);
+        } catch (error) {
+          console.error('Vite local Voice token adapter error:', error instanceof Error ? error.message : error);
+          sendJson(res, 500, { error: 'Voice is temporarily unavailable. You can continue in Chat.' });
         }
         return;
       }

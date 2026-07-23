@@ -13,7 +13,7 @@ import {
   syncNativeSubscription,
   transcribeAudio,
 } from "./server-api";
-import { createGeminiLiveEphemeralToken } from "./live-api";
+import liveTokenHandler from "./api/live/token";
 import { createShadowNotes, type ChatMessage } from "./chat-api";
 import {
   assertStringLength,
@@ -34,25 +34,7 @@ app.get("/api/status", (_req, res) => {
   res.json(getApiStatus());
 });
 
-app.post("/api/live/token", async (req, res) => {
-  try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
-    await enforceRateLimits([
-      { key: `live-token:user:${userId}`, limit: 20 },
-      { key: `live-token:ip:${ip}`, limit: 40 },
-    ]);
-    res.json(await createGeminiLiveEphemeralToken());
-  } catch (error) {
-    console.error("Gemini Live token request failed:", error instanceof Error ? error.message : error);
-    const details = getHttpErrorDetails(error);
-    if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
-    res.status(details.statusCode).json({
-      error: details.statusCode === 500
-        ? "Voice is temporarily unavailable. You can continue in Chat."
-        : details.message,
-    });
-  }
-});
+app.post("/api/live/token", liveTokenHandler);
 
 app.post("/api/live/shadow-notes", async (req, res) => {
   try {
