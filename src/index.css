@@ -506,6 +506,10 @@
     pointer-events: none;
   }
 
+  :root.dark[data-design="nocturne"] .app-atmosphere {
+    opacity: 0;
+  }
+
   .app-orb {
     position: absolute;
     border-radius: 999px;
@@ -716,6 +720,13 @@
     background-color: #dfeaf6;
   }
 
+  :root.dark[data-design="nocturne"] .voice-page {
+    background-image:
+      linear-gradient(180deg, rgba(5, 11, 20, 0.28) 0%, rgba(5, 11, 20, 0.04) 42%, rgba(5, 11, 20, 0.28) 100%),
+      url("./assets/voice-sanctuary-bg-dark.webp");
+    background-blend-mode: normal;
+  }
+
   .voice-page .voice-scroll-region {
     overflow: hidden;
     overscroll-behavior: none;
@@ -782,6 +793,17 @@
     border-color: color-mix(in srgb, var(--app-card-border) 90%, transparent);
   }
 
+  :root.dark[data-design="nocturne"] .voice-page .voice-mode-row > div > div,
+  :root.dark[data-design="nocturne"] .voice-page .voice-privacy-pill,
+  :root.dark[data-design="nocturne"] .voice-page .voice-transcript,
+  :root.dark[data-design="nocturne"] .voice-page .voice-session-notice {
+    background-color: rgba(8, 14, 24, 0.78) !important;
+  }
+
+  :root.dark[data-design="nocturne"] .voice-page .voice-control-button {
+    background-color: rgba(8, 14, 24, 0.74);
+  }
+
   .voice-page .voice-end-button {
     background-color: color-mix(in srgb, var(--app-danger-soft) 74%, transparent);
   }
@@ -804,6 +826,16 @@
     border-color: color-mix(in srgb, var(--app-card-border) 92%, transparent);
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
     backdrop-filter: blur(18px);
+  }
+
+  :root.dark[data-design="nocturne"] .backdrop-blur-sm,
+  :root.dark[data-design="nocturne"] .backdrop-blur-md,
+  :root.dark[data-design="nocturne"] .backdrop-blur-xl,
+  :root.dark[data-design="nocturne"] .backdrop-blur-2xl,
+  :root.dark[data-design="nocturne"] .backdrop-blur-\[2px\],
+  :root.dark[data-design="nocturne"] .voice-session-close {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
   }
 
   .voice-session-close:hover {
