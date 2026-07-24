@@ -500,7 +500,7 @@
   }
 
   .app-shell.app-home-shell {
-    border-color: transparent;
+    border: 0 !important;
     box-shadow: none !important;
   }
 
