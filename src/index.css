@@ -499,6 +499,11 @@
     z-index: -1;
   }
 
+  .app-shell:has(.voice-page) {
+    border-color: transparent;
+    box-shadow: none !important;
+  }
+
   .app-atmosphere {
     position: absolute;
     inset: 0;
