@@ -715,7 +715,7 @@
 
   :root.light .voice-page {
     background-image:
-      linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 18%, transparent) 0%, color-mix(in srgb, var(--bg-base) 4%, transparent) 42%, color-mix(in srgb, var(--bg-base) 12%, transparent) 72%, color-mix(in srgb, var(--bg-base) 42%, transparent) 100%),
+      linear-gradient(180deg, rgba(28, 55, 82, 0.1) 0%, rgba(28, 55, 82, 0.05) 42%, rgba(28, 55, 82, 0.1) 72%, rgba(20, 39, 61, 0.18) 100%),
       url("./assets/voice-sanctuary-bg-light.webp");
     background-color: #dfeaf6;
   }
