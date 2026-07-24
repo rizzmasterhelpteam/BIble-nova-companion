@@ -120,6 +120,7 @@ export default function Layout() {
   const isAccountBusy = isDeletingAccount || isSavingProfile || isProcessingAvatar;
   const nativeControlsAvailable = isNativePlatform();
   const isAndroidApp = nativeControlsAvailable && getNativePlatform() === "android";
+  const isHomeRoute = location.pathname === "/";
   const hideGlobalChrome = isVoiceSessionActive && location.pathname === "/";
   const hideBottomNavigation = shouldHideBottomNavigation(isKeyboardOpen) || hideGlobalChrome;
   const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "1.1.4";
@@ -333,6 +334,7 @@ export default function Layout() {
         className={cn(
           "app-shell relative flex h-full w-full min-h-0 flex-col overflow-hidden ring-1 sm:max-w-lg sm:rounded-shell sm:ring-[color:var(--app-shell-ring)] xl:max-w-xl",
           isCompactPhone && "sm:max-w-md",
+          isHomeRoute && "app-home-shell",
           hideGlobalChrome && "voice-session-shell",
         )}
         style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 0px)" }}

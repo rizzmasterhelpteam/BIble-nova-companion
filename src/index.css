@@ -499,7 +499,7 @@
     z-index: -1;
   }
 
-  .app-shell:has(.voice-page) {
+  .app-shell.app-home-shell {
     border-color: transparent;
     box-shadow: none !important;
   }
