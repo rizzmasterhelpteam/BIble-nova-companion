@@ -4,6 +4,7 @@ import {
   Modality,
   ThinkingLevel,
 } from "@google/genai";
+import { GEMINI_LIVE_API_VERSION } from "./shared/liveConfig.js";
 
 export const DEFAULT_GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview";
 export const DEFAULT_VOICE_SESSION_MAX_MINUTES = 10;
@@ -158,7 +159,10 @@ export async function createGeminiLiveEphemeralToken({
 
   const model = getGeminiLiveModel();
   const maxMinutes = getVoiceSessionMaxMinutes();
-  const client = new GoogleGenAI({ apiKey });
+  const client = new GoogleGenAI({
+    apiKey,
+    httpOptions: { apiVersion: GEMINI_LIVE_API_VERSION },
+  });
   const { expireTime, newSessionExpireTime } =
     getConstrainedTokenTimes(reservationExpiresAt);
   const token = await client.authTokens.create({

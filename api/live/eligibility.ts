@@ -11,7 +11,7 @@ import { getVoiceSessionConfig } from "../../live-api.js";
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
   res.setHeader?.("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Voice-Reservation");
+  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Voice-Reservation, X-Client-Request-Id");
 };
 
 export default async function handler(req: any, res: any) {

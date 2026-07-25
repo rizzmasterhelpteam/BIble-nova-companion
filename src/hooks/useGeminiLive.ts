@@ -5,6 +5,7 @@ import type {
 } from "@google/genai";
 import { apiFetch } from "../lib/apiClient";
 import { isNativePlatform } from "../lib/native/platform";
+import { refreshNativeSubscriptionEntitlement } from "../lib/native/subscriptionSync";
 import {
   createInitialHistoryPayload,
   getLiveReconnectDelay,
@@ -16,6 +17,7 @@ import {
   signalAudioStreamEnd,
 } from "../lib/liveProtocol";
 import type { ConversationMessage, VoiceState } from "../types/live";
+import { GEMINI_LIVE_API_VERSION } from "../../shared/liveConfig";
 
 type LiveTokenResponse = {
   token?: string;
@@ -372,6 +374,9 @@ export function useGeminiLive({
     }
 
     try {
+      const activatedAudioContext = audioContextRef.current || getAudioContext();
+      audioContextRef.current = activatedAudioContext;
+      await activatedAudioContext.resume();
       setState("requesting-permission");
       const knownExpiry = reservationExpiresAtRef.current
         ? Date.parse(reservationExpiresAtRef.current)
@@ -382,6 +387,15 @@ export function useGeminiLive({
         onReservationChange(null);
       }
       const reservationHandle = reservationHandleRef.current;
+      if (!isReconnect && isNativePlatform()) {
+        setSessionNotice("Your subscription is being refreshed.");
+        await refreshNativeSubscriptionEntitlement().catch((syncError) => {
+          console.warn("Native subscription refresh did not complete", {
+            message: syncError instanceof Error ? syncError.message : "Unknown subscription refresh error.",
+          });
+        });
+        setSessionNotice(null);
+      }
       const eligibilityResponse = await apiFetch("/api/live/eligibility", {
         method: "GET",
         headers: reservationHandle
@@ -467,7 +481,7 @@ export function useGeminiLive({
       const { GoogleGenAI, Modality } = await import("@google/genai");
       const client = new GoogleGenAI({
         apiKey: data.token,
-        httpOptions: { apiVersion: "v1alpha" },
+        httpOptions: { apiVersion: GEMINI_LIVE_API_VERSION },
       });
       const liveConfig: Gemini31LiveConnectConfig = {
         responseModalities: [Modality.AUDIO],
@@ -543,14 +557,34 @@ export function useGeminiLive({
               if (!playbackSourcesRef.current.length) setState("listening");
             }
           },
-          onerror: () => handleConnectionFailure(
-            session,
-            "Voice is temporarily unavailable. You can continue in Chat.",
-          ),
-          onclose: () => {
+          onerror: (event) => {
+            const details = event as { name?: string; message?: string };
+            console.warn("Gemini Live connection error", {
+              name: details?.name || "LiveConnectionError",
+              message: details?.message || "No provider message was supplied.",
+              apiVersion: GEMINI_LIVE_API_VERSION,
+              model: data.model,
+            });
             handleConnectionFailure(
               session,
-              "The voice connection ended. You can try again or continue in Chat.",
+              details?.message
+                ? `Voice connection failed: ${details.message}`
+                : "Voice is temporarily unavailable. You can continue in Chat.",
+            );
+          },
+          onclose: (event) => {
+            const details = event as { code?: number; reason?: string };
+            console.warn("Gemini Live connection closed", {
+              code: details?.code ?? null,
+              reason: details?.reason || "No close reason was supplied.",
+              apiVersion: GEMINI_LIVE_API_VERSION,
+              model: data.model,
+            });
+            handleConnectionFailure(
+              session,
+              details?.reason
+                ? `The voice connection ended: ${details.reason}`
+                : "The voice connection ended. You can try again or continue in Chat.",
             );
           },
         },
@@ -560,9 +594,9 @@ export function useGeminiLive({
       const initialHistory = createInitialHistoryPayload(history);
       if (initialHistory) session.sendClientContent(initialHistory);
 
-      const audioContext = getAudioContext();
+      const audioContext = audioContextRef.current || getAudioContext();
       audioContextRef.current = audioContext;
-      await audioContext.resume();
+      if (audioContext.state !== "running") await audioContext.resume();
       const source = audioContext.createMediaStreamSource(stream);
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       const muteGain = audioContext.createGain();

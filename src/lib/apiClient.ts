@@ -24,6 +24,12 @@ export const apiFetch = async (path: string, init: RequestInit = {}) => {
   }
 
   const headers = new Headers(init.headers);
+  if (
+    !headers.has("X-Client-Request-Id") &&
+    (path === "/api/transcribe" || path.startsWith("/api/live/"))
+  ) {
+    headers.set("X-Client-Request-Id", crypto.randomUUID());
+  }
   if (!headers.has("Authorization") && isSupabaseConfigured) {
     const { data } = await supabase.auth.getSession();
     const accessToken = data.session?.access_token;
