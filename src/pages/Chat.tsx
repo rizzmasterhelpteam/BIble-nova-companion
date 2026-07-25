@@ -1184,7 +1184,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
                   onClick={() => {
                     void toggleRecording();
                   }}
-                  disabled={isTyping || chatUnavailable}
+                  disabled={isTyping}
                   className={cn("touch-target relative flex h-[38px] w-[38px] items-center justify-center rounded-full border transition-all duration-300 active:scale-[0.97] shadow-sm", isTyping && "cursor-not-allowed opacity-50")}
                   style={{
                     background: "var(--app-danger-soft)",
