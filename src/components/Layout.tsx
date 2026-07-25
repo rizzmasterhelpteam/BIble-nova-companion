@@ -291,7 +291,7 @@ export default function Layout() {
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.style.overflow = "hidden";
 
-    window.requestAnimationFrame(() => {
+    const focusFrame = window.requestAnimationFrame(() => {
       const firstFocusable = settingsDialogRef.current?.querySelector(
         "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
       ) as HTMLElement | null;
@@ -326,6 +326,7 @@ export default function Layout() {
     return () => {
       document.body.style.overflow = originalOverflow;
       window.removeEventListener("keydown", handleKeyDown);
+      window.cancelAnimationFrame(focusFrame);
       (settingsTriggerRef.current ?? previouslyFocused)?.focus();
     };
   }, [settingsOpen]);

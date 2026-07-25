@@ -19,7 +19,6 @@ const DEFAULT_ANDROID_SUBSCRIPTION_CONFIG: Record<SubscriptionPlan, Subscription
   monthly: {
     productId: "biblenova",
     androidBasePlanId: "monthly",
-    androidOfferId: "trial",
   },
   yearly: {
     productId: "biblenovayearly",
@@ -105,8 +104,7 @@ const getSubscriptionConfigs = () => ({
       normalizeConfigValue(import.meta.env.VITE_IAP_MONTHLY_BASE_PLAN_ID) ||
       DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.monthly.androidBasePlanId,
     androidOfferId:
-      normalizeConfigValue(import.meta.env.VITE_IAP_MONTHLY_OFFER_ID) ||
-      DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.monthly.androidOfferId,
+      normalizeConfigValue(import.meta.env.VITE_IAP_MONTHLY_OFFER_ID),
   },
   yearly: {
     productId:
@@ -116,8 +114,7 @@ const getSubscriptionConfigs = () => ({
       normalizeConfigValue(import.meta.env.VITE_IAP_YEARLY_BASE_PLAN_ID) ||
       DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.yearly.androidBasePlanId,
     androidOfferId:
-      normalizeConfigValue(import.meta.env.VITE_IAP_YEARLY_OFFER_ID) ||
-      DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.yearly.androidOfferId,
+      normalizeConfigValue(import.meta.env.VITE_IAP_YEARLY_OFFER_ID),
   },
 });
 
@@ -155,9 +152,9 @@ const selectProductForConfig = (
       (product) => product.identifier === config.androidBasePlanId,
     );
 
-    const preferredOffer = basePlanCandidates.find(
-      (product) => product.offerId === config.androidOfferId,
-    );
+    const preferredOffer = config.androidOfferId
+      ? basePlanCandidates.find((product) => product.offerId === config.androidOfferId)
+      : undefined;
 
     if (preferredOffer) return preferredOffer;
 
@@ -305,7 +302,7 @@ export async function getCurrentOffering(): Promise<SubscriptionOffering | null>
             baseProduct: monthlyBaseProduct,
             productId: configs.monthly.productId,
             androidBasePlanId: configs.monthly.androidBasePlanId || monthlyProduct.identifier,
-            androidOfferId: configs.monthly.androidOfferId,
+            androidOfferId: monthlyProduct.offerId?.trim() || undefined,
               }
             : undefined,
         annual:
@@ -316,7 +313,7 @@ export async function getCurrentOffering(): Promise<SubscriptionOffering | null>
                 baseProduct: yearlyBaseProduct,
                 productId: configs.yearly.productId,
                 androidBasePlanId: configs.yearly.androidBasePlanId || yearlyProduct.identifier,
-                androidOfferId: configs.yearly.androidOfferId,
+                androidOfferId: yearlyProduct.offerId?.trim() || undefined,
               }
             : undefined,
       } satisfies SubscriptionOffering;
@@ -340,9 +337,10 @@ export async function purchasePackage(aPackage: SubscriptionPackage) {
 
   const isAndroid = getNativePlatform() === "android";
   const planIdentifier = isAndroid ? aPackage.androidBasePlanId || aPackage.product.identifier : undefined;
-  const offerId = isAndroid
-    ? aPackage.androidOfferId || aPackage.product.offerId || undefined
-    : undefined;
+  // The selected product is the source of truth. If a configured offer is not
+  // returned by Google Play, selection falls back to the base plan and this
+  // must not keep sending the unavailable configured offer ID.
+  const offerId = isAndroid ? aPackage.product.offerId?.trim() || undefined : undefined;
 
   if (isAndroid && !planIdentifier) {
     throw new Error("Android base plan ID is missing for this subscription.");

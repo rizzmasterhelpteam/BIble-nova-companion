@@ -46,17 +46,17 @@ const questions = [
 
 const getAnalysisSummary = (answers: Record<string, string>) => {
   const reasonById = {
-    stress: "stress and anxiety feel heavy right now",
-    purpose: "you are looking for clearer purpose and direction",
-    healing: "emotional healing is a priority for you",
-    faith: "reconnecting with your faith matters to you",
+    stress: "stress and anxiety",
+    purpose: "purpose and clarity",
+    healing: "emotional healing",
+    faith: "reconnecting with faith",
   } as const;
 
   const goalById = {
-    peace: "find more inner peace",
-    strength: "build stronger resilience",
-    forgiveness: "move toward forgiveness",
-    understanding: "understand yourself more honestly",
+    peace: "more inner peace",
+    strength: "stronger resilience",
+    forgiveness: "forgiveness",
+    understanding: "understanding yourself more honestly",
   } as const;
 
   const supportById = {
@@ -79,7 +79,7 @@ const getAnalysisSummary = (answers: Record<string, string>) => {
   const supportAction = supportActionById[answers.support as keyof typeof supportActionById] ?? "steady spiritual guidance with practical next steps";
 
   return {
-    overview: `We’ll shape your space around ${reason}. You said you’d like to ${goal}, with ${support}.`,
+    overview: `Based on your answers, you may want support with ${reason}, ${goal}, and ${support}.`,
     appResponse: `Bible Nova Companion will meet you with ${supportAction}, scripture-based reflection, and one clear next step.`,
   };
 };
@@ -330,7 +330,7 @@ export default function Onboarding() {
             initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={isPerformanceMode ? { duration: 0 } : { duration: 0.5, delay: 0.44 }}
-            whileHover={isPerformanceMode ? {} : { scale: 1.01, boxShadow: "0 0 50px rgba(255,255,255,0.22)" }}
+            whileHover={isPerformanceMode ? {} : { scale: 1.01, boxShadow: "var(--app-accent-shadow)" }}
             whileTap={isPerformanceMode ? {} : { scale: 0.98 }}
           >
             Enter Bible Nova

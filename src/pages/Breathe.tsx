@@ -40,11 +40,21 @@ export default function Breathe() {
   const phaseDuration = timings[PHASE_LABELS[phase]] * 1000;
   const cycleLength = timings.inhale + timings.hold + timings.exhale;
 
-  const beginSession = () => {
+  const startSession = () => {
+    setPhase("Inhale");
+    setSecondsLeft(timings.inhale);
     setSessionLeft(sessionDuration);
     setIsPaused(false);
     setIsStarted(true);
     setShowSettings(false);
+  };
+
+  const resetSession = () => {
+    setIsStarted(false);
+    setIsPaused(false);
+    setPhase("Inhale");
+    setSecondsLeft(timings.inhale);
+    setSessionLeft(sessionDuration);
   };
 
   const adjust = (key: keyof Timings, delta: number) => {
@@ -77,6 +87,8 @@ export default function Breathe() {
         if (remaining <= 1) {
           setIsStarted(false);
           setIsPaused(false);
+          setPhase("Inhale");
+          setSecondsLeft(timings.inhale);
           return sessionDuration;
         }
         return remaining - 1;
@@ -217,7 +229,7 @@ export default function Breathe() {
           {!isStarted ? (
             <button
               type="button"
-              onClick={beginSession}
+              onClick={startSession}
               className="touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 py-3.5 text-[15px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
             >
               <Play className="h-4 w-4 fill-current" />
@@ -235,11 +247,7 @@ export default function Breathe() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setIsStarted(false);
-                  setIsPaused(false);
-                  setSessionLeft(sessionDuration);
-                }}
+                onClick={resetSession}
                 className="touch-target app-ghost-button inline-flex min-h-12 items-center justify-center rounded-pill px-3 py-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
               >
                 Reset

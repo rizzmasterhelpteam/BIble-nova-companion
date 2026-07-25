@@ -718,7 +718,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
 
     const usesNativeDeviceSpeech = isNativePlatform() && getNativePlatform() === "android";
     if (!usesNativeDeviceSpeech && apiStatus?.speechReady === false) {
-      setSpeechError("Voice input needs GROQ_API_KEY configured on the server.");
+      setSpeechError("Voice transcription is temporarily unavailable. Please try again later.");
       return;
     }
 
