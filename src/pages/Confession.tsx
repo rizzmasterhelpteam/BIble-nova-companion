@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Flame, Wind, Eraser } from "lucide-react";
+import { Flame, Wind, Eraser, LockKeyhole } from "lucide-react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import PageHeader from "../components/PageHeader";
@@ -75,11 +75,16 @@ export default function Confession() {
       )}
     >
       <PageHeader
-        eyebrow="Unburden"
+        eyebrow="Release"
         title="Let it go"
         description="Write down what feels heavy. When you are ready, release it and let it disappear."
         className={cn("relative z-40", isCrampedPhone ? "mb-3" : isShortPhone ? "mb-5" : "mb-6 sm:mb-10")}
       />
+
+      <p className="app-muted mx-auto mb-4 flex max-w-[30rem] items-center justify-center gap-2 px-2 text-center text-xs leading-relaxed sm:mb-6">
+        <LockKeyhole className="app-accent h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        This note stays in this temporary field and is not saved to your account.
+      </p>
 
       <AnimatePresence mode="wait">
         {!isDone ? (
@@ -256,7 +261,7 @@ export default function Confession() {
                 isCrampedPhone ? "py-3.5" : isCompactPhone ? "py-4" : "py-5",
                 isReleasing
                   ? "app-secondary-button"
-                  : "app-primary-button text-white disabled:opacity-40",
+                : "app-primary-button disabled:opacity-40",
               )}
             >
               {isReleasing ? (

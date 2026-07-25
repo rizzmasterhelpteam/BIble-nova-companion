@@ -170,7 +170,13 @@ const ChatMessage = React.memo(function ChatMessage({
                       background: "var(--app-danger-soft)",
                       borderColor: "color-mix(in srgb, var(--app-danger) 18%, transparent)",
                     }
-                  : { color: "var(--app-text)" }
+                  : {
+                      color: "var(--app-text)",
+                      background: "var(--app-card-soft)",
+                      border: "1px solid var(--app-card-border)",
+                      borderRadius: "1.35rem",
+                      padding: "0.85rem 1rem",
+                    }
               }
             >
               {message.content}
@@ -198,7 +204,28 @@ const ChatMessage = React.memo(function ChatMessage({
                 </div>
               </motion.div>
             )}
-            {!isError && <div className="flex items-center gap-1"><button type="button" onClick={() => void navigator.clipboard?.writeText(message.content)} className="touch-target app-ghost-button inline-flex items-center gap-1.5 rounded-pill px-3 py-2 text-xs"><Copy className="h-3.5 w-3.5" />Copy</button>{voiceSupported && <button type="button" onClick={() => onSpeak(message)} className="touch-target app-ghost-button inline-flex items-center gap-1.5 rounded-pill px-3 py-2 text-xs">{speakingMessageId === message.id ? <Square className="h-3.5 w-3.5 fill-current" /> : <Volume2 className="h-3.5 w-3.5" />}{speakingMessageId === message.id ? "Stop" : "Listen"}</button>}</div>}
+            {!isError && (
+              <div className="mt-1 flex items-center gap-1 border-t pt-1" style={{ borderColor: "var(--app-divider)" }}>
+                <button
+                  type="button"
+                  onClick={() => void navigator.clipboard?.writeText(message.content)}
+                  className="touch-target app-ghost-button inline-flex items-center gap-1.5 rounded-pill px-3 py-2 text-xs"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy
+                </button>
+                {voiceSupported && (
+                  <button
+                    type="button"
+                    onClick={() => onSpeak(message)}
+                    className="touch-target app-ghost-button inline-flex items-center gap-1.5 rounded-pill px-3 py-2 text-xs"
+                  >
+                    {speakingMessageId === message.id ? <Square className="h-3.5 w-3.5 fill-current" /> : <Volume2 className="h-3.5 w-3.5" />}
+                    {speakingMessageId === message.id ? "Stop" : "Listen"}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -210,14 +237,10 @@ const ChatMessage = React.memo(function ChatMessage({
             isCompactPhone ? "max-w-[90%] px-5 py-3.5" : "max-w-[85%] px-6 py-4",
           )}
           style={{
-            background: "color-mix(in srgb, var(--app-card-strong) 92%, transparent)",
+            background: "var(--app-accent-soft)",
             color: "var(--app-heading)",
             borderColor: "color-mix(in srgb, var(--app-card-border) 60%, transparent)",
-            boxShadow: [
-              "inset 0 1px 0 0 color-mix(in srgb, white 14%, transparent)",
-              "inset 0 0 0 0.5px color-mix(in srgb, white 6%, transparent)",
-              "0 8px 24px rgba(0,0,0,0.08)",
-            ].join(", "),
+            boxShadow: "none",
           }}
         >
           {message.content}
@@ -907,7 +930,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
               </p>
             </div>
             <p className="app-heading text-sm leading-relaxed">
-              Chat is disabled until you add `GROQ_API_KEY` to your environment.
+              Chat is temporarily unavailable. Please try again in a moment.
             </p>
           </motion.div>
         )}
@@ -995,7 +1018,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
                 : isTranscribingSpeech
                 ? "Transcribing your speech..."
                 : chatUnavailable
-                ? "Chat will unlock after the required API key is configured."
+                ? "Chat is temporarily unavailable."
                 : ""}
             </p>
           )}</div>
@@ -1068,7 +1091,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
                   onClick={() => handleSend(input)}
                   disabled={isTyping || chatUnavailable || isTranscribingSpeech}
                   className={cn(
-                    "touch-target app-primary-button flex h-[38px] w-[38px] items-center justify-center rounded-full text-white transition-all active:scale-95",
+                    "touch-target app-primary-button flex h-[38px] w-[38px] items-center justify-center rounded-full transition-all active:scale-95",
                     isTyping && "cursor-not-allowed opacity-50 grayscale",
                   )}
                   style={{

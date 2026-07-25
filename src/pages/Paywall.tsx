@@ -289,9 +289,9 @@ export default function Paywall() {
   };
 
   const features = [
-    { text: "Unlimited scripture-grounded reflections", icon: <BookOpen className="w-5 h-5" style={{ color: "#f59e0b" }} /> },
-    { text: "Personalized prayers & practical steps", icon: <HeartHandshake className="w-5 h-5" style={{ color: "#f43f5e" }} /> },
-    { text: "A private, distraction-free space", icon: <Lock className="w-5 h-5" style={{ color: "#10b981" }} /> },
+    { text: "Unlimited scripture-grounded reflections", icon: <BookOpen className="app-accent h-5 w-5" /> },
+    { text: "Personalized prayers & practical steps", icon: <HeartHandshake className="app-accent h-5 w-5" /> },
+    { text: "A private, distraction-free space", icon: <Lock className="app-accent h-5 w-5" /> },
   ];
 
   const yearlyMonthly = useMemo(() => {
@@ -299,8 +299,9 @@ export default function Paywall() {
     return "≈ $7.50/mo";
   }, [nativeStoreAvailable, iapPackages.yearly]);
 
-  // Show pricing UI on web for preview/demo — only gate subscribe action on native
-  const showPricingCards = true;
+  // Google Play is the only supported billing surface today. Keep the web
+  // screen informative without presenting pricing cards that cannot be bought.
+  const showPricingCards = nativeStoreAvailable;
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -314,8 +315,8 @@ export default function Paywall() {
 
   return (
     <div
-      className="relative w-full text-white"
-      style={{ minHeight: "100dvh", overflowY: "auto", overflowX: "hidden", background: "#0F0F12" }}
+      className="paywall-screen app-screen-scroll relative w-full"
+      style={{ minHeight: "100dvh", overflowX: "hidden" }}
     >
       {/* Blurred infinite orbs are desktop-only; they cause sustained GPU work on touch devices. */}
       {!isPerformanceMode && (
@@ -350,17 +351,15 @@ export default function Paywall() {
         >
           {/* Header Section */}
           <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="flex flex-col items-center text-center mb-8">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase mb-4 text-amber-400"
-              style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.22)" }}>
+            <span className="app-accent-badge inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold tracking-widest uppercase mb-4">
               <Sparkles className="w-3.5 h-3.5" />
               Bible Nova Premium
             </span>
             
-            <h1 className="text-3xl sm:text-4xl font-serif font-medium mb-3 tracking-tight"
-              style={{ background: "linear-gradient(180deg, #fff, rgba(255,255,255,0.6))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
+            <h1 className="app-heading text-3xl sm:text-4xl font-serif font-medium mb-3 tracking-tight">
               Deepen Your Journey
             </h1>
-            <p className="text-[15px] leading-relaxed max-w-[300px]" style={{ color: "rgba(255,255,255,0.55)" }}>
+            <p className="app-muted text-[15px] leading-relaxed max-w-[300px]">
               Unlock unlimited personalized reflections, prayers, and a distraction-free spiritual sanctuary.
             </p>
           </motion.div>
@@ -369,12 +368,11 @@ export default function Paywall() {
           <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="space-y-3 mb-8">
             {features.map((feature) => (
               <div key={feature.text}
-                className="flex items-center gap-4 rounded-2xl p-4"
-                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <div className="flex-shrink-0 p-2 rounded-xl" style={{ background: "rgba(255,255,255,0.06)" }}>
+                className="app-paywall-panel flex items-center gap-4 rounded-2xl p-4">
+                <div className="flex-shrink-0 rounded-xl p-2" style={{ background: "var(--app-accent-soft)" }}>
                   {feature.icon}
                 </div>
-                <p className="text-sm font-medium" style={{ color: "rgba(255,255,255,0.88)" }}>{feature.text}</p>
+                <p className="app-heading text-sm font-medium">{feature.text}</p>
               </div>
             ))}
           </motion.div>
@@ -382,11 +380,20 @@ export default function Paywall() {
           {/* Android unavailable notice (only shown on web when native store unavailable) */}
           {!nativeStoreAvailable && (
             <motion.div variants={isPerformanceMode ? undefined : itemVariants}
-              className="mb-6 flex items-start gap-3 rounded-2xl p-4"
-              style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.18)" }}>
-              <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-              <p className="text-sm leading-relaxed" style={{ color: "rgba(245,158,11,0.9)" }}>
+              className="app-paywall-panel mb-6 flex items-start gap-3 rounded-2xl p-4">
+              <ShieldCheck className="app-accent mt-0.5 h-5 w-5 shrink-0" />
+              <p className="app-accent text-sm leading-relaxed">
                 Subscriptions are managed via the Android app. Download it on Google Play to subscribe.
+              </p>
+            </motion.div>
+          )}
+
+          {!nativeStoreAvailable && (
+            <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="app-paywall-panel mb-8 rounded-[1.5rem] p-5 text-left">
+              <p className="app-kicker mb-2">Web preview</p>
+              <h2 className="app-heading text-xl font-serif">Your reflection space is ready for Android.</h2>
+              <p className="app-muted mt-2 text-sm leading-relaxed">
+                Premium plans are purchased and restored through Google Play in the Android app. This web view is available for exploring the experience; it will not start a checkout.
               </p>
             </motion.div>
           )}
@@ -402,36 +409,29 @@ export default function Paywall() {
                 role="radio"
                 aria-checked={selectedPlan === "yearly"}
                 className={cn(
-                  "w-full relative flex items-center justify-between p-5 rounded-[1.5rem] text-left transition-all duration-300",
+                  "paywall-plan-card touch-target w-full relative flex items-center justify-between p-5 rounded-[1.5rem] text-left transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]",
                 )}
-                style={{
-                  background: selectedPlan === "yearly" ? "linear-gradient(135deg, rgba(245,158,11,0.14), rgba(245,158,11,0.04))" : "rgba(255,255,255,0.04)",
-                  border: `1px solid ${selectedPlan === "yearly" ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
-                  boxShadow: selectedPlan === "yearly" ? "0 0 30px rgba(245,158,11,0.12)" : "none",
-                }}
               >
                 {selectedPlan === "yearly" && (
                   <motion.div
                     layoutId="plan-outline"
-                    className="absolute inset-0 rounded-[1.5rem] pointer-events-none"
-                    style={{ border: "2px solid rgba(245,158,11,0.9)" }}
+                    className="paywall-plan-outline absolute inset-0 rounded-[1.5rem] pointer-events-none"
                   />
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="font-semibold text-lg text-white">Yearly</span>
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full text-amber-950"
-                      style={{ background: "#f59e0b" }}>
+                    <span className="app-heading font-semibold text-lg">Yearly</span>
+                    <span className="app-accent-badge inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
                       <Star className="w-2.5 h-2.5 fill-current" /> Best Value
                     </span>
                   </div>
                   {yearlyMonthly && (
-                    <p className="text-sm font-medium text-amber-400">{yearlyMonthly} billed annually</p>
+                    <p className="app-accent text-sm font-medium">{yearlyMonthly} billed annually</p>
                   )}
                 </div>
                 <div className="text-right pl-3 shrink-0">
-                  <div className="text-2xl font-bold font-serif text-white">{yearlyPrice}</div>
-                  <div className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>/year</div>
+                  <div className="app-heading text-2xl font-bold font-serif">{yearlyPrice}</div>
+                  <div className="app-muted text-xs">/year</div>
                 </div>
               </button>
 
@@ -442,36 +442,30 @@ export default function Paywall() {
                 onKeyDown={handlePlanKey}
                 role="radio"
                 aria-checked={selectedPlan === "monthly"}
-                className="w-full relative flex items-center justify-between p-5 rounded-[1.5rem] text-left transition-all duration-300"
-                style={{
-                  background: selectedPlan === "monthly" ? "linear-gradient(135deg, rgba(245,158,11,0.14), rgba(245,158,11,0.04))" : "rgba(255,255,255,0.04)",
-                  border: `1px solid ${selectedPlan === "monthly" ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
-                  boxShadow: selectedPlan === "monthly" ? "0 0 30px rgba(245,158,11,0.12)" : "none",
-                }}
+                className="paywall-plan-card touch-target w-full relative flex items-center justify-between p-5 rounded-[1.5rem] text-left transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
               >
                 {selectedPlan === "monthly" && (
                   <motion.div
                     layoutId="plan-outline"
-                    className="absolute inset-0 rounded-[1.5rem] pointer-events-none"
-                    style={{ border: "2px solid rgba(245,158,11,0.9)" }}
+                    className="paywall-plan-outline absolute inset-0 rounded-[1.5rem] pointer-events-none"
                   />
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-lg text-white">Monthly</span>
+                    <span className="app-heading font-semibold text-lg">Monthly</span>
                     {monthlyTrialSelected && (
-                      <span className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-950" style={{ background: "#f59e0b" }}>
+                      <span className="app-accent-badge rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
                         7-day free trial
                       </span>
                     )}
                   </div>
-                  <p className="text-sm mt-1" style={{ color: monthlyTrialSelected ? "#fbbf24" : "rgba(255,255,255,0.45)" }}>
+                  <p className={cn("mt-1 text-sm", monthlyTrialSelected ? "app-accent" : "app-muted")}>
                     {monthlyTrialSelected ? monthlyTrialLabel : "Flexible, cancel anytime"}
                   </p>
                 </div>
                 <div className="text-right pl-3 shrink-0">
-                  <div className="text-2xl font-bold font-serif text-white">{monthlyPrice}</div>
-                  <div className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>/month</div>
+                  <div className="app-heading text-2xl font-bold font-serif">{monthlyPrice}</div>
+                  <div className="app-muted text-xs">/month</div>
                 </div>
               </button>
             </motion.div>
@@ -480,11 +474,10 @@ export default function Paywall() {
           {/* Errors */}
           {(error || iapLoadError || subscriptionSyncError) && (
             <motion.div variants={isPerformanceMode ? undefined : itemVariants}
-              className="mb-6 flex items-start gap-3 rounded-2xl p-4"
-              style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
-              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" style={{ color: "#f87171" }} />
-              <p className="text-sm leading-relaxed" style={{ color: "rgba(248,113,113,0.9)" }}>{error || iapLoadError || subscriptionSyncError}</p>
-              {!error && iapLoadError && <button type="button" onClick={() => { setIapLoadError(null); setOfferingReloadKey((value) => value + 1); }} disabled={isLoadingOffering} className="touch-target shrink-0 rounded-pill px-3 py-2 text-xs font-semibold text-white underline-offset-4 hover:underline disabled:opacity-50">Retry</button>}
+              className="app-danger-panel mb-6 flex items-start gap-3 rounded-2xl p-4">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+              <p className="text-sm leading-relaxed">{error || iapLoadError || subscriptionSyncError}</p>
+              {!error && iapLoadError && <button type="button" onClick={() => { setIapLoadError(null); setOfferingReloadKey((value) => value + 1); }} disabled={isLoadingOffering} className="touch-target shrink-0 rounded-pill px-3 py-2 text-xs font-semibold underline-offset-4 hover:underline disabled:opacity-50">Retry</button>}
             </motion.div>
           )}
 
@@ -494,16 +487,11 @@ export default function Paywall() {
               <button
                 onClick={handleSubscribe}
                 disabled={!canSubscribe}
-                className="relative w-full overflow-hidden group font-bold text-lg rounded-2xl py-4 flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{
-                  background: "linear-gradient(135deg, #f59e0b, #d97706)",
-                  color: "#422006",
-                  boxShadow: "0 8px 30px rgba(245,158,11,0.32)",
-                }}
+                className="app-primary-button touch-target relative w-full overflow-hidden group font-bold text-lg rounded-2xl py-4 flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
               >
                 <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12 pointer-events-none" />
                 {isLoading ? (
-                  <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: "rgba(66,32,6,0.3)", borderTopColor: "#422006" }} />
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-current/25 border-t-current" />
                 ) : isLoadingOffering ? (
                   "Loading..."
                 ) : nativeSelectedPlanUnavailable ? (
@@ -513,25 +501,19 @@ export default function Paywall() {
                 )}
               </button>
 
-              <div className="flex items-center justify-center gap-1.5 text-xs" style={{ color: "rgba(255,255,255,0.42)" }}>
+              <div className="app-muted flex items-center justify-center gap-1.5 text-xs">
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>Secure payment via Google Play. Cancel anytime.</span>
               </div>
 
               <div className="flex items-center justify-center gap-4 pt-1">
-                <button onClick={handleRestorePurchases} disabled={isLoading}
-                  className="text-xs transition-colors"
-                  style={{ color: "rgba(255,255,255,0.42)" }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#fff"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.42)"; }}>
+                <button type="button" onClick={handleRestorePurchases} disabled={isLoading}
+                  className="touch-target app-ghost-button rounded-pill px-3 py-2 text-xs transition-colors disabled:opacity-50">
                   Restore Purchase
                 </button>
-                <div className="w-1 h-1 rounded-full" style={{ background: "rgba(255,255,255,0.2)" }} />
-                <button onClick={handleManageSubscriptions} disabled={isLoading}
-                  className="text-xs transition-colors"
-                  style={{ color: "rgba(255,255,255,0.42)" }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#fff"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.42)"; }}>
+                <div className="h-1 w-1 rounded-full" style={{ background: "var(--app-divider)" }} />
+                <button type="button" onClick={handleManageSubscriptions} disabled={isLoading}
+                  className="touch-target app-ghost-button rounded-pill px-3 py-2 text-xs transition-colors disabled:opacity-50">
                   Manage Billing
                 </button>
               </div>
@@ -540,8 +522,7 @@ export default function Paywall() {
 
           <motion.p
             variants={isPerformanceMode ? undefined : itemVariants}
-            className="text-center text-[10px] mt-8 mb-6 max-w-xs mx-auto leading-relaxed"
-            style={{ color: "rgba(255,255,255,0.25)" }}
+            className="app-soft text-center text-[10px] mt-8 mb-6 max-w-xs mx-auto leading-relaxed"
           >
             By continuing, you agree to our Terms of Service and Privacy Policy. Subscriptions automatically renew unless canceled at least 24 hours before the end of the current period.
           </motion.p>

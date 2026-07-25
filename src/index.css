@@ -400,6 +400,14 @@
     cursor: not-allowed;
   }
 
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 3px;
+  }
+
   #root {
     display: flex;
     flex-direction: column;
@@ -880,6 +888,68 @@
 
   .app-paywall-panel .app-badge-glow {
     box-shadow: 0 12px 30px color-mix(in srgb, var(--app-accent) 18%, transparent);
+  }
+
+  .onboarding-screen,
+  .paywall-screen {
+    isolation: isolate;
+    background: var(--app-page-bg);
+    color: var(--app-text);
+  }
+
+  .onboarding-screen::before,
+  .paywall-screen::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 56% 34% at 50% -8%, color-mix(in srgb, var(--app-accent) 12%, transparent), transparent 74%),
+      radial-gradient(ellipse 42% 30% at 100% 100%, color-mix(in srgb, var(--app-success) 7%, transparent), transparent 78%);
+  }
+
+  .onboarding-surface,
+  .onboarding-choice,
+  .paywall-plan-card {
+    background-color: var(--app-surface-elevated);
+    background-image: var(--app-shell-highlight);
+    border: 1px solid var(--app-card-border);
+    color: var(--app-text);
+  }
+
+  .onboarding-choice {
+    min-height: 4.5rem;
+    transition: border-color 160ms ease, background-color 160ms ease, transform 150ms ease, box-shadow 160ms ease;
+  }
+
+  .onboarding-choice[aria-checked="true"] {
+    border-color: color-mix(in srgb, var(--app-accent) 52%, transparent);
+    background-color: color-mix(in srgb, var(--app-accent-soft) 70%, var(--app-surface-elevated));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-accent) 16%, transparent);
+  }
+
+  .onboarding-progress-track {
+    background: var(--app-divider);
+  }
+
+  .onboarding-progress-fill {
+    background: var(--app-accent-gradient);
+  }
+
+  .onboarding-trust {
+    color: var(--app-text-muted);
+    border-top: 1px solid var(--app-divider);
+  }
+
+  .paywall-plan-card[aria-checked="true"] {
+    border-color: color-mix(in srgb, var(--app-accent) 58%, transparent);
+    background-color: color-mix(in srgb, var(--app-accent-soft) 72%, var(--app-surface-elevated));
+    box-shadow: 0 14px 34px color-mix(in srgb, var(--app-accent) 12%, transparent);
+  }
+
+  .paywall-plan-outline {
+    border: 2px solid color-mix(in srgb, var(--app-accent) 70%, transparent);
   }
 
   .sanctuary-screen {

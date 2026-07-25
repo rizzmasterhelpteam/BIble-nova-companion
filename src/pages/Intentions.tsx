@@ -144,7 +144,7 @@ export default function Intentions() {
           disabled={!newIntention.trim()}
           aria-label="Add intention"
           className={cn(
-            "touch-target app-primary-button flex flex-shrink-0 items-center justify-center rounded-pill text-white transition-all active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]",
+            "touch-target app-primary-button flex flex-shrink-0 items-center justify-center rounded-pill transition-all active:scale-95 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]",
             isCompactPhone ? "h-12 w-12" : "h-14 w-14",
           )}
         >
@@ -192,10 +192,13 @@ export default function Intentions() {
         ))}
 
         {intentions.length === 0 && (
-          <div className="app-panel flex flex-col items-center justify-center rounded-card border border-dashed px-8 py-10 text-center">
+          <div className="app-panel flex flex-col items-center justify-center rounded-card border border-dashed px-8 py-10 text-center" role="status">
             <Heart className="app-soft mb-3 h-8 w-8" />
-            <p className="app-muted font-serif italic">
-              Your intentions list is empty. Take a moment to reflect and add one above.
+            <p className="app-heading max-w-sm font-serif text-lg italic">
+              Make room for one thing you want to carry with care.
+            </p>
+            <p className="app-muted mt-2 max-w-sm text-sm leading-relaxed">
+              Choose a suggestion above or write your own intention. You can edit or remove it whenever you need.
             </p>
           </div>
         )}

@@ -40,6 +40,13 @@ export default function Breathe() {
   const phaseDuration = timings[PHASE_LABELS[phase]] * 1000;
   const cycleLength = timings.inhale + timings.hold + timings.exhale;
 
+  const beginSession = () => {
+    setSessionLeft(sessionDuration);
+    setIsPaused(false);
+    setIsStarted(true);
+    setShowSettings(false);
+  };
+
   const adjust = (key: keyof Timings, delta: number) => {
     setTimings((prev) => {
       const next = { ...prev, [key]: clamp(prev[key] + delta) };
@@ -206,30 +213,56 @@ export default function Breathe() {
           </div>
         </div>
 
-        <div className={cn("mb-4 flex w-full items-center justify-center gap-2", isShortPhone ? "max-w-[320px]" : "max-w-[340px] sm:mb-6")}>
-          <button
-            type="button"
-            onClick={() => setIsPaused((prev) => !prev)}
-            disabled={!isStarted}
-            className="touch-target app-secondary-button inline-flex flex-shrink-0 items-center gap-2 rounded-pill px-3 py-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:px-4 sm:py-3 sm:text-sm"
-          >
-            {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-            {isPaused ? "Resume" : "Pause"}
-          </button>
-          <div className="app-soft min-w-0 flex-1 text-center text-[10px] uppercase leading-tight tracking-[0.14em] sm:text-xs sm:tracking-[0.18em]">
-            {paceSummary}
+        <div className={cn("mb-4 flex w-full flex-col items-center justify-center gap-3", isShortPhone ? "max-w-[320px]" : "max-w-[360px] sm:mb-6")}>
+          {!isStarted ? (
+            <button
+              type="button"
+              onClick={beginSession}
+              className="touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 py-3.5 text-[15px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            >
+              <Play className="h-4 w-4 fill-current" />
+              Begin breathing
+            </button>
+          ) : (
+            <div className="flex w-full items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsPaused((prev) => !prev)}
+                className="touch-target app-secondary-button inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-pill px-3 py-2.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:px-4 sm:py-3 sm:text-sm"
+              >
+                {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                {isPaused ? "Resume" : "Pause"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsStarted(false);
+                  setIsPaused(false);
+                  setSessionLeft(sessionDuration);
+                }}
+                className="touch-target app-ghost-button inline-flex min-h-12 items-center justify-center rounded-pill px-3 py-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              >
+                Reset
+              </button>
+            </div>
+          )}
+
+          <div className="flex w-full items-center justify-between gap-3">
+            <div className="app-soft min-w-0 flex-1 text-center text-[10px] uppercase leading-tight tracking-[0.14em] sm:text-xs sm:tracking-[0.18em]">
+              {paceSummary}
+            </div>
+            <button
+              ref={customizerTriggerRef}
+              type="button"
+              onClick={() => setShowSettings((prev) => !prev)}
+              aria-controls="breathing-customizer"
+              aria-expanded={showSettings}
+              className="touch-target app-ghost-button inline-flex min-h-11 items-center gap-1.5 rounded-pill px-3 py-2.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:gap-2 sm:text-[12px]"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              {showSettings ? "Done" : "Customize"}
+            </button>
           </div>
-          <button
-            ref={customizerTriggerRef}
-            type="button"
-            onClick={() => setShowSettings((prev) => !prev)}
-            aria-controls="breathing-customizer"
-            aria-expanded={showSettings}
-            className="touch-target app-ghost-button inline-flex flex-shrink-0 items-center gap-1.5 rounded-pill px-3 py-2.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:gap-2 sm:text-[12px]"
-          >
-            <Settings2 className="w-3.5 h-3.5" />
-            {showSettings ? "Done" : "Customize"}
-          </button>
         </div>
 
         <p className="app-muted mb-4 max-w-[300px] text-center text-base italic leading-relaxed font-serif sm:mb-6 sm:text-lg">
@@ -302,7 +335,7 @@ export default function Breathe() {
                       }}
                       className={cn(
                         "touch-target rounded-pill px-4 py-2 text-sm",
-                        sessionDuration === duration ? "app-primary-button text-white" : "app-secondary-button",
+                        sessionDuration === duration ? "app-primary-button" : "app-secondary-button",
                       )}
                     >
                       {duration / 60} min
@@ -352,19 +385,9 @@ export default function Breathe() {
                 })}
               </div>
 
-              {!isStarted && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSessionLeft(sessionDuration);
-                    setIsStarted(true);
-                    setShowSettings(false);
-                  }}
-                  className="touch-target app-primary-button mt-5 w-full rounded-pill py-3 font-semibold text-white"
-                >
-                  Begin breathing
-                </button>
-              )}
+              <p className="app-soft mt-5 text-center text-[11px] leading-relaxed">
+                Your changes apply to the next session.
+              </p>
             </motion.div>
           </>
         )}

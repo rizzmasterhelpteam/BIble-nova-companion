@@ -114,6 +114,8 @@ export default function Layout() {
   const [reminderTime, setReminderTime] = useState("08:00");
   const [reminderDays, setReminderDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
   const [notificationError, setNotificationError] = useState<string | null>(null);
+  const settingsDialogRef = React.useRef<HTMLDivElement>(null);
+  const settingsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const prefersReducedMotion = useReducedMotion();
   const displayName = profileName || user?.email?.split("@")[0] || "Unknown";
   const accountInitial = displayName.trim().charAt(0).toUpperCase() || "?";
@@ -286,11 +288,37 @@ export default function Layout() {
     if (!settingsOpen) return;
 
     const originalOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.style.overflow = "hidden";
+
+    window.requestAnimationFrame(() => {
+      const firstFocusable = settingsDialogRef.current?.querySelector(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+      ) as HTMLElement | null;
+      (firstFocusable ?? settingsDialogRef.current)?.focus();
+    });
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSettingsOpen(false);
+        return;
+      }
+
+      if (event.key !== "Tab" || !settingsDialogRef.current) return;
+      const focusable = Array.from(
+        settingsDialogRef.current.querySelectorAll<HTMLElement>(
+          "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+        ),
+      ) as HTMLElement[];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
 
@@ -298,6 +326,7 @@ export default function Layout() {
     return () => {
       document.body.style.overflow = originalOverflow;
       window.removeEventListener("keydown", handleKeyDown);
+      (settingsTriggerRef.current ?? previouslyFocused)?.focus();
     };
   }, [settingsOpen]);
 
@@ -323,7 +352,7 @@ export default function Layout() {
   }, [hideGlobalChrome, settingsOpen]);
 
   return (
-    <div className="app-screen relative flex w-full justify-center overflow-hidden font-sans sm:px-4 sm:py-6">
+    <div className="app-screen relative flex w-full justify-center overflow-hidden font-sans sm:px-6 sm:py-6 lg:px-10">
       <div className="app-atmosphere">
         <div className="app-grid" />
         <div className="app-orb app-orb-a left-[-10%] top-[-16%] h-[28rem] w-[28rem]" />
@@ -332,7 +361,7 @@ export default function Layout() {
 
       <div
         className={cn(
-          "app-shell relative flex h-full w-full min-h-0 flex-col overflow-hidden ring-1 sm:max-w-lg sm:rounded-shell sm:ring-[color:var(--app-shell-ring)] xl:max-w-xl",
+          "app-shell relative flex h-full w-full min-h-0 flex-col overflow-hidden ring-1 sm:max-w-3xl sm:rounded-shell sm:ring-[color:var(--app-shell-ring)] lg:max-w-6xl xl:max-w-7xl",
           isCompactPhone && "sm:max-w-md",
           isHomeRoute && "app-home-shell",
           hideGlobalChrome && "voice-session-shell",
@@ -341,6 +370,7 @@ export default function Layout() {
       >
         {!hideGlobalChrome && (
           <button
+            ref={settingsTriggerRef}
             onClick={() => setSettingsOpen(true)}
             aria-label="Open settings"
             className="touch-target absolute right-4 z-50 flex items-center justify-center overflow-hidden rounded-full transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] active:scale-95"
@@ -391,7 +421,7 @@ export default function Layout() {
             <NavItem to="/" end icon={<Home strokeWidth={1.6} className="h-5 w-5" />} label="Home" />
             <NavItem to="/breathe" icon={<Wind strokeWidth={1.6} className="h-5 w-5" />} label="Breathe" />
             <NavItem to="/intentions" icon={<Heart strokeWidth={1.6} className="h-5 w-5" />} label="Intentions" />
-            <NavItem to="/confess" icon={<Flame strokeWidth={1.6} className="h-5 w-5" />} label="Confess" />
+            <NavItem to="/confess" icon={<Flame strokeWidth={1.6} className="h-5 w-5" />} label="Release" />
           </div>
         </nav>
 
@@ -415,6 +445,8 @@ export default function Layout() {
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="settings-title"
+                ref={settingsDialogRef}
+                tabIndex={-1}
                 className="app-panel-strong app-settings-sheet fixed inset-x-0 bottom-0 z-[70] mx-auto max-h-[92dvh] w-full overflow-y-auto rounded-t-[2rem] border-t scrollbar-hide sm:max-w-lg sm:px-0 xl:max-w-xl"
                 style={{
                   bottom: "var(--app-bottom-offset)",

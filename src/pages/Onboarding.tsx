@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, memo } from "react";
+import React, { useEffect, useState, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Brain, Sparkles, Heart, ArrowLeft, ShieldCheck, Check, BookOpen, ChevronRight, Wind } from "lucide-react";
@@ -79,7 +79,7 @@ const getAnalysisSummary = (answers: Record<string, string>) => {
   const supportAction = supportActionById[answers.support as keyof typeof supportActionById] ?? "steady spiritual guidance with practical next steps";
 
   return {
-    overview: `You are here because ${reason}. Your focus is to ${goal}, with ${support}.`,
+    overview: `We’ll shape your space around ${reason}. You said you’d like to ${goal}, with ${support}.`,
     appResponse: `Bible Nova Companion will meet you with ${supportAction}, scripture-based reflection, and one clear next step.`,
   };
 };
@@ -94,13 +94,13 @@ const BackgroundOrbs = memo(({ animated = true }: { animated?: boolean }) => {
         animate={{ scale: [1, 1.2, 1], opacity: [0.25, 0.4, 0.25], x: [0, 30, 0], y: [0, -40, 0] }}
         transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
         className="pointer-events-none absolute -top-[10%] -left-[10%] h-[500px] w-[500px] rounded-full"
-        style={{ background: "rgba(245,158,11,0.08)", filter: "blur(100px)" }}
+        style={{ background: "var(--app-orb-a)", filter: "blur(100px)" }}
       />
       <motion.div
         animate={{ scale: [1, 1.3, 1], opacity: [0.15, 0.28, 0.15], x: [0, -30, 0], y: [0, 30, 0] }}
         transition={{ duration: 18, repeat: Infinity, ease: "linear", delay: 2 }}
         className="pointer-events-none absolute top-[50%] -right-[10%] h-[600px] w-[600px] rounded-full"
-        style={{ background: "rgba(239,68,68,0.07)", filter: "blur(120px)" }}
+        style={{ background: "var(--app-orb-b)", filter: "blur(120px)" }}
       />
     </>
   );
@@ -127,8 +127,6 @@ export default function Onboarding() {
   );
   const [hasStarted, setHasStarted] = useState(() => Object.keys(answers).length > 0);
   const [showAnalysis, setShowAnalysis] = useState(false);
-  const [isAdvancing, setIsAdvancing] = useState(false);
-  const continueTimerRef = useRef<number | null>(null);
   const { completeOnboarding, isSubscribed, updateShadowNotes } = useAuth();
   const navigate = useNavigate();
 
@@ -146,32 +144,13 @@ export default function Onboarding() {
     storageSet(STORAGE_KEY, JSON.stringify(answers));
   }, [answers]);
 
-  useEffect(() => () => {
-    if (continueTimerRef.current !== null) {
-      window.clearTimeout(continueTimerRef.current);
-    }
-  }, []);
-
   const handleSelect = (optionId: string) => {
-    if (isAdvancing) return;
-    setIsAdvancing(true);
     const question = questions[currentStep];
     setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: optionId }));
-
-    if (continueTimerRef.current !== null) {
-      window.clearTimeout(continueTimerRef.current);
-    }
-
-    // Keep the selected state visible long enough to feel acknowledged.
-    continueTimerRef.current = window.setTimeout(() => {
-      continueTimerRef.current = null;
-      handleContinue(optionId);
-      setIsAdvancing(false);
-    }, prefersReducedMotion ? 120 : 275);
   };
 
-  const handleContinue = (overrideAnswer?: string) => {
-    const currentAnswer = overrideAnswer || answers[questions[currentStep].id];
+  const handleContinue = () => {
+    const currentAnswer = answers[questions[currentStep].id];
     if (!currentAnswer) return;
     if (currentStep < questions.length - 1) {
       setPrevStep(currentStep);
@@ -205,6 +184,15 @@ export default function Onboarding() {
     window.requestAnimationFrame(() => navigate(nextPath, { replace: true }));
   };
 
+  const handleSkip = () => {
+    storageRemove(STORAGE_KEY);
+    completeOnboarding();
+    void updateShadowNotes("User chose default reflection preferences. Keep guidance gentle, scripture-grounded, and practical.");
+    const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
+    const nextPath = isAndroidNative && !isSubscribed ? "/paywall" : "/";
+    navigate(nextPath, { replace: true });
+  };
+
   // Staggered welcome screen
   if (!hasStarted) {
     const makeStagger = (delay: number) =>
@@ -218,9 +206,8 @@ export default function Onboarding() {
 
     return (
       <div
-        className="relative min-h-[100dvh] w-full overflow-y-auto overflow-x-hidden text-white flex flex-col justify-center items-center px-5 pb-8"
+        className="onboarding-screen app-screen-scroll relative w-full items-center justify-center px-5 pb-8"
         style={{
-          background: "#0F0F12",
           paddingTop: `max(env(safe-area-inset-top, 0px), ${isShortPhone ? "2rem" : "3rem"})`,
         }}
       >
@@ -229,23 +216,21 @@ export default function Onboarding() {
         <div className="relative z-10 w-full max-w-md flex flex-col items-center text-center">
           <motion.div
             {...makeStagger(0.2)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full mb-5"
-            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+            className="onboarding-surface inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 mb-5"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span className="text-white/70 text-xs font-semibold tracking-wider uppercase">Welcome to Bible Nova</span>
+            <Sparkles className="app-accent w-3.5 h-3.5" />
+            <span className="app-muted text-xs font-semibold tracking-wider uppercase">Welcome to Bible Nova</span>
           </motion.div>
           
           <motion.h1
-            className="font-serif text-4xl sm:text-5xl leading-tight mb-4 tracking-tight"
-            style={{ background: "linear-gradient(180deg, #fff 0%, rgba(255,255,255,0.6) 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}
+            className="app-heading font-serif text-4xl sm:text-5xl leading-tight mb-4 tracking-tight"
             {...makeStagger(0.3)}
           >
             A quieter place to return to.
           </motion.h1>
           
           <motion.p
-            className="text-white/55 text-[15px] sm:text-[16px] leading-relaxed max-w-sm mb-8"
+            className="app-muted text-[15px] sm:text-[16px] leading-relaxed max-w-sm mb-8"
             {...makeStagger(0.4)}
           >
             Answer three thoughtful questions to shape your personalized reflection space.
@@ -255,23 +240,25 @@ export default function Onboarding() {
           <motion.div className="w-full" {...makeStagger(0.5)}>
             <button
               onClick={() => setHasStarted(true)}
-              className="relative w-full overflow-hidden group text-amber-950 font-bold text-lg rounded-[1.25rem] py-4 flex items-center justify-center gap-2 transition-all"
-              style={{
-                background: "linear-gradient(135deg, #f59e0b, #d97706)",
-                boxShadow: "0 8px 30px rgba(245,158,11,0.32)",
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 10px 40px rgba(245,158,11,0.44)"; (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-2px)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 8px 30px rgba(245,158,11,0.32)"; (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)"; }}
+              className="app-primary-button touch-target relative w-full overflow-hidden group rounded-[1.25rem] py-4 flex items-center justify-center gap-2 font-bold text-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
             >
               <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12 pointer-events-none" />
               Begin Your Journey
               <ChevronRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
             </button>
           </motion.div>
+
+          <button
+            type="button"
+            onClick={handleSkip}
+            className="touch-target app-ghost-button mt-3 rounded-pill px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+          >
+            Use defaults for now
+          </button>
           
-          <motion.div className="mt-5 flex items-center justify-center gap-2" style={{ color: "rgba(255,255,255,0.28)" }} {...makeStagger(0.6)}>
+          <motion.div className="onboarding-trust mt-5 flex items-center justify-center gap-2 border-t pt-3" {...makeStagger(0.6)}>
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span className="text-xs">Your answers personalize this space and are saved with your account.</span>
+            <span className="text-xs">Your answers shape this space and stay with your account.</span>
           </motion.div>
         </div>
       </div>
@@ -283,10 +270,8 @@ export default function Onboarding() {
 
     return (
       <div
-        className="relative w-full overflow-y-auto text-white flex flex-col justify-start items-center px-4 pb-8"
+        className="onboarding-screen app-screen-scroll relative w-full items-center justify-start px-4 pb-8"
         style={{
-          minHeight: "100dvh",
-          background: "#0F0F12",
           paddingTop: "max(env(safe-area-inset-top, 0px), 3rem)",
         }}
       >
@@ -300,23 +285,20 @@ export default function Onboarding() {
         >
           <button
             onClick={handleBack}
-            className="self-start inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium mb-8 transition-colors"
-            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)" }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.1)"; (e.currentTarget as HTMLButtonElement).style.color = "#fff"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)"; (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.7)"; }}
+            className="touch-target app-secondary-button self-start inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium mb-8 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             <ArrowLeft className="w-4 h-4" />
             Back
           </button>
 
           <div className="text-center mb-8">
-            <span className="inline-flex items-center justify-center w-14 h-14 rounded-full mb-4" style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)" }}>
-              <Check className="w-7 h-7 text-amber-400" strokeWidth={2.5} />
+            <span className="app-accent-badge inline-flex items-center justify-center w-14 h-14 rounded-full mb-4">
+              <Check className="w-7 h-7" strokeWidth={2.5} />
             </span>
-            <h2 className="font-serif text-3xl sm:text-4xl leading-tight mb-3" style={{ background: "linear-gradient(180deg, #fff, rgba(255,255,255,0.6))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
+            <h2 className="app-heading font-serif text-3xl sm:text-4xl leading-tight mb-3">
               Your space is ready.
             </h2>
-            <p className="text-[15px] leading-relaxed max-w-sm mx-auto" style={{ color: "rgba(255,255,255,0.58)" }}>
+            <p className="app-muted text-[15px] leading-relaxed max-w-sm mx-auto">
               {analysis.overview}
             </p>
           </div>
@@ -324,8 +306,7 @@ export default function Onboarding() {
           <div className="space-y-4 mb-8">
             {/* Scripture preview */}
             <motion.div
-              className="relative overflow-hidden rounded-[1.5rem] p-6"
-              style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04))", border: "1px solid rgba(255,255,255,0.1)" }}
+              className="sanctuary-preview relative overflow-hidden rounded-[1.5rem] p-6"
               initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={isPerformanceMode ? { duration: 0 } : { duration: 0.5, delay: 0.2 }}
@@ -334,19 +315,18 @@ export default function Onboarding() {
                 <BookOpen className="w-24 h-24 rotate-12" />
               </div>
               <div className="flex items-center justify-between mb-4 relative z-10">
-                <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: "rgba(255,255,255,0.4)" }}>Glimpse</span>
-                <span className="rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-amber-400" style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.25)" }}>Personalized</span>
+                <span className="app-soft text-[10px] uppercase tracking-widest font-semibold">Glimpse</span>
+                <span className="app-accent-badge rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider">Personalized</span>
               </div>
-              <p className="font-serif text-[1.5rem] leading-snug mb-2 relative z-10" style={{ color: "rgba(255,255,255,0.9)" }}>"Be still, and know that I am God."</p>
-              <p className="text-[11px] font-bold uppercase tracking-widest relative z-10 text-amber-400">Psalm 46:10</p>
+              <p className="app-heading font-serif text-[1.5rem] leading-snug mb-2 relative z-10">"Be still, and know that I am God."</p>
+              <p className="app-kicker text-[11px] font-bold uppercase tracking-widest relative z-10">Psalm 46:10</p>
             </motion.div>
 
           </div>
 
           <motion.button
             onClick={handleGetStarted}
-            className="w-full font-bold text-lg rounded-[1.25rem] py-4 flex items-center justify-center transition-all"
-            style={{ background: "#fff", color: "#000" }}
+            className="app-primary-button touch-target w-full font-bold text-lg rounded-[1.25rem] py-4 flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
             initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={isPerformanceMode ? { duration: 0 } : { duration: 0.5, delay: 0.44 }}
@@ -373,10 +353,8 @@ export default function Onboarding() {
 
   return (
     <div
-      className="relative w-full overflow-y-auto text-white flex flex-col pb-8 px-4"
+      className="onboarding-screen app-screen-scroll relative w-full px-4 pb-8"
       style={{
-        minHeight: "100dvh",
-        background: "#0F0F12",
         paddingTop: "max(env(safe-area-inset-top, 0px), 3rem)",
       }}
     >
@@ -387,27 +365,23 @@ export default function Onboarding() {
         <div className="flex items-center justify-between mb-8">
           <button
             onClick={handleBack}
-            className="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors focus:outline-none"
-            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)" }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.1)"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)"; }}
+            className="touch-target app-secondary-button inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
             aria-label="Go back"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
 
           <div className="flex-1 max-w-[160px] ml-4">
-            <div className="h-1.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+            <div className="onboarding-progress-track h-1.5 w-full rounded-full overflow-hidden">
               <motion.div
-                className="h-full rounded-full"
-                style={{ background: "linear-gradient(90deg, #f59e0b, #fbbf24)" }}
+                className="onboarding-progress-fill h-full rounded-full"
                 initial={{ width: 0 }}
                 animate={{ width: `${progressPercent}%` }}
                 transition={{ duration: 0.45, ease: "easeOut" }}
               />
             </div>
             <div className="text-right mt-1.5">
-              <span className="text-[10px] font-semibold tracking-widest uppercase" style={{ color: "rgba(255,255,255,0.35)" }}>
+              <span className="app-soft text-[10px] font-semibold tracking-widest uppercase">
                 Step {currentStep + 1} of {questions.length}
               </span>
             </div>
@@ -426,12 +400,11 @@ export default function Onboarding() {
               className="w-full"
             >
               <h1
-                className="font-serif text-3xl sm:text-4xl leading-tight mb-3 tracking-tight"
-                style={{ background: "linear-gradient(180deg, #fff, rgba(255,255,255,0.7))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}
+                className="app-heading font-serif text-3xl sm:text-4xl leading-tight mb-3 tracking-tight"
               >
                 {question.title}
               </h1>
-              <p className="text-[14px] mb-8" style={{ color: "rgba(255,255,255,0.45)" }}>
+              <p className="app-muted text-[14px] mb-8">
                 Choose what feels most true right now.
               </p>
 
@@ -446,13 +419,7 @@ export default function Onboarding() {
                       onClick={() => handleSelect(option.id)}
                       whileHover={isPerformanceMode ? {} : { scale: 1.02, y: -1 }}
                       whileTap={shouldAnimateLightly ? { scale: 0.985 } : {}}
-                      className="w-full flex items-center justify-between p-4 sm:p-5 rounded-2xl text-left transition-all duration-300 relative overflow-hidden"
-                      style={{
-                        background: isSelected ? "rgba(245,158,11,0.1)" : "rgba(255,255,255,0.04)",
-                        border: `1px solid ${isSelected ? "rgba(245,158,11,0.48)" : "rgba(255,255,255,0.08)"}`,
-                        boxShadow: isSelected ? "0 0 24px rgba(245,158,11,0.08)" : "none",
-                        outline: "none",
-                      }}
+                      className="onboarding-choice touch-target w-full flex items-center justify-between p-4 sm:p-5 rounded-2xl text-left relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
                       initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
                       animate={isPerformanceMode ? undefined : { opacity: 1, y: 0 }}
                       transition={isPerformanceMode ? undefined : { duration: 0.26, delay: optIdx * 0.04 }}
@@ -461,7 +428,7 @@ export default function Onboarding() {
                         <motion.div
                           layoutId="active-option-bg"
                           className="absolute inset-0 pointer-events-none"
-                          style={{ background: "linear-gradient(90deg, rgba(245,158,11,0.06), transparent)" }}
+                          style={{ background: "linear-gradient(90deg, color-mix(in srgb, var(--app-accent) 8%, transparent), transparent)" }}
                         />
                       )}
                       
@@ -470,8 +437,8 @@ export default function Onboarding() {
                           <div
                             className="p-2.5 rounded-xl transition-colors duration-300"
                             style={{
-                              background: isSelected ? "#f59e0b" : "rgba(255,255,255,0.05)",
-                              color: isSelected ? "#422006" : "rgba(255,255,255,0.45)",
+                              background: isSelected ? "var(--app-accent)" : "var(--app-card-soft)",
+                              color: isSelected ? "var(--app-accent-contrast)" : "var(--app-text-muted)",
                             }}
                           >
                             {option.icon}
@@ -479,7 +446,7 @@ export default function Onboarding() {
                         )}
                         <span
                           className="text-[15px] sm:text-[16px] transition-colors duration-300 font-medium"
-                          style={{ color: isSelected ? "#f59e0b" : "rgba(255,255,255,0.78)" }}
+                          style={{ color: isSelected ? "var(--app-accent)" : "var(--app-text)" }}
                         >
                           {option.label}
                         </span>
@@ -488,8 +455,8 @@ export default function Onboarding() {
                       <div
                         className="flex shrink-0 items-center justify-center rounded-full border-2 transition-all duration-300 w-6 h-6 relative z-10 ml-3"
                         style={{
-                          borderColor: isSelected ? "#f59e0b" : "rgba(255,255,255,0.18)",
-                          background: isSelected ? "#f59e0b" : "transparent",
+                          borderColor: isSelected ? "var(--app-accent)" : "var(--app-card-border)",
+                          background: isSelected ? "var(--app-accent)" : "transparent",
                         }}
                       >
                         {isSelected && (
@@ -498,7 +465,7 @@ export default function Onboarding() {
                             animate={{ scale: 1, opacity: 1 }}
                             transition={shouldAnimateLightly ? { duration: 0.16, ease: "easeOut" } : undefined}
                           >
-                            <Check className="w-3.5 h-3.5 text-amber-950" strokeWidth={3.5} />
+                            <Check className="w-3.5 h-3.5" style={{ color: "var(--app-accent-contrast)" }} strokeWidth={3.5} />
                           </motion.div>
                         )}
                       </div>
@@ -506,9 +473,27 @@ export default function Onboarding() {
                   );
                 })}
               </div>
+
+              <button
+                type="button"
+                onClick={handleContinue}
+                disabled={!answers[question.id]}
+                className="app-primary-button touch-target mt-5 w-full rounded-pill py-3.5 text-[15px] font-semibold disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              >
+                {currentStep === questions.length - 1 ? "Review my space" : "Continue"}
+                <ChevronRight className="ml-1 inline-block h-4 w-4" />
+              </button>
             </motion.div>
           </AnimatePresence>
         </div>
+
+        <button
+          type="button"
+          onClick={handleSkip}
+          className="touch-target app-ghost-button mx-auto mt-5 rounded-pill px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+        >
+          Skip for now
+        </button>
       </div>
     </div>
   );
