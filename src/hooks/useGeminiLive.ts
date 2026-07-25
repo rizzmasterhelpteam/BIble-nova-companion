@@ -633,6 +633,9 @@ export function useGeminiLive({
   const toggleMute = useCallback(() => {
     setIsMuted((current) => {
       const nextMuted = !current;
+      mediaStreamRef.current?.getAudioTracks().forEach((track) => {
+        track.enabled = !nextMuted;
+      });
       if (nextMuted) {
         audioStreamEndedRef.current = signalAudioStreamEnd(
           sessionRef.current,

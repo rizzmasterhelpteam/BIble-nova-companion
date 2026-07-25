@@ -18,7 +18,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { useVoiceSession } from "../context/VoiceSessionContext";
-import { apiFetch } from "../lib/apiClient";
+import { apiFetch, isNativeApiConfigured } from "../lib/apiClient";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { storageGetJson, storageSet } from "../lib/webStorage";
 import {
@@ -30,6 +30,7 @@ import {
 import { getChatScrollBehavior } from "../lib/mobileLayout";
 import {
   createSpeechRecognitionSession,
+  type RecognitionMode,
   type SpeechRecognitionSession,
 } from "../lib/speechRecognition";
 import {
@@ -46,11 +47,15 @@ type ApiStatus = {
   chatReady: boolean;
   prayerReady: boolean;
   speechReady?: boolean;
+  liveReady?: boolean;
+  connectionError?: string;
 };
 
 const DEFAULT_API_STATUS: ApiStatus = {
   chatReady: false,
   prayerReady: false,
+  speechReady: false,
+  liveReady: false,
 };
 
 const WELCOME_MESSAGE: Message = {
@@ -100,9 +105,12 @@ const loadApiStatus = (forceRefresh = false) => {
 
         return response.json() as Promise<ApiStatus>;
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         apiStatusPromise = null;
-        return DEFAULT_API_STATUS;
+        return {
+          ...DEFAULT_API_STATUS,
+          connectionError: error instanceof Error ? error.message : "Server connection is unavailable.",
+        };
       });
   }
 
@@ -305,6 +313,9 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const [isTyping, setIsTyping] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribingSpeech, setIsTranscribingSpeech] = useState(false);
+  const [speechMode, setSpeechMode] = useState<RecognitionMode>("unsupported");
+  const [isCheckingSpeechSupport, setIsCheckingSpeechSupport] = useState(true);
+  const [speechNotice, setSpeechNotice] = useState<string | null>(null);
   const [speechError, setSpeechError] = useState<string | null>(null);
   const [ttsError, setTtsError] = useState<string | null>(null);
   const [hasLoadedMessages, setHasLoadedMessages] = useState(false);
@@ -329,6 +340,13 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const isVoiceMode = mode === "voice";
   const isImmersiveVoice = isVoiceMode && isVoiceSessionActive;
   const chatUnavailable = apiStatus?.chatReady !== true;
+  const speechUnavailableReason = isCheckingSpeechSupport
+    ? null
+    : speechMode === "unsupported"
+      ? "Microphone input is not available on this device. You can still type."
+      : speechMode === "web" && apiStatus?.speechReady !== true
+        ? "Speech-to-text is temporarily unavailable. Please type your message."
+        : null;
   const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
   const shouldAutoFocusInput = !isNativePlatform() && width >= 768;
   const shouldAutoFocusInputRef = useRef(shouldAutoFocusInput);
@@ -373,6 +391,17 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
     shouldAutoFocusInputRef.current = shouldAutoFocusInput;
   }, [shouldAutoFocusInput]);
 
+  useEffect(() => {
+    if (!import.meta.env.DEV || isCheckingApiStatus || isCheckingSpeechSupport) return;
+    console.info("[Bible Nova voice diagnostics]", {
+      nativePlatform: isNativePlatform() ? getNativePlatform() : false,
+      apiBaseConfigured: isNativeApiConfigured(),
+      speechMode,
+      speechBackendReady: apiStatus?.speechReady === true,
+      liveReady: apiStatus?.liveReady === true,
+    });
+  }, [apiStatus?.liveReady, apiStatus?.speechReady, isCheckingApiStatus, isCheckingSpeechSupport, speechMode]);
+
   const resizeTextarea = useCallback(() => {
     if (!textareaRef.current) return;
     textareaRef.current.style.height = "auto";
@@ -408,11 +437,24 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       onProcessingChange: (isProcessing) => {
         setIsTranscribingSpeech(isProcessing);
       },
+      onNotice: setSpeechNotice,
       onError: (message) => {
         setSpeechError(message);
         setIsRecording(false);
         setIsTranscribingSpeech(false);
       },
+    });
+    const speechSession = speechSessionRef.current;
+    void speechSession.getMode().then((resolvedMode) => {
+      if (speechSessionRef.current === speechSession) {
+        setSpeechMode(resolvedMode);
+        setIsCheckingSpeechSupport(false);
+      }
+    }).catch(() => {
+      if (speechSessionRef.current === speechSession) {
+        setSpeechMode("unsupported");
+        setIsCheckingSpeechSupport(false);
+      }
     });
 
     const ttsSession = createTextToSpeechSession({
@@ -579,7 +621,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   }, [isTyping, onModeChange]);
 
   const handleSend = useCallback(async (text: string) => {
-    if (isTyping || apiStatus?.chatReady === false) return;
+    if (isTyping || apiStatus?.chatReady !== true) return;
 
     const trimmedText = text.trim();
     if (!trimmedText) return;
@@ -693,6 +735,10 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       return;
     }
 
+    if (routeState?.initialPrompt && apiStatus?.chatReady !== true) {
+      return;
+    }
+
     if (handledRouteActionRef.current === actionKey) {
       return;
     }
@@ -707,7 +753,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
 
     handleModeChange("voice");
     navigate(location.pathname, { replace: true, state: {} });
-  }, [handleModeChange, handleSend, hasLoadedMessages, location.pathname, location.state, navigate]);
+  }, [apiStatus?.chatReady, handleModeChange, handleSend, hasLoadedMessages, location.pathname, location.state, navigate]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -764,10 +810,15 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
     if (isTyping || chatUnavailable || isTranscribingSpeech) return;
 
     setSpeechError(null);
+    setSpeechNotice(null);
 
-    const usesNativeDeviceSpeech = isNativePlatform() && getNativePlatform() === "android";
-    if (!usesNativeDeviceSpeech && apiStatus?.speechReady === false) {
-      setSpeechError("Voice transcription is temporarily unavailable. Please try again later.");
+    if (speechMode === "unsupported") {
+      setSpeechError("Microphone input is not available on this device. You can still type.");
+      return;
+    }
+
+    if (speechMode === "web" && apiStatus?.speechReady !== true) {
+      setSpeechError("Speech-to-text is temporarily unavailable. Please type your message.");
       return;
     }
 
@@ -900,6 +951,8 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           onSessionActiveChange={setVoiceSessionActive}
           reservation={voiceReservation}
           onReservationChange={updateVoiceReservation}
+          liveReady={apiStatus?.liveReady === true}
+          isCheckingLiveReady={isCheckingApiStatus}
         />
       ) : (
       <>
@@ -979,7 +1032,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
               </p>
             </div>
             <p className="app-heading text-sm leading-relaxed">
-              Chat is temporarily unavailable. Please try again in a moment.
+              {apiStatus?.connectionError || "Chat is temporarily unavailable. Please try again in a moment."}
             </p>
             <button
               type="button"
@@ -1058,6 +1111,8 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
             speakingMessageId ||
             chatUnavailable ||
             speechError ||
+            speechNotice ||
+            speechUnavailableReason ||
             ttsError) && (
             <p
               className="mb-3 px-1 text-center text-[11px]"
@@ -1065,8 +1120,8 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
                 color: speechError || ttsError ? "var(--app-danger)" : "var(--app-text-muted)",
               }}
             >
-              {speechError || ttsError
-                ? speechError || ttsError
+              {speechError || speechNotice || speechUnavailableReason || ttsError
+                ? speechError || speechNotice || speechUnavailableReason || ttsError
                 : speakingMessageId
                 ? "Playing audio."
                 : isRecording
@@ -1169,8 +1224,15 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
                   onClick={() => {
                     void toggleRecording();
                   }}
-                  disabled={isTyping || chatUnavailable || isTranscribingSpeech}
-                  className={cn("touch-target relative flex h-[38px] w-[38px] items-center justify-center rounded-full border transition-all duration-300 active:scale-[0.97] shadow-sm", isTyping && "cursor-not-allowed opacity-50")}
+                  disabled={isTyping || chatUnavailable || isTranscribingSpeech || isCheckingSpeechSupport || speechMode === "unsupported" || (speechMode === "web" && apiStatus?.speechReady !== true)}
+                  className={cn("touch-target relative flex h-[38px] w-[38px] items-center justify-center rounded-full border transition-all duration-300 active:scale-[0.97] shadow-sm", (isTyping || isCheckingSpeechSupport || speechMode === "unsupported" || (speechMode === "web" && apiStatus?.speechReady !== true)) && "cursor-not-allowed opacity-50")}
+                  aria-label={
+                    speechMode === "unsupported"
+                      ? "Microphone input is unavailable"
+                      : speechMode === "web" && apiStatus?.speechReady !== true
+                        ? "Speech-to-text is temporarily unavailable"
+                        : "Start speech-to-text"
+                  }
                   style={
                     {
                       background: "var(--app-secondary-bg)",

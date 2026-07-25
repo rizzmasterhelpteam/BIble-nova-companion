@@ -14,6 +14,7 @@ import {
   transcribeAudio,
 } from "./server-api";
 import liveTokenHandler from "./api/live/token";
+import liveEligibilityHandler from "./api/live/eligibility";
 import { createShadowNotes, type ChatMessage } from "./chat-api";
 import {
   assertStringLength,
@@ -35,6 +36,8 @@ app.get("/api/status", (_req, res) => {
 });
 
 app.post("/api/live/token", liveTokenHandler);
+app.get("/api/live/eligibility", liveEligibilityHandler);
+app.options("/api/live/eligibility", liveEligibilityHandler);
 
 app.post("/api/live/shadow-notes", async (req, res) => {
   try {

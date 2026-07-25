@@ -7,14 +7,18 @@ type SpeechRecognitionCallbacks = {
   onTranscript: (text: string) => void;
   onListeningChange: (isListening: boolean) => void;
   onProcessingChange: (isProcessing: boolean) => void;
+  onNotice?: (message: string) => void;
   onError: (message: string) => void;
 };
+
+export type RecognitionMode = "web" | "native" | "unsupported";
 
 export type SpeechRecognitionSession = {
   start: (initialText?: string) => Promise<void>;
   stop: () => Promise<void>;
   destroy: () => Promise<void>;
   isSupported: () => Promise<boolean>;
+  getMode: () => Promise<RecognitionMode>;
 };
 
 interface MediaRecorderOptionsWithMimeType extends MediaRecorderOptions {
@@ -28,7 +32,8 @@ const WEB_RECORDING_MIME_TYPES = [
   "audio/ogg;codecs=opus",
 ];
 
-type RecognitionMode = "web" | "native";
+const MAX_WEB_RECORDING_MS = 60_000;
+const MAX_WEB_AUDIO_BYTES = 5 * 1024 * 1024;
 
 const isAndroidNativeSpeech = () =>
   isNativePlatform() && getNativePlatform() === "android";
@@ -86,6 +91,7 @@ export const createSpeechRecognitionSession = ({
   onTranscript,
   onListeningChange,
   onProcessingChange,
+  onNotice,
   onError,
 }: SpeechRecognitionCallbacks): SpeechRecognitionSession => {
   let baseText = "";
@@ -97,6 +103,8 @@ export const createSpeechRecognitionSession = ({
   let stopWebRecordingPromise: Promise<void> | null = null;
   let nativePartialResultsListener: PluginListenerHandle | null = null;
   let nativeListeningStateListener: PluginListenerHandle | null = null;
+  let latestNativeTranscript = "";
+  let recordingLimitTimer: number | null = null;
 
   const emitTranscript = (text: string) => {
     if (!isDestroyed) {
@@ -122,8 +130,22 @@ export const createSpeechRecognitionSession = ({
     }
   };
 
-  const stopNativeRecognition = async () => {
+  const clearRecordingLimitTimer = () => {
+    if (recordingLimitTimer !== null) {
+      window.clearTimeout(recordingLimitTimer);
+      recordingLimitTimer = null;
+    }
+  };
+
+  const stopNativeRecognition = async (commitTranscript = false) => {
     await NativeSpeechRecognition.stop().catch(() => undefined);
+    if (commitTranscript) {
+      if (latestNativeTranscript) {
+        emitTranscript(mergeTranscript(baseText, latestNativeTranscript));
+      } else {
+        emitError("No speech was captured. Please try again.");
+      }
+    }
     await removeNativeListener(nativePartialResultsListener);
     await removeNativeListener(nativeListeningStateListener);
     nativePartialResultsListener = null;
@@ -132,14 +154,14 @@ export const createSpeechRecognitionSession = ({
 
   const resolveRecognitionMode = async (): Promise<RecognitionMode> => {
     if (!isAndroidNativeSpeech()) {
-      return "web";
+      return isWebRecordingSupported() ? "web" : "unsupported";
     }
 
     try {
       const { available } = await NativeSpeechRecognition.available();
-      return available ? "native" : "web";
+      return available ? "native" : isWebRecordingSupported() ? "web" : "unsupported";
     } catch {
-      return "web";
+      return isWebRecordingSupported() ? "web" : "unsupported";
     }
   };
 
@@ -149,6 +171,7 @@ export const createSpeechRecognitionSession = ({
   };
 
   const discardWebRecording = () => {
+    clearRecordingLimitTimer();
     const currentRecorder = mediaRecorder;
     mediaRecorder = null;
     stopWebRecordingPromise = null;
@@ -171,6 +194,7 @@ export const createSpeechRecognitionSession = ({
   };
 
   const stopWebRecording = async () => {
+    clearRecordingLimitTimer();
     if (stopWebRecordingPromise) {
       return stopWebRecordingPromise;
     }
@@ -195,6 +219,13 @@ export const createSpeechRecognitionSession = ({
         if (!audioBlob.size) {
           emitListeningChange(false);
           emitError("No speech was captured.");
+          resolve();
+          return;
+        }
+
+        if (audioBlob.size > MAX_WEB_AUDIO_BYTES) {
+          emitListeningChange(false);
+          emitError("That recording was too long. Please try a shorter message.");
           resolve();
           return;
         }
@@ -245,21 +276,15 @@ export const createSpeechRecognitionSession = ({
   };
 
   return {
-    isSupported: async () => {
-      if (isAndroidNativeSpeech()) {
-        try {
-          const { available } = await NativeSpeechRecognition.available();
-          return available || isWebRecordingSupported();
-        } catch {
-          return isWebRecordingSupported();
-        }
-      }
-
-      return isWebRecordingSupported();
-    },
+    getMode: resolveRecognitionMode,
+    isSupported: async () => (await resolveRecognitionMode()) !== "unsupported",
     start: async (initialText = "") => {
       baseText = initialText;
       activeMode = await resolveRecognitionMode();
+
+      if (activeMode === "unsupported") {
+        throw new Error("Microphone input is not available on this device. You can still type.");
+      }
 
       if (activeMode === "native") {
         const { available } = await NativeSpeechRecognition.available();
@@ -269,15 +294,17 @@ export const createSpeechRecognitionSession = ({
 
         const { speechRecognition } = await NativeSpeechRecognition.requestPermissions();
         if (speechRecognition !== "granted") {
-          throw new Error("Microphone access was denied. Allow it in system settings.");
+          throw new Error("Microphone access was denied. Enable it in Android settings or type your message.");
         }
 
         await stopNativeRecognition();
+        latestNativeTranscript = "";
 
         nativePartialResultsListener = await NativeSpeechRecognition.addListener(
           "partialResults",
           ({ matches }) => {
-            emitTranscript(mergeTranscript(baseText, matches?.[0] || ""));
+            latestNativeTranscript = normalizeTranscript(matches?.[0] || "");
+            emitTranscript(mergeTranscript(baseText, latestNativeTranscript));
           },
         );
 
@@ -312,7 +339,16 @@ export const createSpeechRecognitionSession = ({
 
       await stopWebRecording();
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.name.toLowerCase() : "";
+        if (message.includes("notallowed") || message.includes("permission")) {
+          throw new Error("Microphone access was denied. Enable it in your device settings or type your message.");
+        }
+        throw error;
+      }
       mediaStream = stream;
       const mimeType = getSupportedRecordingMimeType();
       const recorderOptions: MediaRecorderOptionsWithMimeType = mimeType ? { mimeType } : {};
@@ -327,6 +363,7 @@ export const createSpeechRecognitionSession = ({
       };
 
       recorder.onerror = () => {
+        clearRecordingLimitTimer();
         releaseMediaStream();
         mediaRecorder = null;
         mediaChunks = [];
@@ -336,6 +373,11 @@ export const createSpeechRecognitionSession = ({
 
       recorder.onstart = () => {
         emitListeningChange(true);
+        recordingLimitTimer = window.setTimeout(() => {
+          recordingLimitTimer = null;
+          onNotice?.("Recording limit reached. Transcribing now.");
+          void stopWebRecording();
+        }, MAX_WEB_RECORDING_MS);
       };
 
       recorder.start();
@@ -343,7 +385,7 @@ export const createSpeechRecognitionSession = ({
     },
     stop: async () => {
       if (activeMode === "native") {
-        await stopNativeRecognition();
+        await stopNativeRecognition(true);
         emitListeningChange(false);
         activeMode = null;
         return;
@@ -360,6 +402,7 @@ export const createSpeechRecognitionSession = ({
     },
     destroy: async () => {
       isDestroyed = true;
+      clearRecordingLimitTimer();
 
       if (activeMode === "native" || isAndroidNativeSpeech()) {
         await stopNativeRecognition();

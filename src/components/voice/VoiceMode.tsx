@@ -31,6 +31,8 @@ type VoiceModeProps = {
   onSessionActiveChange: (active: boolean) => void;
   reservation: { handle: string; expiresAt: string } | null;
   onReservationChange: (reservation: { handle: string; expiresAt: string } | null) => void;
+  liveReady: boolean;
+  isCheckingLiveReady: boolean;
 };
 
 const STATE_HEADLINES: Record<VoiceState, string> = {
@@ -96,6 +98,8 @@ export default function VoiceMode({
   onSessionActiveChange,
   reservation,
   onReservationChange,
+  liveReady,
+  isCheckingLiveReady,
 }: VoiceModeProps) {
   const { isCompactPhone, isShortPhone } = useMobileViewport();
   const navigate = useNavigate();
@@ -223,6 +227,10 @@ export default function VoiceMode({
 
   const startLabel = premiumRequired
     ? "Unlock Voice"
+    : isCheckingLiveReady
+      ? "Checking Voice"
+    : !liveReady
+      ? "Voice unavailable"
     : cooldownActive
       ? `Available in ${cooldownMinutes} min`
     : live.state === "ended"
@@ -231,8 +239,10 @@ export default function VoiceMode({
   const showStartButton = !active;
   const sessionNotice = premiumRequired
     ? "Unlock private, voice-led reflections with your premium plan."
+    : !isCheckingLiveReady && !liveReady
+      ? "Voice mode is not configured on the server yet. You can continue in Chat."
     : live.error || live.sessionNotice;
-  const sessionNoticeIsError = Boolean(live.error) && !premiumRequired;
+  const sessionNoticeIsError = (Boolean(live.error) || (!isCheckingLiveReady && !liveReady)) && !premiumRequired;
 
   return (
     <div className="voice-mode relative flex min-h-0 flex-1 overflow-hidden bg-transparent">
@@ -346,7 +356,7 @@ export default function VoiceMode({
               <button
                 type="button"
                 onClick={() => premiumRequired ? navigate("/paywall") : void live.start()}
-                disabled={isTyping || cooldownActive}
+                disabled={isTyping || cooldownActive || isCheckingLiveReady || !liveReady}
                 className="voice-primary-action touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 text-[15px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {premiumRequired ? <LockKeyhole className="h-5 w-5" /> : live.state === "error" || live.state === "permission-denied" || live.state === "offline" ? <RotateCcw className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
@@ -367,11 +377,11 @@ export default function VoiceMode({
                   <button
                     type="button"
                     onClick={live.interrupt}
-                    aria-label="Stop assistant response"
+                    aria-label="Stop assistant audio"
                     className="voice-control-button touch-target app-secondary-button flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] px-2 text-[13px] font-medium"
                   >
                     <Pause className="h-4 w-4" />
-                    <span>Stop response</span>
+                    <span>Stop audio</span>
                   </button>
                 ) : <div className="min-h-12" aria-hidden="true" />}
                 <button
