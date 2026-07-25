@@ -86,7 +86,11 @@ const extractReference = (message: string) => {
 
 let apiStatusPromise: Promise<ApiStatus> | null = null;
 
-const loadApiStatus = () => {
+const loadApiStatus = (forceRefresh = false) => {
+  if (forceRefresh) {
+    apiStatusPromise = null;
+  }
+
   if (!apiStatusPromise) {
     apiStatusPromise = apiFetch("/api/status")
       .then(async (response) => {
@@ -96,7 +100,10 @@ const loadApiStatus = () => {
 
         return response.json() as Promise<ApiStatus>;
       })
-      .catch(() => DEFAULT_API_STATUS);
+      .catch(() => {
+        apiStatusPromise = null;
+        return DEFAULT_API_STATUS;
+      });
   }
 
   return apiStatusPromise;
@@ -302,6 +309,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const [ttsError, setTtsError] = useState<string | null>(null);
   const [hasLoadedMessages, setHasLoadedMessages] = useState(false);
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
+  const [isCheckingApiStatus, setIsCheckingApiStatus] = useState(true);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceReservation, setVoiceReservation] = useState<VoiceReservation | null>(null);
@@ -320,7 +328,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const showQuickPrompts = messages.length === 1 && !isTyping;
   const isVoiceMode = mode === "voice";
   const isImmersiveVoice = isVoiceMode && isVoiceSessionActive;
-  const chatUnavailable = apiStatus?.chatReady === false;
+  const chatUnavailable = apiStatus?.chatReady !== true;
   const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
   const shouldAutoFocusInput = !isNativePlatform() && width >= 768;
   const shouldAutoFocusInputRef = useRef(shouldAutoFocusInput);
@@ -491,11 +499,25 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           setApiStatus(data);
         }
       })
+      .finally(() => {
+        if (isMounted) {
+          setIsCheckingApiStatus(false);
+        }
+      });
 
     return () => {
       isMounted = false;
     };
   }, []);
+
+  const retryApiStatus = async () => {
+    setIsCheckingApiStatus(true);
+    try {
+      setApiStatus(await loadApiStatus(true));
+    } finally {
+      setIsCheckingApiStatus(false);
+    }
+  };
 
   const appendUserMessage = useCallback((content: string, source: "voice" | "chat" = "chat") => {
     const trimmedContent = content.trim();
@@ -890,7 +912,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
         )}
       >
         <div className={cn("mx-auto flex w-full max-w-3xl flex-col", isCompactPhone ? "gap-4" : "gap-6")}>
-        {showQuickPrompts && (
+        {showQuickPrompts && !chatUnavailable && (
           <motion.div
             initial={isAndroidApp ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -940,7 +962,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           </motion.div>
         )}
 
-        {chatUnavailable && (
+        {chatUnavailable && !isCheckingApiStatus && (
           <motion.div
             initial={isAndroidApp ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -959,6 +981,13 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
             <p className="app-heading text-sm leading-relaxed">
               Chat is temporarily unavailable. Please try again in a moment.
             </p>
+            <button
+              type="button"
+              onClick={() => void retryApiStatus()}
+              className="touch-target app-secondary-button mt-4 inline-flex items-center justify-center rounded-pill px-4 py-2 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+            >
+              Check connection
+            </button>
           </motion.div>
         )}
 
@@ -1044,6 +1073,8 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
                 ? "Listening. Tap stop when you're done."
                 : isTranscribingSpeech
                 ? "Transcribing your speech..."
+                : isCheckingApiStatus
+                ? "Checking chat connection."
                 : chatUnavailable
                 ? "Chat is temporarily unavailable."
                 : ""}
@@ -1075,7 +1106,13 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
                   if (!isTyping) handleSend(input);
                 }
               }}
-              placeholder={chatUnavailable ? "Chat is unavailable while we reconnect..." : "Share your thoughts..."}
+              placeholder={
+                isCheckingApiStatus
+                  ? "Checking chat connection..."
+                  : chatUnavailable
+                    ? "Chat is unavailable while we reconnect..."
+                    : "Share your thoughts..."
+              }
               enterKeyHint="send"
               aria-label="Message Bible Nova Companion"
               className={cn(
