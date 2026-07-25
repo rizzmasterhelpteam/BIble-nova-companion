@@ -178,7 +178,7 @@ export default function Onboarding() {
     storageRemove(STORAGE_KEY);
     completeOnboarding();
     const analysis = getAnalysisSummary(answers);
-    void updateShadowNotes(analysis.overview);
+    void updateShadowNotes(analysis.overview).catch(() => undefined);
     const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
     const nextPath = isAndroidNative && !isSubscribed ? "/paywall" : "/";
     window.requestAnimationFrame(() => navigate(nextPath, { replace: true }));
@@ -187,7 +187,9 @@ export default function Onboarding() {
   const handleSkip = () => {
     storageRemove(STORAGE_KEY);
     completeOnboarding();
-    void updateShadowNotes("User chose default reflection preferences. Keep guidance gentle, scripture-grounded, and practical.");
+    void updateShadowNotes(
+      "User chose default reflection preferences. Keep guidance gentle, scripture-grounded, and practical.",
+    ).catch(() => undefined);
     const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
     const nextPath = isAndroidNative && !isSubscribed ? "/paywall" : "/";
     navigate(nextPath, { replace: true });

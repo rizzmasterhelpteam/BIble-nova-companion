@@ -291,10 +291,18 @@ export default function Layout() {
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     document.body.style.overflow = "hidden";
 
-    const focusFrame = window.requestAnimationFrame(() => {
-      const firstFocusable = settingsDialogRef.current?.querySelector(
+    const getFocusableElements = (): HTMLElement[] => {
+      if (!settingsDialogRef.current) return [];
+      const elements = settingsDialogRef.current.querySelectorAll(
         "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
-      ) as HTMLElement | null;
+      ) as NodeListOf<HTMLElement>;
+      return Array.from<HTMLElement>(
+        elements,
+      ).filter((element) => element.offsetParent !== null && getComputedStyle(element).visibility !== "hidden");
+    };
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      const firstFocusable = getFocusableElements()[0];
       (firstFocusable ?? settingsDialogRef.current)?.focus();
     });
 
@@ -305,11 +313,7 @@ export default function Layout() {
       }
 
       if (event.key !== "Tab" || !settingsDialogRef.current) return;
-      const focusable = Array.from(
-        settingsDialogRef.current.querySelectorAll<HTMLElement>(
-          "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
-        ),
-      ) as HTMLElement[];
+      const focusable = getFocusableElements();
       if (!focusable.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -418,7 +422,7 @@ export default function Layout() {
           aria-hidden={hideBottomNavigation}
           style={{ pointerEvents: hideBottomNavigation ? "none" : undefined }}
         >
-          <div className="app-nav-shell flex w-full max-w-xl items-center justify-between gap-1 rounded-[1.6rem] p-1.5">
+          <div className="app-nav-shell mx-auto flex w-full max-w-xl items-center justify-between gap-1 rounded-[1.6rem] p-1.5">
             <NavItem to="/" end icon={<Home strokeWidth={1.6} className="h-5 w-5" />} label="Home" />
             <NavItem to="/breathe" icon={<Wind strokeWidth={1.6} className="h-5 w-5" />} label="Breathe" />
             <NavItem to="/intentions" icon={<Heart strokeWidth={1.6} className="h-5 w-5" />} label="Intentions" />

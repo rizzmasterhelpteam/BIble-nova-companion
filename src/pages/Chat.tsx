@@ -6,7 +6,6 @@ import {
   StopCircle,
   AlertCircle,
   Sparkles,
-  KeyRound,
   Volume2,
   Square,
   ChevronRight,
@@ -50,8 +49,8 @@ type ApiStatus = {
 };
 
 const DEFAULT_API_STATUS: ApiStatus = {
-  chatReady: true,
-  prayerReady: true,
+  chatReady: false,
+  prayerReady: false,
 };
 
 const WELCOME_MESSAGE: Message = {
@@ -121,6 +120,33 @@ const ChatMessage = React.memo(function ChatMessage({
   voiceSupported,
 }: ChatMessageProps) {
   const isError = message.tone === "error";
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
+  const copyResetTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopy = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard access is unavailable.");
+      }
+      await navigator.clipboard.writeText(message.content);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("error");
+    }
+
+    if (copyResetTimerRef.current !== null) {
+      window.clearTimeout(copyResetTimerRef.current);
+    }
+    copyResetTimerRef.current = window.setTimeout(() => setCopyStatus("idle"), 1800);
+  };
 
   return (
     <motion.div
@@ -208,11 +234,12 @@ const ChatMessage = React.memo(function ChatMessage({
               <div className="mt-1 flex items-center gap-1 border-t pt-1" style={{ borderColor: "var(--app-divider)" }}>
                 <button
                   type="button"
-                  onClick={() => void navigator.clipboard?.writeText(message.content)}
+                  onClick={() => void handleCopy()}
                   className="touch-target app-ghost-button inline-flex items-center gap-1.5 rounded-pill px-3 py-2 text-xs"
+                  aria-live="polite"
                 >
                   <Copy className="h-3.5 w-3.5" />
-                  Copy
+                  {copyStatus === "copied" ? "Copied" : copyStatus === "error" ? "Copy failed" : "Copy"}
                 </button>
                 {voiceSupported && (
                   <button
@@ -862,7 +889,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           isCompactPhone ? "px-4 py-4" : "px-5 py-5 sm:px-6",
         )}
       >
-        <div className={cn("mx-auto flex w-full max-w-xl flex-col", isCompactPhone ? "gap-4" : "gap-6")}>
+        <div className={cn("mx-auto flex w-full max-w-3xl flex-col", isCompactPhone ? "gap-4" : "gap-6")}>
         {showQuickPrompts && (
           <motion.div
             initial={isAndroidApp ? false : { opacity: 0 }}
@@ -924,9 +951,9 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
             }}
           >
             <div className="app-accent mb-3 flex items-center gap-2">
-              <KeyRound className="w-4 h-4" />
+              <AlertCircle className="w-4 h-4" />
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                Setup needed
+                Connection unavailable
               </p>
             </div>
             <p className="app-heading text-sm leading-relaxed">
@@ -996,7 +1023,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           backgroundImage: "linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 92%, transparent) 0%, var(--bg-base) 100%)",
         }}
       >
-        <div className="mx-auto w-full max-w-xl">
+        <div className="mx-auto w-full max-w-3xl">
           <div className="mb-2 min-h-4" aria-live="polite">{(isRecording ||
             isTranscribingSpeech ||
             speakingMessageId ||
@@ -1048,7 +1075,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
                   if (!isTyping) handleSend(input);
                 }
               }}
-              placeholder={chatUnavailable ? "Add an API key to enable chat..." : "Share your thoughts..."}
+              placeholder={chatUnavailable ? "Chat is unavailable while we reconnect..." : "Share your thoughts..."}
               enterKeyHint="send"
               aria-label="Message Bible Nova Companion"
               className={cn(
