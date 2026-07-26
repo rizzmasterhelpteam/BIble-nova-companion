@@ -19,6 +19,7 @@ const DEFAULT_ANDROID_SUBSCRIPTION_CONFIG: Record<SubscriptionPlan, Subscription
   monthly: {
     productId: "biblenova",
     androidBasePlanId: "monthly",
+    androidOfferId: "trial",
   },
   yearly: {
     productId: "biblenovayearly",
