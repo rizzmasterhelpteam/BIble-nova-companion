@@ -717,20 +717,42 @@
     isolation: isolate;
     overflow: hidden;
     overscroll-behavior: none;
-    background-color: var(--bg-base);
+    color-scheme: dark;
+    --bg-base: #050b14;
+    --text-base: #ebf2ff;
+    --app-surface-solid: #080e18;
+    --app-surface-elevated: #0c1420;
+    --app-surface-muted: #101b2a;
+    --app-text: #d7e5fb;
+    --app-heading: #f6fbff;
+    --app-text-muted: #96a7c6;
+    --app-text-soft: #667894;
+    --app-accent: #6fd6ff;
+    --app-accent-strong: #116e9c;
+    --app-accent-soft: rgba(111, 214, 255, 0.14);
+    --app-accent-contrast: #06111e;
+    --app-card-bg: rgba(238, 245, 255, 0.04);
+    --app-card-strong: rgba(238, 245, 255, 0.07);
+    --app-card-soft: rgba(238, 245, 255, 0.025);
+    --app-card-border: rgba(111, 214, 255, 0.1);
+    --app-secondary-bg: rgba(238, 245, 255, 0.05);
+    --app-secondary-hover: rgba(238, 245, 255, 0.1);
+    --app-secondary-border: rgba(111, 214, 255, 0.11);
+    --app-input-bg: rgba(238, 245, 255, 0.04);
+    --app-input-border: rgba(111, 214, 255, 0.12);
+    --app-input-focus: rgba(111, 214, 255, 0.24);
+    --app-danger: #d77b8b;
+    --app-danger-soft: rgba(215, 123, 139, 0.14);
+    --app-success: #57b69c;
+    --app-success-soft: rgba(87, 182, 156, 0.12);
+    --app-divider: rgba(238, 245, 255, 0.08);
+    background-color: #050b14;
     background-image:
-      linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 78%, transparent) 0%, color-mix(in srgb, var(--bg-base) 42%, transparent) 42%, color-mix(in srgb, var(--bg-base) 72%, transparent) 100%),
+      linear-gradient(180deg, rgba(5, 11, 20, 0.28) 0%, rgba(5, 11, 20, 0.04) 42%, rgba(5, 11, 20, 0.28) 100%),
       url("./assets/voice-sanctuary-bg-dark.webp");
     background-position: center, center bottom;
     background-repeat: no-repeat;
     background-size: cover, cover;
-  }
-
-  :root.light .voice-page {
-    background-image:
-      linear-gradient(180deg, rgba(28, 55, 82, 0.1) 0%, rgba(28, 55, 82, 0.05) 42%, rgba(28, 55, 82, 0.1) 72%, rgba(20, 39, 61, 0.18) 100%),
-      url("./assets/voice-sanctuary-bg-light.webp");
-    background-color: #dfeaf6;
   }
 
   :root.dark[data-design="nocturne"] .voice-page {
