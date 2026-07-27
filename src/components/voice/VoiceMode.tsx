@@ -204,7 +204,9 @@ export default function VoiceMode({
       : latestVoiceMessage?.role === "ai"
         ? "Bible Nova"
         : "You";
-  const hasTranscript = showCaptions && Boolean(latestTranscript.trim());
+  // Keep the home state quiet. Captions are useful during a live reflection,
+  // but a previous voice response should not cover the invitation to begin.
+  const hasTranscript = showCaptions && active && Boolean(latestTranscript.trim());
   const presenceShouldMove = !prefersReducedMotion && active && live.state !== "ending";
   const isSpeaking = live.state === "user-speaking" || live.state === "assistant-speaking";
 
@@ -397,7 +399,7 @@ export default function VoiceMode({
               </div>
             )}
 
-            <div className="voice-secondary-actions mt-2 flex w-full flex-wrap items-center justify-center gap-2">
+            {active && <div className="voice-secondary-actions mt-2 flex w-full flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => setShowCaptions((current) => !current)}
@@ -417,7 +419,7 @@ export default function VoiceMode({
                   <MessageCircle className="h-4 w-4" /> Switch to Chat
                 </button>
               )}
-            </div>
+            </div>}
 
             {isTyping && <p className="app-muted mt-1 text-center text-xs">Finishing your previous reflection...</p>}
           </div>
