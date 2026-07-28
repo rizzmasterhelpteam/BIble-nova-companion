@@ -57,12 +57,45 @@ export const getLiveSessionDurationMs = ({
   return effectiveSeconds * 1_000;
 };
 
+export const getLiveSessionDeadlineMs = (
+  { expiresAt, reservationExpiresAt }: LiveTokenTiming,
+  now = Date.now(),
+  safetyMarginMs = 5_000,
+) => {
+  const expiryTimes = [expiresAt, reservationExpiresAt]
+    .map((value) => (typeof value === "string" ? Date.parse(value) : Number.NaN))
+    .filter(Number.isFinite);
+  if (!expiryTimes.length) return 0;
+  return Math.max(0, Math.min(...expiryTimes) - now - safetyMarginMs);
+};
+
 export const mergeLiveTranscript = (current: string, next: string) => {
   const normalizedNext = next.trim().replace(/\s+/g, " ");
   if (!normalizedNext) return current;
   if (!current) return normalizedNext;
   if (normalizedNext.startsWith(current)) return normalizedNext;
   if (current.endsWith(normalizedNext)) return current;
+
+  const currentWords = current.split(" ");
+  const nextWords = normalizedNext.split(" ");
+  let commonPrefix = 0;
+  while (
+    commonPrefix < currentWords.length &&
+    commonPrefix < nextWords.length &&
+    currentWords[commonPrefix].toLowerCase() === nextWords[commonPrefix].toLowerCase()
+  ) {
+    commonPrefix += 1;
+  }
+  // Providers sometimes rewrite an in-progress phrase rather than sending a delta.
+  if (commonPrefix >= 2 && nextWords.length >= commonPrefix) return normalizedNext;
+
+  const maxOverlap = Math.min(currentWords.length, nextWords.length);
+  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
+    const suffix = currentWords.slice(-overlap).join(" ").toLowerCase();
+    const prefix = nextWords.slice(0, overlap).join(" ").toLowerCase();
+    if (suffix === prefix) return `${current} ${nextWords.slice(overlap).join(" ")}`.trim();
+  }
+
   return `${current} ${normalizedNext}`.trim();
 };
 

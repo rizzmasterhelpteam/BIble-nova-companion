@@ -84,6 +84,8 @@ const ACTIVE_STATES: VoiceState[] = [
 ];
 
 const isVoiceMessage = (message: ConversationMessage) => message.source === "voice";
+const SHADOW_NOTE_PERSIST_INTERVAL_MS = 70_000;
+const SHADOW_NOTE_TIMEOUT_MS = 2_500;
 
 export default function VoiceMode({
   messages,
@@ -108,9 +110,15 @@ export default function VoiceMode({
   const exitPromiseRef = useRef<Promise<void> | null>(null);
   const messagesRef = useRef(messages);
   const lastPersistedVoiceCountRef = useRef(0);
+  const lastPersistAttemptAtRef = useRef(0);
+  const persistenceBaselineInitializedRef = useRef(false);
 
   useEffect(() => {
     messagesRef.current = messages;
+    if (!persistenceBaselineInitializedRef.current) {
+      lastPersistedVoiceCountRef.current = messages.filter(isVoiceMessage).length;
+      persistenceBaselineInitializedRef.current = true;
+    }
   }, [messages]);
 
   const handleUserTranscript = useCallback((text: string) => {
@@ -144,18 +152,24 @@ export default function VoiceMode({
     cooldownSeconds > 0;
   const cooldownMinutes = Math.max(1, Math.ceil(cooldownSeconds / 60));
 
-  const persistVoiceNotes = useCallback(() => {
+  const persistVoiceNotes = useCallback((force = false) => {
     const persistLatestConfirmedMessages = async () => {
       const voiceMessages = messagesRef.current.filter(isVoiceMessage);
       if (!voiceMessages.length || voiceMessages.length === lastPersistedVoiceCountRef.current) return;
       const voiceMessageCount = voiceMessages.length;
+      if (!force && voiceMessageCount % 2 !== 0) return;
+      if (!force && Date.now() - lastPersistAttemptAtRef.current < SHADOW_NOTE_PERSIST_INTERVAL_MS) return;
       const noteMessages = messagesRef.current
         .slice(-12)
         .map(({ role, content }) => ({ role, content }));
 
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), SHADOW_NOTE_TIMEOUT_MS);
+      lastPersistAttemptAtRef.current = Date.now();
       try {
         const response = await apiFetch("/api/live/shadow-notes", {
           method: "POST",
+          signal: controller.signal,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages: noteMessages,
@@ -166,9 +180,13 @@ export default function VoiceMode({
         if (response.ok && typeof data.shadowNotes === "string" && data.shadowNotes.trim()) {
           onAcceptShadowNotes(data.shadowNotes);
         }
-        if (response.ok) lastPersistedVoiceCountRef.current = voiceMessageCount;
       } catch {
         // Voice remains usable if note persistence is temporarily unavailable.
+      } finally {
+        window.clearTimeout(timeout);
+        // Advance even after a refused request. New completed turns can retry
+        // later, but one rate-limited request must not retry in a tight loop.
+        lastPersistedVoiceCountRef.current = voiceMessageCount;
       }
     };
 
@@ -181,12 +199,16 @@ export default function VoiceMode({
 
   useEffect(() => {
     const voiceMessageCount = messages.filter(isVoiceMessage).length;
-    if (!voiceMessageCount || voiceMessageCount === lastPersistedVoiceCountRef.current) return;
+    if (
+      !voiceMessageCount ||
+      voiceMessageCount === lastPersistedVoiceCountRef.current ||
+      voiceMessageCount % 2 !== 0
+    ) return;
     if (persistTimerRef.current !== null) window.clearTimeout(persistTimerRef.current);
     persistTimerRef.current = window.setTimeout(() => {
       persistTimerRef.current = null;
       void persistVoiceNotes();
-    }, 1400);
+    }, SHADOW_NOTE_PERSIST_INTERVAL_MS);
 
     return () => {
       if (persistTimerRef.current !== null) {
@@ -198,7 +220,7 @@ export default function VoiceMode({
 
   useEffect(() => () => {
     if (persistTimerRef.current !== null) window.clearTimeout(persistTimerRef.current);
-    void persistVoiceNotes();
+    void persistVoiceNotes(true);
   }, [persistVoiceNotes]);
 
   const active = ACTIVE_STATES.includes(live.state);
@@ -212,7 +234,7 @@ export default function VoiceMode({
 
   const handleEnd = useCallback(async () => {
     await stopLive("ended");
-    await persistVoiceNotes();
+    void persistVoiceNotes(true);
   }, [persistVoiceNotes, stopLive]);
 
   const handleExitVoice = useCallback(() => {
@@ -220,8 +242,8 @@ export default function VoiceMode({
 
     const exitPromise = (async () => {
       await stopLive("ended");
-      await persistVoiceNotes();
       onExitVoice();
+      void persistVoiceNotes(true);
     })();
     exitPromiseRef.current = exitPromise;
     const clearExitPromise = () => {
@@ -303,7 +325,7 @@ export default function VoiceMode({
                 }}
               >
                 <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Private during this conversation</span>
+                <span>Saved to your chat; continuity notes stay on your account</span>
               </div>
 
               <div className={cn(

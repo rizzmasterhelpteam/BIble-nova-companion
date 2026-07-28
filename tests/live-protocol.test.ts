@@ -4,6 +4,7 @@ import {
   createInitialHistoryPayload,
   getSafePlaybackGain,
   getLiveReconnectDelay,
+  getLiveSessionDeadlineMs,
   getLiveSessionDurationMs,
   guardLiveTokenTiming,
   isLiveTokenTimingValid,
@@ -60,6 +61,8 @@ describe("Gemini Live protocol helpers", () => {
   it("does not duplicate cumulative transcription chunks", () => {
     expect(mergeLiveTranscript("Peace be", "Peace be with you")).toBe("Peace be with you");
     expect(mergeLiveTranscript("Peace be with you", "with you")).toBe("Peace be with you");
+    expect(mergeLiveTranscript("I feel bad", "I feel very bad")).toBe("I feel very bad");
+    expect(mergeLiveTranscript("I feel very", "very alone today")).toBe("I feel very alone today");
   });
 
   it("prevents ended playback from restoring the listening state", () => {
@@ -133,5 +136,13 @@ describe("Gemini Live protocol helpers", () => {
       remainingSeconds: 45,
       maxMinutes: 10,
     })).toBe(45_000);
+  });
+
+  it("uses the earliest absolute expiry with a safety margin", () => {
+    const now = Date.parse("2026-07-23T11:50:00.000Z");
+    expect(getLiveSessionDeadlineMs({
+      expiresAt: "2026-07-23T12:00:00.000Z",
+      reservationExpiresAt: "2026-07-23T11:55:00.000Z",
+    }, now)).toBe(295_000);
   });
 });

@@ -6,6 +6,7 @@ import {
 } from "@google/genai";
 import {
   GEMINI_LIVE_API_VERSION,
+  GEMINI_LIVE_VAD,
   GEMINI_LIVE_VOICE,
 } from "./shared/liveConfig.js";
 
@@ -98,8 +99,7 @@ export const getGeminiLiveConstraintConfig = (shadowNotes = "") => ({
   },
   realtimeInputConfig: {
     automaticActivityDetection: {
-      prefixPaddingMs: 240,
-      silenceDurationMs: 1_300,
+      ...GEMINI_LIVE_VAD,
     },
     activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
   },

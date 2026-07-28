@@ -25,7 +25,7 @@ import {
   NEW_SESSION_START_WINDOW_MS,
   PROVIDER_TOKEN_MAX_LIFETIME_MS,
 } from "../live-api";
-import { GEMINI_LIVE_VOICE } from "../shared/liveConfig";
+import { GEMINI_LIVE_VAD, GEMINI_LIVE_VOICE } from "../shared/liveConfig";
 
 describe("Gemini Live server configuration", () => {
   beforeEach(() => {
@@ -58,7 +58,7 @@ describe("Gemini Live server configuration", () => {
       },
     });
     expect(config.thinkingConfig).not.toHaveProperty("thinkingBudget");
-    expect(config.realtimeInputConfig.automaticActivityDetection.silenceDurationMs).toBe(1_300);
+    expect(config.realtimeInputConfig.automaticActivityDetection).toEqual(GEMINI_LIVE_VAD);
   });
 
   it("locks bounded server shadow context into the system instruction", () => {
