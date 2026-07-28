@@ -13,6 +13,10 @@ const liveHookSource = readFileSync(
   new URL("../src/hooks/useGeminiLive.ts", import.meta.url),
   "utf8",
 );
+const subscriptionSyncSource = readFileSync(
+  new URL("../src/lib/native/subscriptionSync.ts", import.meta.url),
+  "utf8",
+);
 
 describe("Voice mode interface", () => {
   it("does not render caption controls or transcript cards", () => {
@@ -59,8 +63,21 @@ describe("Voice mode interface", () => {
     expect(captureIndex).toBeGreaterThan(nativePermissionIndex);
   });
 
-  it("keeps Google Billing restoration out of the Voice tap path", () => {
-    expect(liveHookSource).not.toContain("refreshNativeSubscriptionEntitlement");
+  it("repairs native premium access only after the server rejects eligibility", () => {
+    const eligibilityIndex = liveHookSource.indexOf('"eligibility-request"');
+    const entitlementRepairIndex = liveHookSource.indexOf("await refreshNativeVoiceEntitlement();");
+    const retryIndex = liveHookSource.indexOf('"eligibility-retry-after-entitlement-sync"');
+
+    expect(entitlementRepairIndex).toBeGreaterThan(eligibilityIndex);
+    expect(retryIndex).toBeGreaterThan(entitlementRepairIndex);
+    expect(subscriptionSyncSource).toContain("selectNewestConfiguredNativePurchase");
+    expect(subscriptionSyncSource).toContain("NATIVE_ENTITLEMENT_SYNC_TIMEOUT_MS");
+  });
+
+  it("lets a premium retry revalidate before sending someone to plan management", () => {
+    expect(voiceModeSource).not.toContain('if (premiumRequired) {\n      navigate("/paywall");');
+    expect(voiceModeSource).toContain("Restore premium access");
+    expect(voiceModeSource).toContain("Manage premium plan");
   });
 
   it("primes Android audio before a readiness retry can yield", () => {
