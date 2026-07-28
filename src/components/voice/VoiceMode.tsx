@@ -256,8 +256,15 @@ export default function VoiceMode({
     }
 
     let ready = liveReady;
-    if (!ready || live.state === "error" || live.state === "permission-denied" || live.state === "offline") {
+    const shouldRefreshStatus =
+      !ready ||
+      live.state === "error" ||
+      live.state === "permission-denied" ||
+      live.state === "offline";
+    if (!ready) {
       ready = await onRetryLiveReady();
+    } else if (shouldRefreshStatus) {
+      void onRetryLiveReady();
     }
     if (ready) await live.start();
   }, [live.start, liveReady, navigate, onRetryLiveReady, premiumRequired]);
