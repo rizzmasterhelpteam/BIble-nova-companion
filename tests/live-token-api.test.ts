@@ -261,6 +261,22 @@ describe("Gemini Live token endpoint", () => {
     expect(response.statusCode).toBe(500);
   });
 
+  it("keeps the original Voice failure when idempotency cleanup also fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    createToken.mockRejectedValueOnce(new Error("Gemini token failure"));
+    security.deleteIdempotency.mockRejectedValueOnce(new Error("idempotency cleanup failure"));
+    const response = createResponse();
+
+    await tokenHandler({ method: "POST", headers: { "x-client-request-id": "request-id-cleanup1" } }, response);
+
+    expect(response.statusCode).toBe(500);
+    expect(response.body).toMatchObject({
+      error: "Voice is temporarily unavailable. You can continue in Chat.",
+      reason: "connection_failed",
+    });
+    errorSpy.mockRestore();
+  });
+
   it("validates renewal handles before rate limiting or idempotency insertion", async () => {
     security.hashHandle.mockReturnValueOnce(null);
     const response = createResponse();

@@ -246,61 +246,55 @@ export const cancelUnstartedVoiceSessionLease = async (userId: string, leaseId: 
 const isValidVoiceRequestId = (value: unknown): value is string =>
   typeof value === "string" && value.length >= 16 && value.length <= 128 && /^[A-Za-z0-9_-]+$/.test(value);
 
-const isPostgrestNoRowError = (error: unknown) => {
+type VoiceTokenIdempotencyRow = {
+  response?: unknown;
+  expires_at: string;
+  acknowledged_at?: string | null;
+};
+
+const throwVoiceTokenIdempotencyError = (operation: string, error: unknown, message = "Voice start is temporarily unavailable.") => {
   const details = error as { code?: unknown; status?: unknown; message?: unknown } | null;
-  const message = typeof details?.message === "string" ? details.message.toLowerCase() : "";
-  return details?.code === "PGRST116" || details?.status === 406 || message.includes("0 rows");
+  console.error("Voice token idempotency operation failed:", {
+    operation,
+    code: typeof details?.code === "string" ? details.code : null,
+    status: typeof details?.status === "number" ? details.status : null,
+    message: typeof details?.message === "string" ? details.message.slice(0, 240) : null,
+  });
+  throw new HttpError(message, 503);
 };
 
 export const getVoiceTokenIdempotencyResponse = async (userId: string, requestId: string) => {
   if (!isValidVoiceRequestId(requestId)) return null;
   const client = getSupabaseAdminClient();
-  let rows: Array<{
-    response?: unknown;
-    expires_at: string;
-    acknowledged_at?: string | null;
-  }> = [];
-  try {
-    const result = await client
-      .schema("private")
-      .from("voice_token_idempotency")
-      .select("response, expires_at, acknowledged_at")
-      .eq("user_id", userId)
-      .eq("request_id", requestId)
-      .limit(1);
-    if (result.error) throw result.error;
-    rows = Array.isArray(result.data) ? result.data : [];
-  } catch (error) {
-    if (isPostgrestNoRowError(error)) {
-      console.info("Voice token recovery miss: idempotency row was not found.");
-      return null;
-    }
-    throw new HttpError("Voice start is temporarily unavailable.", 503);
-  }
-  const data = rows[0] ?? null;
-  if (!data || data.acknowledged_at || Date.parse(data.expires_at) <= Date.now()) return null;
-  return data.response && typeof data.response === "object" ? data.response : null;
+  const { data, error } = await client.rpc("get_voice_token_idempotency_response", {
+    p_user_id: userId,
+    p_request_id: requestId,
+  });
+  if (error) throwVoiceTokenIdempotencyError("read", error);
+
+  const row = Array.isArray(data) ? data[0] as VoiceTokenIdempotencyRow | undefined : undefined;
+  const idempotency = row ?? null;
+  if (!idempotency || idempotency.acknowledged_at || Date.parse(idempotency.expires_at) <= Date.now()) return null;
+  return idempotency.response && typeof idempotency.response === "object" ? idempotency.response : null;
 };
 
 export const cleanupExpiredVoiceTokenIdempotency = async () => {
   const client = getSupabaseAdminClient();
   const { error } = await client.rpc("cleanup_expired_voice_token_idempotency");
-  if (error) throw new HttpError("Voice start is temporarily unavailable.", 503);
+  if (error) throwVoiceTokenIdempotencyError("cleanup", error);
 };
 
 export const beginVoiceTokenIdempotency = async (userId: string, requestId: string) => {
   if (!isValidVoiceRequestId(requestId)) {
     throw new HttpError("Voice request identifier is invalid.", 400);
   }
-  await cleanupExpiredVoiceTokenIdempotency();
   const client = getSupabaseAdminClient();
-  const { error } = await client
-    .schema("private")
-    .from("voice_token_idempotency")
-    .insert({ user_id: userId, request_id: requestId });
-  if (!error) return true;
-  if (error.code === "23505") return false;
-  throw new HttpError("Voice start is temporarily unavailable.", 503);
+  const { data, error } = await client.rpc("begin_voice_token_idempotency", {
+    p_user_id: userId,
+    p_request_id: requestId,
+  });
+  if (error) throwVoiceTokenIdempotencyError("begin", error);
+  return data === true;
 };
 
 export const completeVoiceTokenIdempotency = async (
@@ -310,13 +304,16 @@ export const completeVoiceTokenIdempotency = async (
   leaseId?: string,
 ) => {
   const client = getSupabaseAdminClient();
-  const { error } = await client
-    .schema("private")
-    .from("voice_token_idempotency")
-    .update({ response, lease_id: leaseId || null })
-    .eq("user_id", userId)
-    .eq("request_id", requestId);
-  if (error) throw new HttpError("Voice start is temporarily unavailable.", 503);
+  const { data, error } = await client.rpc("complete_voice_token_idempotency", {
+    p_user_id: userId,
+    p_request_id: requestId,
+    p_response: response,
+    p_lease_id: leaseId || null,
+  });
+  if (error) throwVoiceTokenIdempotencyError("complete", error);
+  if (data !== true) {
+    throw new HttpError("Voice start expired before it could be completed. Please retry.", 409);
+  }
 };
 
 export const attachVoiceTokenIdempotencyLease = async (
@@ -325,13 +322,15 @@ export const attachVoiceTokenIdempotencyLease = async (
   leaseId: string,
 ) => {
   const client = getSupabaseAdminClient();
-  const { error } = await client
-    .schema("private")
-    .from("voice_token_idempotency")
-    .update({ lease_id: leaseId })
-    .eq("user_id", userId)
-    .eq("request_id", requestId);
-  if (error) throw new HttpError("Voice start is temporarily unavailable.", 503);
+  const { data, error } = await client.rpc("attach_voice_token_idempotency_lease", {
+    p_user_id: userId,
+    p_request_id: requestId,
+    p_lease_id: leaseId,
+  });
+  if (error) throwVoiceTokenIdempotencyError("attach_lease", error);
+  if (data !== true) {
+    throw new HttpError("Voice start expired before it could be prepared. Please retry.", 409);
+  }
 };
 
 export const acknowledgeVoiceTokenIdempotency = async (userId: string, requestId: string) => {
@@ -339,39 +338,29 @@ export const acknowledgeVoiceTokenIdempotency = async (userId: string, requestId
     throw new HttpError("Voice request identifier is invalid.", 400);
   }
   const client = getSupabaseAdminClient();
-  let rows: Array<{ request_id?: string }> = [];
-  let error: unknown = null;
-  try {
-    const result = await client
-      .schema("private")
-      .from("voice_token_idempotency")
-      .update({ acknowledged_at: new Date().toISOString() })
-      .eq("user_id", userId)
-      .eq("request_id", requestId)
-      .not("response", "is", null)
-      .select("request_id")
-      .limit(1);
-    rows = Array.isArray(result.data) ? result.data : [];
-    error = result.error;
-  } catch (caughtError) {
-    error = caughtError;
-  }
-  if (error && !isPostgrestNoRowError(error)) throw new HttpError("Voice start acknowledgement failed.", 503);
-  if (error && isPostgrestNoRowError(error)) return;
-  if (!rows[0]) throw new HttpError("Voice start acknowledgement was not found.", 404);
+  const { data, error } = await client.rpc("acknowledge_voice_token_idempotency", {
+    p_user_id: userId,
+    p_request_id: requestId,
+  });
+  if (error) throwVoiceTokenIdempotencyError("acknowledge", error, "Voice start acknowledgement failed.");
+  if (data !== true) throw new HttpError("Voice start acknowledgement was not found.", 404);
 };
 
 export const deleteVoiceTokenIdempotency = async (userId: string, requestId: string) => {
   if (!isValidVoiceRequestId(requestId)) return;
   const client = getSupabaseAdminClient();
-  const { error } = await client
-    .schema("private")
-    .from("voice_token_idempotency")
-    .delete()
-    .eq("user_id", userId)
-    .eq("request_id", requestId)
-    .is("response", null);
-  if (error) console.error("Voice token idempotency cleanup failed:", error.message);
+  const { error } = await client.rpc("delete_voice_token_idempotency", {
+    p_user_id: userId,
+    p_request_id: requestId,
+  });
+  if (error) {
+    const details = error as { code?: unknown; status?: unknown; message?: unknown };
+    console.error("Voice token idempotency cleanup failed:", {
+      code: typeof details.code === "string" ? details.code : null,
+      status: typeof details.status === "number" ? details.status : null,
+      message: typeof details.message === "string" ? details.message.slice(0, 240) : null,
+    });
+  }
 };
 
 export const releaseVoiceSessionLease = async (userId: string, handleHash: string) => {
