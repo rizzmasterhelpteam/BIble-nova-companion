@@ -1,5 +1,5 @@
 import React from "react";
-import appLogo from "../assets/app-logo.png";
+import appLogo from "../assets/app-logo-display.png";
 
 type Props = Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src">;
 

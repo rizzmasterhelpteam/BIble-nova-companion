@@ -15,6 +15,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { getNativePlatform, isNativePlatform } from "./lib/native/platform";
 import { initializeNativeApp } from "./lib/native/app";
 import { startup } from "./lib/startup";
+import { isNativeAndroidDevice } from "./hooks/usePerformanceMode";
 
 const Layout = lazy(() => import("./components/Layout"));
 const Home = lazy(() => import("./pages/Home"));
@@ -160,7 +161,7 @@ export default function App() {
     });
 
     const root = document.documentElement;
-    const isAndroid = isNativeApp && getNativePlatform() === "android";
+    const isAndroid = isNativeAndroidDevice();
     root.classList.toggle("native-android", isAndroid);
     const mediaQuery = window.matchMedia?.("(prefers-reduced-motion: reduce)");
     const updatePerformanceMode = () => {

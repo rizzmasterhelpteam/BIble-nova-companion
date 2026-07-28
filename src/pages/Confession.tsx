@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Flame, Wind, Eraser, LockKeyhole } from "lucide-react";
 import { cn, useDocumentTitle } from "../lib/utils";
-import { motion, AnimatePresence, useReducedMotion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import PageHeader from "../components/PageHeader";
 import { useMobileViewport } from "../context/MobileViewportContext";
-import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
+import { usePerformanceMode } from "../hooks/usePerformanceMode";
 
 const BURN_EMBERS = [
   { left: "16%", bottom: "14%", size: "5px", color: "rgba(255, 211, 112, 0.95)", drift: -14, rise: -112, delay: 0.05 },
@@ -22,11 +22,9 @@ export default function Confession() {
   const [isReleasing, setIsReleasing] = useState(false);
   const [timeLeft, setTimeLeft] = useState(5);
   const [isDone, setIsDone] = useState(false);
-  const prefersReducedMotion = useReducedMotion();
-  const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
-  const isPerformanceMode = Boolean(prefersReducedMotion || isAndroidApp);
-  const burnAnimationEnabled = !prefersReducedMotion;
-  const burnDuration = prefersReducedMotion ? 1 : 5;
+  const isPerformanceMode = usePerformanceMode();
+  const burnAnimationEnabled = !isPerformanceMode;
+  const burnDuration = isPerformanceMode ? 1 : 5;
 
   useEffect(() => {
     let timer: number | null = null;
@@ -34,7 +32,7 @@ export default function Confession() {
     if (isReleasing && timeLeft > 0) {
       timer = window.setTimeout(
         () => setTimeLeft((prev) => prev - 1),
-        prefersReducedMotion ? 100 : 1000,
+        isPerformanceMode ? 100 : 1000,
       );
     } else if (isReleasing && timeLeft === 0) {
       setIsDone(true);
@@ -45,11 +43,11 @@ export default function Confession() {
     return () => {
       if (timer) window.clearTimeout(timer);
     };
-  }, [isReleasing, prefersReducedMotion, timeLeft]);
+  }, [isPerformanceMode, isReleasing, timeLeft]);
 
   const handleRelease = () => {
     if (!confession.trim()) return;
-    setTimeLeft(prefersReducedMotion ? 1 : 5);
+    setTimeLeft(isPerformanceMode ? 1 : 5);
     setIsReleasing(true);
   };
 
@@ -292,20 +290,20 @@ export default function Confession() {
         ) : (
           <motion.div
             key="success-message"
-                initial={prefersReducedMotion || isAndroidApp ? false : { opacity: 0, scale: 0.8, filter: "blur(5px)" }}
+                initial={isPerformanceMode ? false : { opacity: 0, scale: 0.8, filter: "blur(5px)" }}
                 animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-            transition={{ duration: prefersReducedMotion || isAndroidApp ? 0.15 : 1, delay: prefersReducedMotion || isAndroidApp ? 0 : 0.2 }}
+            transition={{ duration: isPerformanceMode ? 0.15 : 1, delay: isPerformanceMode ? 0 : 0.2 }}
             className={cn("flex flex-1 flex-col items-center justify-center", isShortPhone ? "" : "-mt-16")}
           >
             <div className="relative mb-8">
               <motion.div
-                animate={prefersReducedMotion || isAndroidApp ? undefined : { scale: [1, 1.18, 1], opacity: [0.3, 0.1, 0.3] }}
+                animate={isPerformanceMode ? undefined : { scale: [1, 1.18, 1], opacity: [0.3, 0.1, 0.3] }}
                 transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
                 className="absolute inset-0 rounded-full blur-md"
                 style={{ background: "var(--app-accent-soft)" }}
               />
               <motion.div
-                animate={prefersReducedMotion || isAndroidApp ? undefined : { y: [0, -10, 0] }}
+                animate={isPerformanceMode ? undefined : { y: [0, -10, 0] }}
                 transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
                 className="glass relative flex h-24 w-24 items-center justify-center rounded-full border"
                 style={{

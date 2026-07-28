@@ -10,8 +10,8 @@ const readHomeMode = (identityKey: string | null): HomeMode =>
 
 export default function Home() {
   const { identityKey } = useAuth();
-  const [mode, setMode] = useState<HomeMode>("voice");
-  const [hasLoadedMode, setHasLoadedMode] = useState(false);
+  const [mode, setMode] = useState<HomeMode>(() => readHomeMode(identityKey));
+  const [hasLoadedMode, setHasLoadedMode] = useState(() => Boolean(identityKey));
 
   useEffect(() => {
     setMode(readHomeMode(identityKey));

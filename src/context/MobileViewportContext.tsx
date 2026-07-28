@@ -46,6 +46,7 @@ const MobileViewportContext = createContext<MobileViewportState>(initialState);
 const KEYBOARD_OPEN_THRESHOLD = 120;
 const MIN_VISIBLE_HEIGHT = 280;
 const VIEWPORT_STATE_STEP = 8;
+const VIEWPORT_PUBLISH_DELAY_MS = 140;
 
 const round = (value: number) => Math.round(Math.max(0, value));
 const quantize = (value: number) => Math.round(value / VIEWPORT_STATE_STEP) * VIEWPORT_STATE_STEP;
@@ -130,6 +131,17 @@ const areViewportStatesEqual = (
   );
 };
 
+const areViewportSemanticsEqual = (
+  previous: MobileViewportState | null,
+  next: MobileViewportState,
+) =>
+  Boolean(
+    previous &&
+      previous.isCompactPhone === next.isCompactPhone &&
+      previous.isKeyboardOpen === next.isKeyboardOpen &&
+      previous.isShortPhone === next.isShortPhone,
+  );
+
 const buildViewportState = (
   keyboardHeight: number,
   isKeyboardOpen: boolean,
@@ -183,8 +195,11 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
     );
     let viewportFrame: number | null = null;
     let focusTimer: number | null = null;
+    let publishTimer: number | null = null;
+    let forcePublishOnNextFrame = false;
     let appliedRootState: MobileViewportState | null = null;
     let publishedState: MobileViewportState | null = null;
+    let pendingPublishedState: MobileViewportState | null = null;
     const listenerHandles: PluginListenerHandle[] = [];
 
     const clearFocusTimer = () => {
@@ -202,7 +217,32 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
       }, 80);
     };
 
-    const syncViewport = () => {
+    const clearPublishTimer = () => {
+      if (publishTimer !== null) {
+        window.clearTimeout(publishTimer);
+        publishTimer = null;
+      }
+    };
+
+    const publishViewportState = (nextState: MobileViewportState) => {
+      pendingPublishedState = null;
+      if (areViewportStatesEqual(publishedState, nextState)) return;
+      publishedState = nextState;
+      setState(nextState);
+    };
+
+    const scheduleStablePublish = (nextState: MobileViewportState) => {
+      pendingPublishedState = nextState;
+      clearPublishTimer();
+      publishTimer = window.setTimeout(() => {
+        publishTimer = null;
+        if (!isDisposed && pendingPublishedState) {
+          publishViewportState(pendingPublishedState);
+        }
+      }, VIEWPORT_PUBLISH_DELAY_MS);
+    };
+
+    const syncViewport = (forcePublish = false) => {
       const metrics = getViewportMetrics();
       if (!keyboardOpen) {
         stableHeight = Math.max(metrics.layoutHeight, metrics.rawVisibleHeight);
@@ -217,18 +257,23 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
       }
 
       const nextPublishedState = getPublishedViewportState(nextRootState);
-      if (!areViewportStatesEqual(publishedState, nextPublishedState)) {
-        publishedState = nextPublishedState;
-        setState(nextPublishedState);
+      if (forcePublish || !areViewportSemanticsEqual(publishedState, nextPublishedState)) {
+        clearPublishTimer();
+        publishViewportState(nextPublishedState);
+      } else if (!areViewportStatesEqual(publishedState, nextPublishedState)) {
+        scheduleStablePublish(nextPublishedState);
       }
     };
 
-    const queueViewportSync = () => {
+    const queueViewportSync = (forcePublish = false) => {
+      forcePublishOnNextFrame = forcePublishOnNextFrame || forcePublish;
       if (viewportFrame !== null) return;
 
       viewportFrame = window.requestAnimationFrame(() => {
         viewportFrame = null;
-        syncViewport();
+        const shouldForcePublish = forcePublishOnNextFrame;
+        forcePublishOnNextFrame = false;
+        syncViewport(shouldForcePublish);
       });
     };
 
@@ -236,7 +281,7 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
       const wasKeyboardOpen = keyboardOpen;
       keyboardHeight = round(info.keyboardHeight);
       keyboardOpen = keyboardHeight > KEYBOARD_OPEN_THRESHOLD;
-      queueViewportSync();
+      queueViewportSync(true);
       if (!wasKeyboardOpen && keyboardOpen) {
         scheduleFocusIntoView();
       }
@@ -245,7 +290,7 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
     const handleKeyboardHide = () => {
       keyboardHeight = 0;
       keyboardOpen = false;
-      queueViewportSync();
+      queueViewportSync(true);
     };
 
     const handleViewportChange = () => {
@@ -282,17 +327,19 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
       }
     };
 
-    syncViewport();
+    const handleOrientationChange = () => {
+      queueViewportSync(true);
+    };
+
+    syncViewport(true);
     window.addEventListener("resize", handleViewportChange, { passive: true });
-    window.addEventListener("orientationchange", handleViewportChange, { passive: true });
+    window.addEventListener("orientationchange", handleOrientationChange, { passive: true });
     window.visualViewport?.addEventListener("resize", handleViewportChange, { passive: true });
     window.visualViewport?.addEventListener("scroll", handleViewportScroll, { passive: true });
 
     if (isNativePlatform()) {
       void import("@capacitor/keyboard").then(({ Keyboard }) => Promise.all([
-        Keyboard.addListener("keyboardWillShow", handleKeyboardShow),
         Keyboard.addListener("keyboardDidShow", handleKeyboardShow),
-        Keyboard.addListener("keyboardWillHide", handleKeyboardHide),
         Keyboard.addListener("keyboardDidHide", handleKeyboardHide),
       ])).then((handles) => {
         if (isDisposed) {
@@ -310,8 +357,9 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
         window.cancelAnimationFrame(viewportFrame);
       }
       clearFocusTimer();
+      clearPublishTimer();
       window.removeEventListener("resize", handleViewportChange);
-      window.removeEventListener("orientationchange", handleViewportChange);
+      window.removeEventListener("orientationchange", handleOrientationChange);
       window.visualViewport?.removeEventListener("resize", handleViewportChange);
       window.visualViewport?.removeEventListener("scroll", handleViewportScroll);
       void Promise.all(listenerHandles.map((handle) => handle.remove()));

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "motion/react";
 import PageHeader from "../components/PageHeader";
 import { useDocumentTitle, cn } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
-import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
+import { usePerformanceMode } from "../hooks/usePerformanceMode";
 
 type Phase = "Inhale" | "Hold" | "Exhale";
 type Timings = { inhale: number; hold: number; exhale: number };
@@ -24,7 +24,7 @@ const PHASE_ORDER: Phase[] = ["Inhale", "Hold", "Exhale"];
 export default function Breathe() {
   useDocumentTitle("Breathe | Bible Nova Companion");
   const { isCompactPhone, isShortPhone } = useMobileViewport();
-  const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
+  const isPerformanceMode = usePerformanceMode();
   const [phase, setPhase] = useState<Phase>("Inhale");
   const [circleScale, setCircleScale] = useState(1);
   const [showSettings, setShowSettings] = useState(false);
@@ -180,7 +180,7 @@ export default function Breathe() {
           style={{ maxWidth: visualSize }}
         >
           {/* Ambient outer halo */}
-          {!isAndroidApp && (
+          {!isPerformanceMode && (
             <div
               className="absolute rounded-full"
               style={{
@@ -197,7 +197,9 @@ export default function Breathe() {
             className="absolute rounded-full"
             style={{
               background:
-                "radial-gradient(circle, color-mix(in srgb, var(--app-accent) 18%, transparent) 0%, color-mix(in srgb, var(--app-accent) 9%, transparent) 48%, transparent 72%)",
+                isPerformanceMode
+                  ? "color-mix(in srgb, var(--app-accent) 10%, transparent)"
+                  : "radial-gradient(circle, color-mix(in srgb, var(--app-accent) 18%, transparent) 0%, color-mix(in srgb, var(--app-accent) 9%, transparent) 48%, transparent 72%)",
               height: innerGlowSize,
               transform: `scale(${circleScale})`,
               transition: `transform ${phaseDuration}ms ease-in-out`,
@@ -205,7 +207,7 @@ export default function Breathe() {
             }}
           />
           {/* Second outer ring — slightly slower */}
-          {!isAndroidApp && (
+          {!isPerformanceMode && (
             <div
               className="absolute rounded-full border"
               style={{
@@ -221,7 +223,9 @@ export default function Breathe() {
             className="absolute rounded-full border"
             style={{
               borderColor: "color-mix(in srgb, var(--app-accent) 18%, transparent)",
-              boxShadow: "0 0 34px color-mix(in srgb, var(--app-accent) 18%, transparent)",
+              boxShadow: isPerformanceMode
+                ? "none"
+                : "0 0 34px color-mix(in srgb, var(--app-accent) 18%, transparent)",
               height: innerRingSize,
               transform: `scale(${circleScale})`,
               transition: `transform ${phaseDuration}ms ease-in-out`,
@@ -233,8 +237,9 @@ export default function Breathe() {
             style={{
               background: "color-mix(in srgb, var(--app-card-bg) 54%, transparent)",
               borderColor: "color-mix(in srgb, var(--app-accent) 40%, transparent)",
-              boxShadow:
-                "inset 0 0 24px color-mix(in srgb, var(--app-accent) 14%, transparent), 0 0 32px color-mix(in srgb, var(--app-accent) 20%, transparent)",
+              boxShadow: isPerformanceMode
+                ? "none"
+                : "inset 0 0 24px color-mix(in srgb, var(--app-accent) 14%, transparent), 0 0 32px color-mix(in srgb, var(--app-accent) 20%, transparent)",
               height: isShortPhone ? "5.4rem" : "7rem",
               transform: `scale(${centerScale})`,
               transition: `transform ${phaseDuration}ms ease-in-out`,
@@ -245,7 +250,12 @@ export default function Breathe() {
             <Wind
               strokeWidth={1.5}
               className="h-10 w-10 opacity-90"
-              style={{ color: "var(--app-accent)", filter: "drop-shadow(0 0 14px color-mix(in srgb, var(--app-accent) 50%, transparent))" }}
+              style={{
+                color: "var(--app-accent)",
+                filter: isPerformanceMode
+                  ? "none"
+                  : "drop-shadow(0 0 14px color-mix(in srgb, var(--app-accent) 50%, transparent))",
+              }}
             />
             <span className="app-heading text-2xl font-light uppercase tracking-[0.15em] drop-shadow-md">
               {isStarted ? phase : "Ready"}
@@ -261,7 +271,7 @@ export default function Breathe() {
             <button
               type="button"
               onClick={startSession}
-              className="touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 py-3.5 text-[15px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              className="touch-target app-primary-button inline-flex min-h-12 w-auto max-w-full min-w-[220px] items-center justify-center gap-2 rounded-pill px-5 py-3 text-[14px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
             >
               <Play className="h-4 w-4 fill-current" />
               Begin breathing

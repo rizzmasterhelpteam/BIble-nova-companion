@@ -6,15 +6,13 @@ import {
   StopCircle,
   AlertCircle,
   Sparkles,
-  Volume2,
-  Square,
   ChevronRight,
   Copy,
   ArrowDown,
 } from "lucide-react";
 import { AppLogo } from "../components/AppLogo";
 import { cn, useDocumentTitle } from "../lib/utils";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { useVoiceSession } from "../context/VoiceSessionContext";
@@ -37,13 +35,11 @@ import {
   type RecognitionMode,
   type SpeechRecognitionSession,
 } from "../lib/speechRecognition";
-import {
-  createTextToSpeechSession,
-  type TextToSpeechSession,
-} from "../lib/textToSpeech";
+import { scheduleIdleTask } from "../lib/idleTask";
 import { VoiceModeToggle } from "../components/voice/VoiceModeToggle";
-import VoiceMode from "../components/voice/VoiceMode";
 import type { ConversationMessage, HomeMode } from "../types/live";
+
+const VoiceMode = React.lazy(() => import("../components/voice/VoiceMode"));
 
 export type Message = ConversationMessage;
 
@@ -75,6 +71,7 @@ const QUICK_PROMPTS = [
 ];
 
 const MAX_STORED_MESSAGES = 80;
+const MAX_CHAT_REQUEST_MESSAGES = 12;
 
 const BIBLE_BOOKS =
   /\b(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|Samuel|Kings|Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|Corinthians|Galatians|Ephesians|Philippians|Colossians|Thessalonians|Timothy|Titus|Philemon|Hebrews|James|Peter|Jude|Revelation)\s+\d+:\d+\b/i;
@@ -125,18 +122,12 @@ type ChatMessageProps = {
   isAndroidApp: boolean;
   isCompactPhone: boolean;
   message: Message;
-  onSpeak: (message: Message) => void;
-  speakingMessageId: string | null;
-  voiceSupported: boolean;
 };
 
 const ChatMessage = React.memo(function ChatMessage({
   isAndroidApp,
   isCompactPhone,
   message,
-  onSpeak,
-  speakingMessageId,
-  voiceSupported,
 }: ChatMessageProps) {
   const isError = message.tone === "error";
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
@@ -173,7 +164,7 @@ const ChatMessage = React.memo(function ChatMessage({
       animate={{ opacity: 1 }}
       transition={{ duration: isAndroidApp ? 0 : 0.2, ease: "easeOut" }}
       className={cn(
-        "flex flex-col w-full",
+        "chat-message-row flex w-full flex-col",
         message.role === "user" ? "items-end" : "items-start",
       )}
     >
@@ -260,16 +251,6 @@ const ChatMessage = React.memo(function ChatMessage({
                   <Copy className="h-3.5 w-3.5" />
                   {copyStatus === "copied" ? "Copied" : copyStatus === "error" ? "Copy failed" : "Copy"}
                 </button>
-                {voiceSupported && (
-                  <button
-                    type="button"
-                    onClick={() => onSpeak(message)}
-                    className="touch-target app-ghost-button inline-flex items-center gap-1.5 rounded-pill px-3 py-2 text-xs"
-                  >
-                    {speakingMessageId === message.id ? <Square className="h-3.5 w-3.5 fill-current" /> : <Volume2 className="h-3.5 w-3.5" />}
-                    {speakingMessageId === message.id ? "Stop" : "Listen"}
-                  </button>
-                )}
               </div>
             )}
           </div>
@@ -293,6 +274,54 @@ const ChatMessage = React.memo(function ChatMessage({
         </div>
       )}
     </motion.div>
+  );
+});
+
+const ChatMessageList = React.memo(function ChatMessageList({
+  isAndroidApp,
+  isCompactPhone,
+  isTyping,
+  messages,
+}: {
+  isAndroidApp: boolean;
+  isCompactPhone: boolean;
+  isTyping: boolean;
+  messages: Message[];
+}) {
+  return (
+    <>
+      {messages.map((message) => (
+        <ChatMessage
+          key={message.id}
+          isAndroidApp={isAndroidApp}
+          isCompactPhone={isCompactPhone}
+          message={message}
+        />
+      ))}
+
+      {isTyping && (
+        <motion.div
+          initial={isAndroidApp ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex max-w-[88%] items-center gap-3"
+        >
+          <div className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center">
+            <AppLogo alt="" className="h-4 w-4 rounded-full object-cover opacity-80" />
+          </div>
+          <div
+            className="flex items-center gap-[6px] rounded-card rounded-tl-[0.5rem] px-5 py-3.5 shadow-sm"
+            style={{
+              background: "var(--app-card-soft)",
+              border: "1px solid var(--app-card-border)",
+            }}
+          >
+            <span className="app-typing-dot" />
+            <span className="app-typing-dot" />
+            <span className="app-typing-dot" />
+          </div>
+        </motion.div>
+      )}
+    </>
   );
 });
 
@@ -321,12 +350,9 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const [isCheckingSpeechSupport, setIsCheckingSpeechSupport] = useState(true);
   const [speechNotice, setSpeechNotice] = useState<string | null>(null);
   const [speechError, setSpeechError] = useState<string | null>(null);
-  const [ttsError, setTtsError] = useState<string | null>(null);
   const [hasLoadedMessages, setHasLoadedMessages] = useState(false);
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
   const [isCheckingApiStatus, setIsCheckingApiStatus] = useState(true);
-  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
-  const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceReservation, setVoiceReservation] = useState<VoiceReservation | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -334,10 +360,9 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const messagesRef = useRef(messages);
   const requestControllerRef = useRef<AbortController | null>(null);
   const speechSessionRef = useRef<SpeechRecognitionSession | null>(null);
-  const ttsSessionRef = useRef<TextToSpeechSession | null>(null);
   const handledRouteActionRef = useRef<string | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
-  const storageWriteTimerRef = useRef<number | null>(null);
+  const cancelStorageWriteRef = useRef<(() => void) | null>(null);
   const lastScrolledMessageCountRef = useRef(0);
   const isNearBottomRef = useRef(true);
   const scrollToLatestAfterVoiceRef = useRef(false);
@@ -478,24 +503,10 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       }
     });
 
-    const ttsSession = createTextToSpeechSession({
-      onSpeakingChange: (messageId) => {
-        setSpeakingMessageId(messageId);
-      },
-      onError: (message) => {
-        setTtsError(message);
-      },
-    });
-
-    ttsSessionRef.current = ttsSession;
-    setVoiceSupported(ttsSession.isSupported());
-
     return () => {
       const speechSession = speechSessionRef.current;
       speechSessionRef.current = null;
-      ttsSessionRef.current = null;
       void speechSession?.destroy();
-      ttsSession.destroy();
     };
   }, [updateInputValue]);
 
@@ -524,22 +535,35 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   useEffect(() => {
     const storageKey = getMessageStorageKey(identityKey);
     if (!storageKey || !hasLoadedMessages) return;
-    if (storageWriteTimerRef.current !== null) {
-      window.clearTimeout(storageWriteTimerRef.current);
-    }
-
-    storageWriteTimerRef.current = window.setTimeout(() => {
-      storageWriteTimerRef.current = null;
+    cancelStorageWriteRef.current?.();
+    cancelStorageWriteRef.current = scheduleIdleTask(() => {
+      cancelStorageWriteRef.current = null;
       storageSet(storageKey, JSON.stringify(trimStoredMessages(messages)));
-    }, isAndroidApp ? 450 : 180);
+    }, isAndroidApp ? 1_200 : 600);
 
     return () => {
-      if (storageWriteTimerRef.current !== null) {
-        window.clearTimeout(storageWriteTimerRef.current);
-        storageWriteTimerRef.current = null;
-      }
+      cancelStorageWriteRef.current?.();
+      cancelStorageWriteRef.current = null;
     };
   }, [hasLoadedMessages, identityKey, isAndroidApp, messages]);
+
+  useEffect(() => {
+    if (!hasLoadedMessages) return;
+    const storageKey = getMessageStorageKey(identityKey);
+    if (!storageKey) return;
+
+    const flushMessages = () => {
+      if (document.visibilityState !== "hidden") return;
+      cancelStorageWriteRef.current?.();
+      cancelStorageWriteRef.current = null;
+      storageSet(storageKey, JSON.stringify(trimStoredMessages(messagesRef.current)));
+    };
+
+    document.addEventListener("visibilitychange", flushMessages);
+    return () => {
+      document.removeEventListener("visibilitychange", flushMessages);
+    };
+  }, [hasLoadedMessages, identityKey]);
 
   useEffect(() => {
     return () => {
@@ -547,9 +571,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       if (resizeFrameRef.current) {
         window.cancelAnimationFrame(resizeFrameRef.current);
       }
-      if (storageWriteTimerRef.current !== null) {
-        window.clearTimeout(storageWriteTimerRef.current);
-      }
+      cancelStorageWriteRef.current?.();
     };
   }, []);
 
@@ -657,8 +679,6 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       await speechSessionRef.current?.stop();
     }
 
-    ttsSessionRef.current?.stop();
-
     requestControllerRef.current?.abort();
     const controller = new AbortController();
     requestControllerRef.current = controller;
@@ -687,7 +707,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: nextMessages.map((message) => ({
+          messages: nextMessages.slice(-MAX_CHAT_REQUEST_MESSAGES).map((message) => ({
             role: message.role,
             content: message.content,
           })),
@@ -897,31 +917,6 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
     }
   };
 
-  const handleSpeakMessage = useCallback(async (message: Message) => {
-    if (
-      message.role !== "ai" ||
-      message.tone === "error" ||
-      !voiceSupported
-    ) {
-      return;
-    }
-
-    setTtsError(null);
-
-    if (speakingMessageId === message.id) {
-      ttsSessionRef.current?.stop();
-      return;
-    }
-
-    try {
-      await ttsSessionRef.current?.speak(message.id, message.content);
-    } catch (error) {
-      setTtsError(
-        error instanceof Error ? error.message : "Voice playback could not start on this device.",
-      );
-    }
-  }, [speakingMessageId, voiceSupported]);
-
   const toggleRecording = async () => {
     if (isRecording) {
       await stopSpeechRecognition();
@@ -983,27 +978,29 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
             <VoiceModeToggle
               value={mode}
               onChange={handleModeChange}
-              className="w-full justify-center sm:w-auto"
+              className="w-auto max-w-full justify-center"
             />
           </div>
         </div>
       )}
 
       {isVoiceMode ? (
-        <VoiceMode
-          messages={messages}
-          shadowNotes={shadowNotes}
-          isTyping={isTyping}
-          onAppendUserMessage={appendVoiceUserMessage}
-          onAppendAssistantMessage={appendVoiceAssistantMessage}
-          onAcceptShadowNotes={acceptPersistedShadowNotes}
-          onExitVoice={continueInChat}
-          onSessionActiveChange={setVoiceSessionActive}
-          reservation={voiceReservation}
-          onReservationChange={updateVoiceReservation}
-          liveReady={apiStatus?.liveReady === true}
-          isCheckingLiveReady={isCheckingApiStatus}
-        />
+        <React.Suspense fallback={<div className="min-h-0 flex-1" aria-busy="true" />}>
+          <VoiceMode
+            messages={messages}
+            shadowNotes={shadowNotes}
+            isTyping={isTyping}
+            onAppendUserMessage={appendVoiceUserMessage}
+            onAppendAssistantMessage={appendVoiceAssistantMessage}
+            onAcceptShadowNotes={acceptPersistedShadowNotes}
+            onExitVoice={continueInChat}
+            onSessionActiveChange={setVoiceSessionActive}
+            reservation={voiceReservation}
+            onReservationChange={updateVoiceReservation}
+            liveReady={apiStatus?.liveReady === true}
+            isCheckingLiveReady={isCheckingApiStatus}
+          />
+        </React.Suspense>
       ) : (
       <>
       <div
@@ -1094,43 +1091,12 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           </motion.div>
         )}
 
-        <AnimatePresence initial={false}>
-          {messages.map((message) => (
-            <ChatMessage
-              key={message.id}
-              isAndroidApp={isAndroidApp}
-              isCompactPhone={isCompactPhone}
-              message={message}
-              onSpeak={handleSpeakMessage}
-              speakingMessageId={speakingMessageId}
-              voiceSupported={voiceSupported}
-            />
-          ))}
-        </AnimatePresence>
-
-        {isTyping && (
-          <motion.div
-            initial={isAndroidApp ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex max-w-[88%] items-center gap-3"
-          >
-            <div className="w-[30px] h-[30px] flex-shrink-0 flex items-center justify-center">
-              <AppLogo alt="" className="h-4 w-4 rounded-full object-cover opacity-80" />
-            </div>
-            <div
-              className="flex items-center gap-[6px] rounded-card rounded-tl-[0.5rem] px-5 py-3.5 shadow-sm"
-              style={{
-                background: "var(--app-card-soft)",
-                border: "1px solid var(--app-card-border)",
-              }}
-            >
-              <span className="app-typing-dot" />
-              <span className="app-typing-dot" />
-              <span className="app-typing-dot" />
-            </div>
-          </motion.div>
-        )}
+        <ChatMessageList
+          isAndroidApp={isAndroidApp}
+          isCompactPhone={isCompactPhone}
+          isTyping={isTyping}
+          messages={messages}
+        />
         </div>
       </div>
 
@@ -1158,20 +1124,16 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
         <div className="mx-auto w-full max-w-3xl">
           <div className="min-h-0" aria-live="polite">{(isRecording ||
             isTranscribingSpeech ||
-            speakingMessageId ||
             speechError ||
-            speechNotice ||
-            ttsError) && (
+            speechNotice) && (
             <p
               className="mb-1 px-1 text-center text-[11px]"
               style={{
-                color: speechError || ttsError ? "var(--app-danger)" : "var(--app-text-muted)",
+                color: speechError ? "var(--app-danger)" : "var(--app-text-muted)",
               }}
             >
-              {speechError || speechNotice || ttsError
-                ? speechError || speechNotice || ttsError
-                : speakingMessageId
-                ? "Playing audio."
+              {speechError || speechNotice
+                ? speechError || speechNotice
                 : isRecording
                 ? "Listening. Tap stop when you're done."
                 : isTranscribingSpeech

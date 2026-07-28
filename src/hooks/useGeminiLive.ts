@@ -20,7 +20,10 @@ import {
   signalAudioStreamEnd,
 } from "../lib/liveProtocol";
 import type { ConversationMessage, VoiceState } from "../types/live";
-import { GEMINI_LIVE_API_VERSION } from "../../shared/liveConfig";
+import {
+  GEMINI_LIVE_API_VERSION,
+  GEMINI_LIVE_VOICE,
+} from "../../shared/liveConfig";
 
 type LiveTokenResponse = {
   token?: string;
@@ -83,6 +86,7 @@ const INPUT_SAMPLE_RATE = 16_000;
 const OUTPUT_SAMPLE_RATE = 24_000;
 const MAX_RECONNECT_ATTEMPTS = 2;
 const PLAYBACK_GAIN = getSafePlaybackGain(1.3);
+const MIC_WORKLET_BATCH_SIZE = 640;
 
 const base64ToBytes = (value: string) => {
   const binary = window.atob(value);
@@ -166,8 +170,6 @@ export function useGeminiLive({
   const [errorCode, setErrorCode] = useState<VoiceErrorCode | null>(null);
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null);
   const [retryUntil, setRetryUntil] = useState<number | null>(null);
-  const [userTranscript, setUserTranscript] = useState("");
-  const [assistantTranscript, setAssistantTranscript] = useState("");
   const [isMuted, setIsMuted] = useState(false);
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
   const isMutedRef = useRef(false);
@@ -176,11 +178,11 @@ export function useGeminiLive({
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
+  const processorNodeRef = useRef<ScriptProcessorNode | AudioWorkletNode | null>(null);
   const muteGainRef = useRef<GainNode | null>(null);
   const playbackGainRef = useRef<GainNode | null>(null);
   const playbackCompressorRef = useRef<DynamicsCompressorNode | null>(null);
-  const playbackSourcesRef = useRef<AudioBufferSourceNode[]>([]);
+  const playbackSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const nextPlaybackTimeRef = useRef(0);
   const userTranscriptRef = useRef("");
   const assistantTranscriptRef = useRef("");
@@ -234,12 +236,23 @@ export function useGeminiLive({
         // The source may already be disconnected by its ended handler.
       }
     });
-    playbackSourcesRef.current = [];
+    playbackSourcesRef.current.clear();
     nextPlaybackTimeRef.current = 0;
   }, []);
 
   const releaseAudio = useCallback(() => {
-    processorNodeRef.current?.disconnect();
+    const processorNode = processorNodeRef.current;
+    if (
+      processorNode &&
+      typeof AudioWorkletNode !== "undefined" &&
+      processorNode instanceof AudioWorkletNode
+    ) {
+      processorNode.port.onmessage = null;
+      processorNode.port.close();
+    } else if (processorNode) {
+      processorNode.onaudioprocess = null;
+    }
+    processorNode?.disconnect();
     sourceNodeRef.current?.disconnect();
     muteGainRef.current?.disconnect();
     playbackGainRef.current?.disconnect();
@@ -285,7 +298,6 @@ export function useGeminiLive({
     if (!finalText || userTranscriptFinalizedRef.current) return;
     userTranscriptFinalizedRef.current = true;
     onUserTranscript(finalText);
-    setUserTranscript("");
     userTranscriptRef.current = "";
   }, [onUserTranscript]);
 
@@ -294,7 +306,6 @@ export function useGeminiLive({
     if (!finalText || assistantTranscriptFinalizedRef.current) return;
     assistantTranscriptFinalizedRef.current = true;
     onAssistantTranscript(finalText);
-    setAssistantTranscript("");
     assistantTranscriptRef.current = "";
   }, [onAssistantTranscript]);
 
@@ -313,19 +324,19 @@ export function useGeminiLive({
     const startAt = Math.max(audioContext.currentTime, nextPlaybackTimeRef.current);
     source.start(startAt);
     nextPlaybackTimeRef.current = startAt + buffer.duration;
-    playbackSourcesRef.current.push(source);
+    playbackSourcesRef.current.add(source);
     source.addEventListener("ended", () => {
       try {
         source.disconnect();
       } catch {
         // A stopped source may already be disconnected.
       }
-      playbackSourcesRef.current = playbackSourcesRef.current.filter((item) => item !== source);
+      playbackSourcesRef.current.delete(source);
       if (shouldResumeListeningAfterPlayback({
         playbackGeneration,
         currentGeneration: playbackGenerationRef.current,
         stopRequested: stopRequestedRef.current,
-        remainingSources: playbackSourcesRef.current.length,
+        remainingSources: playbackSourcesRef.current.size,
       })) {
         setState("listening");
       }
@@ -403,8 +414,6 @@ export function useGeminiLive({
     setRetryAfterSeconds(null);
     setRetryUntil(null);
     setSessionNotice(null);
-    setUserTranscript("");
-    setAssistantTranscript("");
     userTranscriptRef.current = "";
     assistantTranscriptRef.current = "";
     userTranscriptFinalizedRef.current = false;
@@ -529,6 +538,13 @@ export function useGeminiLive({
       });
       const liveConfig: Gemini31LiveConnectConfig = {
         responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: GEMINI_LIVE_VOICE,
+            },
+          },
+        },
         inputAudioTranscription: {},
         outputAudioTranscription: {},
         sessionResumption: {},
@@ -561,7 +577,6 @@ export function useGeminiLive({
             if (inputText) {
               userTranscriptFinalizedRef.current = false;
               userTranscriptRef.current = mergeLiveTranscript(userTranscriptRef.current, inputText);
-              setUserTranscript(userTranscriptRef.current);
               setState("user-speaking");
               if (serverContent?.inputTranscription?.finished) {
                 finalizeUserTranscript();
@@ -572,7 +587,6 @@ export function useGeminiLive({
             if (outputText) {
               assistantTranscriptFinalizedRef.current = false;
               assistantTranscriptRef.current = mergeLiveTranscript(assistantTranscriptRef.current, outputText);
-              setAssistantTranscript(assistantTranscriptRef.current);
               if (serverContent?.outputTranscription?.finished) finalizeAssistantTranscript();
             }
 
@@ -642,18 +656,62 @@ export function useGeminiLive({
       audioContextRef.current = audioContext;
       if (audioContext.state !== "running") await audioContext.resume();
       const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
       const muteGain = audioContext.createGain();
       muteGain.gain.value = 0;
-      processor.onaudioprocess = (event) => {
+
+      const sendPcmAudio = (pcm: Uint8Array) => {
         if (stopRequestedRef.current || isMutedRef.current) return;
         audioStreamEndedRef.current = false;
-        const channel = event.inputBuffer.getChannelData(0);
-        const pcm = floatToPcm16(resample(channel, event.inputBuffer.sampleRate, INPUT_SAMPLE_RATE));
         session.sendRealtimeInput({
           audio: { data: bytesToBase64(pcm), mimeType: `audio/pcm;rate=${INPUT_SAMPLE_RATE}` },
         });
       };
+
+      let processor: ScriptProcessorNode | AudioWorkletNode | null = null;
+      if (audioContext.audioWorklet && typeof AudioWorkletNode !== "undefined") {
+        try {
+          const workletUrl = new URL(
+            "audio/gemini-mic-processor.js",
+            document.baseURI,
+          ).toString();
+          await audioContext.audioWorklet.addModule(workletUrl);
+          const worklet = new AudioWorkletNode(audioContext, "gemini-mic-processor", {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [1],
+            processorOptions: {
+              targetSampleRate: INPUT_SAMPLE_RATE,
+              batchSize: MIC_WORKLET_BATCH_SIZE,
+            },
+          });
+          worklet.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+            if (
+              sessionRef.current !== session ||
+              !(event.data instanceof ArrayBuffer)
+            ) {
+              return;
+            }
+            sendPcmAudio(new Uint8Array(event.data));
+          };
+          processor = worklet;
+        } catch (workletError) {
+          console.warn("AudioWorklet unavailable; using legacy microphone processing.", workletError);
+        }
+      }
+
+      if (!processor) {
+        const fallbackProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+        fallbackProcessor.onaudioprocess = (event) => {
+          if (stopRequestedRef.current || isMutedRef.current) return;
+          const channel = event.inputBuffer.getChannelData(0);
+          const pcm = floatToPcm16(
+            resample(channel, event.inputBuffer.sampleRate, INPUT_SAMPLE_RATE),
+          );
+          sendPcmAudio(pcm);
+        };
+        processor = fallbackProcessor;
+      }
+
       source.connect(processor);
       processor.connect(muteGain);
       muteGain.connect(audioContext.destination);
@@ -792,8 +850,6 @@ export function useGeminiLive({
     errorCode,
     retryAfterSeconds,
     retryUntil,
-    userTranscript,
-    assistantTranscript,
     isMuted,
     sessionNotice,
     start,
