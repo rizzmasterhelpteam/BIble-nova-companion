@@ -255,6 +255,9 @@ export default function VoiceMode({
       return;
     }
 
+    // Android requires audio to be activated directly from the tap. Do this
+    // before a status retry yields to the network or the Capacitor bridge.
+    live.primeAudioForUserGesture();
     let ready = liveReady;
     const shouldRefreshStatus =
       !ready ||
@@ -267,7 +270,7 @@ export default function VoiceMode({
       void onRetryLiveReady();
     }
     if (ready) await live.start();
-  }, [live.start, liveReady, navigate, onRetryLiveReady, premiumRequired]);
+  }, [live.primeAudioForUserGesture, live.start, liveReady, navigate, onRetryLiveReady, premiumRequired]);
 
   const handleExitVoice = useCallback(() => {
     if (exitPromiseRef.current) return exitPromiseRef.current;

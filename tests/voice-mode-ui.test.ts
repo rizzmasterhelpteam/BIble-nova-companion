@@ -25,6 +25,7 @@ describe("Voice mode interface", () => {
   it("rechecks readiness and starts Live when readiness is recovered", () => {
     expect(voiceModeSource).toContain("ready = await onRetryLiveReady();");
     expect(voiceModeSource).toContain("void onRetryLiveReady();");
+    expect(voiceModeSource).toContain("live.primeAudioForUserGesture();");
     expect(voiceModeSource).toContain("if (ready) await live.start();");
   });
 
@@ -34,10 +35,20 @@ describe("Voice mode interface", () => {
   });
 
   it("activates Android audio before native storage or network awaits", () => {
-    const resumeIndex = liveHookSource.indexOf("const audioResumePromise = activatedAudioContext.resume();");
+    const resumeIndex = liveHookSource.indexOf(
+      "const audioResumePromise = audioResumePromiseRef.current || activatedAudioContext.resume();",
+    );
     const pendingReleaseIndex = liveHookSource.indexOf("if (!isReconnect) await retryPendingRelease();");
 
     expect(resumeIndex).toBeGreaterThan(-1);
     expect(pendingReleaseIndex).toBeGreaterThan(resumeIndex);
+  });
+
+  it("primes Android audio before a readiness retry can yield", () => {
+    const primeIndex = voiceModeSource.indexOf("live.primeAudioForUserGesture();");
+    const statusRetryIndex = voiceModeSource.indexOf("ready = await onRetryLiveReady();");
+
+    expect(primeIndex).toBeGreaterThan(-1);
+    expect(statusRetryIndex).toBeGreaterThan(primeIndex);
   });
 });
