@@ -255,7 +255,11 @@ const isPostgrestNoRowError = (error: unknown) => {
 export const getVoiceTokenIdempotencyResponse = async (userId: string, requestId: string) => {
   if (!isValidVoiceRequestId(requestId)) return null;
   const client = getSupabaseAdminClient();
-  let data: { response?: unknown; expires_at: string; acknowledged_at?: string | null } | null = null;
+  let rows: Array<{
+    response?: unknown;
+    expires_at: string;
+    acknowledged_at?: string | null;
+  }> = [];
   try {
     const result = await client
       .schema("private")
@@ -263,9 +267,9 @@ export const getVoiceTokenIdempotencyResponse = async (userId: string, requestId
       .select("response, expires_at, acknowledged_at")
       .eq("user_id", userId)
       .eq("request_id", requestId)
-      .maybeSingle();
-    data = result.data;
+      .limit(1);
     if (result.error) throw result.error;
+    rows = Array.isArray(result.data) ? result.data : [];
   } catch (error) {
     if (isPostgrestNoRowError(error)) {
       console.info("Voice token recovery miss: idempotency row was not found.");
@@ -273,6 +277,7 @@ export const getVoiceTokenIdempotencyResponse = async (userId: string, requestId
     }
     throw new HttpError("Voice start is temporarily unavailable.", 503);
   }
+  const data = rows[0] ?? null;
   if (!data || data.acknowledged_at || Date.parse(data.expires_at) <= Date.now()) return null;
   return data.response && typeof data.response === "object" ? data.response : null;
 };
@@ -334,7 +339,7 @@ export const acknowledgeVoiceTokenIdempotency = async (userId: string, requestId
     throw new HttpError("Voice request identifier is invalid.", 400);
   }
   const client = getSupabaseAdminClient();
-  let data: { request_id?: string } | null = null;
+  let rows: Array<{ request_id?: string }> = [];
   let error: unknown = null;
   try {
     const result = await client
@@ -345,15 +350,15 @@ export const acknowledgeVoiceTokenIdempotency = async (userId: string, requestId
       .eq("request_id", requestId)
       .not("response", "is", null)
       .select("request_id")
-      .maybeSingle();
-    data = result.data;
+      .limit(1);
+    rows = Array.isArray(result.data) ? result.data : [];
     error = result.error;
   } catch (caughtError) {
     error = caughtError;
   }
   if (error && !isPostgrestNoRowError(error)) throw new HttpError("Voice start acknowledgement failed.", 503);
   if (error && isPostgrestNoRowError(error)) return;
-  if (!data) throw new HttpError("Voice start acknowledgement was not found.", 404);
+  if (!rows[0]) throw new HttpError("Voice start acknowledgement was not found.", 404);
 };
 
 export const deleteVoiceTokenIdempotency = async (userId: string, requestId: string) => {
@@ -384,12 +389,13 @@ export const getServerShadowNotes = async (userId: string) => {
     .from("user_shadow_notes")
     .select("notes")
     .eq("user_id", userId)
-    .maybeSingle();
+    .limit(1);
   if (error) {
     console.error("Voice context lookup failed:", error.message);
     throw new HttpError("Voice context is temporarily unavailable.", 503);
   }
-  return typeof data?.notes === "string" ? data.notes.trim().slice(0, 1_500) : "";
+  const notes = Array.isArray(data) ? data[0]?.notes : null;
+  return typeof notes === "string" ? notes.trim().slice(0, 1_500) : "";
 };
 
 export const getRateLimitStorageKey = (key: string) => {
