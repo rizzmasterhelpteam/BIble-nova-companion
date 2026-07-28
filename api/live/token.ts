@@ -18,6 +18,7 @@ import {
   finalizeVoiceSessionRenewal,
   beginVoiceTokenIdempotency,
   completeVoiceTokenIdempotency,
+  cleanupExpiredVoiceTokenIdempotency,
   getVoiceTokenIdempotencyResponse,
   hashVoiceReservationHandle,
   releaseVoiceSessionLease,
@@ -77,13 +78,19 @@ export default async function handler(req: any, res: any) {
       res.status(204).end();
       return;
     }
+    if (body.action === "recover") {
+      await cleanupExpiredVoiceTokenIdempotency();
+      const previousResponse = await getVoiceTokenIdempotencyResponse(userId, requestId);
+      if (previousResponse) {
+        res.status(200).json(previousResponse);
+        return;
+      }
+      res.status(404).json({ error: "No recoverable Voice start was found.", reason: "connection_failed" });
+      return;
+    }
     const previousResponse = await getVoiceTokenIdempotencyResponse(userId, requestId);
     if (previousResponse) {
       res.status(200).json(previousResponse);
-      return;
-    }
-    if (body.action === "recover") {
-      res.status(404).json({ error: "No recoverable Voice start was found.", reason: "connection_failed" });
       return;
     }
 

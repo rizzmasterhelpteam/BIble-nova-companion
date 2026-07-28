@@ -16,6 +16,7 @@ const security = vi.hoisted(() => ({
   getIdempotency: vi.fn(),
   beginIdempotency: vi.fn(),
   completeIdempotency: vi.fn(),
+  cleanupIdempotency: vi.fn(),
   deleteIdempotency: vi.fn(),
   release: vi.fn(),
 }));
@@ -32,6 +33,7 @@ vi.mock("../server-security", () => ({
   getVoiceTokenIdempotencyResponse: security.getIdempotency,
   beginVoiceTokenIdempotency: security.beginIdempotency,
   completeVoiceTokenIdempotency: security.completeIdempotency,
+  cleanupExpiredVoiceTokenIdempotency: security.cleanupIdempotency,
   deleteVoiceTokenIdempotency: security.deleteIdempotency,
   releaseVoiceSessionLease: security.release,
   getHttpErrorDetails: (error: unknown) => ({
@@ -116,6 +118,7 @@ describe("Gemini Live token endpoint", () => {
     security.getIdempotency.mockResolvedValue(null);
     security.beginIdempotency.mockResolvedValue(true);
     security.completeIdempotency.mockResolvedValue(undefined);
+    security.cleanupIdempotency.mockResolvedValue(undefined);
     security.deleteIdempotency.mockResolvedValue(undefined);
     security.release.mockResolvedValue(undefined);
     createToken.mockResolvedValue({
@@ -182,6 +185,20 @@ describe("Gemini Live token endpoint", () => {
     expect(response.body).toMatchObject({ token: "recovered-token" });
     expect(security.limits).not.toHaveBeenCalled();
     expect(security.beginIdempotency).not.toHaveBeenCalled();
+    expect(security.cleanupIdempotency).toHaveBeenCalledTimes(1);
+  });
+
+  it("cleans expired recovery state before returning not found", async () => {
+    const response = createResponse();
+    await tokenHandler({
+      method: "POST",
+      headers: { "x-client-request-id": "recover-id-expired1" },
+      body: { action: "recover" },
+    }, response);
+
+    expect(security.cleanupIdempotency).toHaveBeenCalledTimes(1);
+    expect(response.statusCode).toBe(404);
+    expect(security.limits).not.toHaveBeenCalled();
   });
 
   it("acknowledges an accepted token response before rate limiting", async () => {

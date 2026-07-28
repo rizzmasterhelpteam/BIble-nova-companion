@@ -261,13 +261,18 @@ export const getVoiceTokenIdempotencyResponse = async (userId: string, requestId
   return data.response && typeof data.response === "object" ? data.response : null;
 };
 
+export const cleanupExpiredVoiceTokenIdempotency = async () => {
+  const client = getSupabaseAdminClient();
+  const { error } = await client.rpc("cleanup_expired_voice_token_idempotency");
+  if (error) throw new HttpError("Voice start is temporarily unavailable.", 503);
+};
+
 export const beginVoiceTokenIdempotency = async (userId: string, requestId: string) => {
   if (!isValidVoiceRequestId(requestId)) {
     throw new HttpError("Voice request identifier is invalid.", 400);
   }
+  await cleanupExpiredVoiceTokenIdempotency();
   const client = getSupabaseAdminClient();
-  const { error: cleanupError } = await client.rpc("cleanup_expired_voice_token_idempotency");
-  if (cleanupError) throw new HttpError("Voice start is temporarily unavailable.", 503);
   const { error } = await client
     .schema("private")
     .from("voice_token_idempotency")
