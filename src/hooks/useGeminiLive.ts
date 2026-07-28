@@ -636,6 +636,14 @@ export function useGeminiLive({
     }
 
     try {
+      const activatedAudioContext = audioContextRef.current || getAudioContext();
+      audioContextRef.current = activatedAudioContext;
+      logVoiceDiagnostics("audio-context-created", { state: activatedAudioContext.state });
+      const audioResumePromise = activatedAudioContext.resume();
+      await audioResumePromise;
+      assertStartIsCurrent();
+      logVoiceDiagnostics("audio-context-ready", { state: activatedAudioContext.state });
+
       if (!isReconnect) await retryPendingRelease();
       assertStartIsCurrent();
       if (!isReconnect && isNativePlatform() && !tokenRequestIdRef.current) {
@@ -683,12 +691,6 @@ export function useGeminiLive({
           );
         }
       }
-      const activatedAudioContext = audioContextRef.current || getAudioContext();
-      audioContextRef.current = activatedAudioContext;
-      logVoiceDiagnostics("audio-context-created", { state: activatedAudioContext.state });
-      await activatedAudioContext.resume();
-      assertStartIsCurrent();
-      logVoiceDiagnostics("audio-context-ready", { state: activatedAudioContext.state });
       setState("requesting-permission");
       const knownExpiry = reservationExpiresAtRef.current
         ? Date.parse(reservationExpiresAtRef.current)

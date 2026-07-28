@@ -599,7 +599,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       const data = await loadApiStatus(true);
       apiStatusRef.current = data;
       setApiStatus(data);
-      await refreshSpeechSupport("api-status-retry");
+      void refreshSpeechSupport("api-status-retry");
       return data.liveReady === true;
     } finally {
       setIsCheckingApiStatus(false);
