@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createIdempotentAsyncAction,
   createInitialHistoryPayload,
+  getSafePlaybackGain,
   getLiveReconnectDelay,
   getLiveSessionDurationMs,
   guardLiveTokenTiming,
   isLiveTokenTimingValid,
   mergeLiveTranscript,
+  nextPlaybackGeneration,
   shouldReconnectLiveSession,
   shouldResumeListeningAfterPlayback,
   signalAudioStreamEnd,
@@ -72,6 +75,27 @@ describe("Gemini Live protocol helpers", () => {
       stopRequested: true,
       remainingSources: 0,
     })).toBe(false);
+  });
+
+  it("invalidates queued playback and bounds assistant output gain", () => {
+    expect(nextPlaybackGeneration(4)).toBe(5);
+    expect(getSafePlaybackGain(1.3)).toBe(1.3);
+    expect(getSafePlaybackGain(5)).toBe(1.35);
+    expect(getSafePlaybackGain(Number.NaN)).toBe(1);
+  });
+
+  it("runs concurrent stop requests through one in-flight action", async () => {
+    const runIdempotently = createIdempotentAsyncAction();
+    const stopTask = vi.fn(async () => {
+      await Promise.resolve();
+    });
+
+    const first = runIdempotently(stopTask);
+    const second = runIdempotently(stopTask);
+
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    expect(stopTask).toHaveBeenCalledOnce();
   });
 
   it("bounds reconnect attempts and applies backoff", () => {

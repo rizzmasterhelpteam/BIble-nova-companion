@@ -10,3 +10,13 @@ export const getChatScrollBehavior = (
 
 /** A visible keyboard must remove the bottom navigation from the hit-test area. */
 export const shouldHideBottomNavigation = (isKeyboardOpen: boolean) => isKeyboardOpen;
+
+export const shouldForceLatestAfterModeChange = (
+  previousMode: "voice" | "chat",
+  nextMode: "voice" | "chat",
+) => previousMode === "voice" && nextMode === "chat";
+
+export const shouldScrollChatToLatest = (
+  isNearBottom: boolean,
+  forceLatest: boolean,
+) => forceLatest || isNearBottom;

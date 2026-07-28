@@ -1,9 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Captions,
   CircleStop,
   LockKeyhole,
-  MessageCircle,
   Mic,
   MicOff,
   Pause,
@@ -14,6 +12,7 @@ import {
 import { motion, useReducedMotion } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../lib/apiClient";
+import { isNativePlatform } from "../../lib/native/platform";
 import { cn } from "../../lib/utils";
 import { useMobileViewport } from "../../context/MobileViewportContext";
 import { useGeminiLive } from "../../hooks/useGeminiLive";
@@ -26,7 +25,6 @@ type VoiceModeProps = {
   onAppendUserMessage: (content: string, source?: "voice" | "chat") => void;
   onAppendAssistantMessage: (content: string) => void;
   onAcceptShadowNotes: (notes: string | null) => void;
-  onContinueInChat: () => void;
   onExitVoice: () => void;
   onSessionActiveChange: (active: boolean) => void;
   reservation: { handle: string; expiresAt: string } | null;
@@ -93,7 +91,6 @@ export default function VoiceMode({
   onAppendUserMessage,
   onAppendAssistantMessage,
   onAcceptShadowNotes,
-  onContinueInChat,
   onExitVoice,
   onSessionActiveChange,
   reservation,
@@ -104,9 +101,10 @@ export default function VoiceMode({
   const { isCompactPhone, isShortPhone } = useMobileViewport();
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
-  const [showCaptions, setShowCaptions] = useState(true);
   const [cooldownNow, setCooldownNow] = useState(() => Date.now());
   const persistTimerRef = useRef<number | null>(null);
+  const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const exitPromiseRef = useRef<Promise<void> | null>(null);
   const messagesRef = useRef(messages);
   const lastPersistedVoiceCountRef = useRef(0);
 
@@ -129,6 +127,7 @@ export default function VoiceMode({
     reservation,
     onReservationChange,
   });
+  const stopLive = live.stop;
   const premiumRequired = live.errorCode === "subscription_required";
   useEffect(() => {
     if (!live.retryUntil) return;
@@ -144,27 +143,39 @@ export default function VoiceMode({
     cooldownSeconds > 0;
   const cooldownMinutes = Math.max(1, Math.ceil(cooldownSeconds / 60));
 
-  const persistVoiceNotes = useCallback(async () => {
-    const voiceMessages = messagesRef.current.filter(isVoiceMessage);
-    if (!voiceMessages.length || voiceMessages.length === lastPersistedVoiceCountRef.current) return;
+  const persistVoiceNotes = useCallback(() => {
+    const persistLatestConfirmedMessages = async () => {
+      const voiceMessages = messagesRef.current.filter(isVoiceMessage);
+      if (!voiceMessages.length || voiceMessages.length === lastPersistedVoiceCountRef.current) return;
+      const voiceMessageCount = voiceMessages.length;
+      const noteMessages = messagesRef.current
+        .slice(-12)
+        .map(({ role, content }) => ({ role, content }));
 
-    try {
-      const response = await apiFetch("/api/live/shadow-notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: messagesRef.current.slice(-12).map(({ role, content }) => ({ role, content })),
-          shadowNotes,
-        }),
-      });
-      const data = (await response.json().catch(() => ({}))) as { shadowNotes?: string | null };
-      if (response.ok && typeof data.shadowNotes === "string" && data.shadowNotes.trim()) {
-        onAcceptShadowNotes(data.shadowNotes);
+      try {
+        const response = await apiFetch("/api/live/shadow-notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: noteMessages,
+            shadowNotes,
+          }),
+        });
+        const data = (await response.json().catch(() => ({}))) as { shadowNotes?: string | null };
+        if (response.ok && typeof data.shadowNotes === "string" && data.shadowNotes.trim()) {
+          onAcceptShadowNotes(data.shadowNotes);
+        }
+        if (response.ok) lastPersistedVoiceCountRef.current = voiceMessageCount;
+      } catch {
+        // Voice remains usable if note persistence is temporarily unavailable.
       }
-      if (response.ok) lastPersistedVoiceCountRef.current = voiceMessages.length;
-    } catch {
-      // Voice remains usable if note persistence is temporarily unavailable.
-    }
+    };
+
+    const queuedPersistence = persistQueueRef.current
+      .catch(() => undefined)
+      .then(persistLatestConfirmedMessages);
+    persistQueueRef.current = queuedPersistence;
+    return queuedPersistence;
   }, [onAcceptShadowNotes, shadowNotes]);
 
   useEffect(() => {
@@ -195,37 +206,50 @@ export default function VoiceMode({
   }, [active, onSessionActiveChange]);
   useEffect(() => () => onSessionActiveChange(false), [onSessionActiveChange]);
 
-  const latestVoiceMessage = [...messages].reverse().find(isVoiceMessage);
-  const latestTranscript = live.assistantTranscript || live.userTranscript || latestVoiceMessage?.content || "";
-  const transcriptSpeaker = live.assistantTranscript
-    ? "Bible Nova"
-    : live.userTranscript
-      ? "You"
-      : latestVoiceMessage?.role === "ai"
-        ? "Bible Nova"
-        : "You";
-  // Keep the home state quiet. Captions are useful during a live reflection,
-  // but a previous voice response should not cover the invitation to begin.
-  const hasTranscript = showCaptions && active && Boolean(latestTranscript.trim());
   const presenceShouldMove = !prefersReducedMotion && active && live.state !== "ending";
   const isSpeaking = live.state === "user-speaking" || live.state === "assistant-speaking";
 
-  const handleEnd = async () => {
-    await live.stop("ended");
+  const handleEnd = useCallback(async () => {
+    await stopLive("ended");
     await persistVoiceNotes();
-  };
+  }, [persistVoiceNotes, stopLive]);
 
-  const handleContinueInChat = async () => {
-    await live.stop("ended");
-    await persistVoiceNotes();
-    onContinueInChat();
-  };
+  const handleExitVoice = useCallback(() => {
+    if (exitPromiseRef.current) return exitPromiseRef.current;
 
-  const handleExitVoice = async () => {
-    await live.stop("ended");
-    await persistVoiceNotes();
-    onExitVoice();
-  };
+    const exitPromise = (async () => {
+      await stopLive("ended");
+      await persistVoiceNotes();
+      onExitVoice();
+    })();
+    exitPromiseRef.current = exitPromise;
+    const clearExitPromise = () => {
+      if (exitPromiseRef.current === exitPromise) exitPromiseRef.current = null;
+    };
+    void exitPromise.then(clearExitPromise, clearExitPromise);
+    return exitPromise;
+  }, [onExitVoice, persistVoiceNotes, stopLive]);
+
+  useEffect(() => {
+    if (!active || !isNativePlatform()) return;
+
+    let disposed = false;
+    let listener: { remove: () => Promise<void> } | null = null;
+    void import("@capacitor/app")
+      .then(({ App }) => App.addListener("backButton", () => {
+        void handleExitVoice();
+      }))
+      .then((handle) => {
+        if (disposed) void handle.remove();
+        else listener = handle;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      if (listener) void listener.remove();
+    };
+  }, [active, handleExitVoice]);
 
   const startLabel = premiumRequired
     ? "Unlock Voice"
@@ -252,11 +276,11 @@ export default function VoiceMode({
         <button
           type="button"
           onClick={() => void handleExitVoice()}
-          aria-label="Back to Home"
+          aria-label="Exit Voice and continue in Chat"
           className="voice-session-close touch-target absolute right-4 top-4 z-30 flex h-11 w-11 items-center justify-center rounded-full border transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:right-6 sm:top-6"
         >
           <X className="h-5 w-5" aria-hidden="true" />
-          <span className="sr-only">Back to Home</span>
+          <span className="sr-only">Exit Voice and continue in Chat</span>
         </button>
       )}
       <div className={cn(
@@ -321,23 +345,6 @@ export default function VoiceMode({
             </div>
           </div>
 
-          {hasTranscript && (
-            <div
-              className="voice-transcript w-full rounded-[1.25rem] border px-4 py-3.5 text-left sm:px-5"
-              style={{
-                background: "var(--app-surface-muted)",
-                borderColor: "var(--app-card-border)",
-              }}
-            >
-              <p className="mb-1 text-xs font-semibold" style={{ color: "var(--app-accent)" }}>
-                {transcriptSpeaker}
-              </p>
-              <p className="app-heading line-clamp-3 text-sm leading-relaxed sm:text-[15px]">
-                {latestTranscript}
-              </p>
-            </div>
-          )}
-
           {sessionNotice && (
             <div
               role="status"
@@ -398,28 +405,6 @@ export default function VoiceMode({
                 </button>
               </div>
             )}
-
-            {active && <div className="voice-secondary-actions mt-2 flex w-full flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowCaptions((current) => !current)}
-                className="touch-target inline-flex min-h-10 items-center gap-1.5 rounded-pill px-3 py-2 text-[13px] font-medium"
-                style={{ color: showCaptions ? "var(--app-accent)" : "var(--app-text-muted)" }}
-                aria-pressed={showCaptions}
-              >
-                <Captions className="h-4 w-4" /> Captions
-              </button>
-              {!active && (
-                <button
-                  type="button"
-                  onClick={() => void handleContinueInChat()}
-                  className="touch-target inline-flex min-h-10 items-center gap-1.5 rounded-pill px-3 py-2 text-[13px] font-medium"
-                  style={{ color: "var(--app-text-muted)" }}
-                >
-                  <MessageCircle className="h-4 w-4" /> Switch to Chat
-                </button>
-              )}
-            </div>}
 
             {isTyping && <p className="app-muted mt-1 text-center text-xs">Finishing your previous reflection...</p>}
           </div>

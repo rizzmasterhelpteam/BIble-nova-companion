@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Mic,
@@ -27,7 +27,11 @@ import {
   saveVoiceReservation,
   type VoiceReservation,
 } from "../lib/voiceReservation";
-import { getChatScrollBehavior } from "../lib/mobileLayout";
+import {
+  getChatScrollBehavior,
+  shouldForceLatestAfterModeChange,
+  shouldScrollChatToLatest,
+} from "../lib/mobileLayout";
 import {
   createSpeechRecognitionSession,
   type RecognitionMode,
@@ -336,9 +340,26 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const storageWriteTimerRef = useRef<number | null>(null);
   const lastScrolledMessageCountRef = useRef(0);
   const isNearBottomRef = useRef(true);
+  const scrollToLatestAfterVoiceRef = useRef(false);
+  const previousModeRef = useRef<HomeMode>(mode);
   const showQuickPrompts = messages.length === 1 && !isTyping;
   const isVoiceMode = mode === "voice";
   const isImmersiveVoice = isVoiceMode && isVoiceSessionActive;
+  const chatPageRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const page = chatPageRef.current;
+    const screen = page?.closest(".app-screen");
+    const shell = page?.closest(".app-shell");
+
+    screen?.classList.toggle("voice-host", isVoiceMode);
+    shell?.classList.toggle("voice-host", isVoiceMode);
+
+    return () => {
+      screen?.classList.remove("voice-host");
+      shell?.classList.remove("voice-host");
+    };
+  }, [isVoiceMode]);
   const chatUnavailable = apiStatus?.chatReady !== true;
   const speechUnavailableReason = isCheckingSpeechSupport
     ? null
@@ -607,6 +628,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   }, [appendAiMessage]);
 
   const continueInChat = useCallback(() => {
+    scrollToLatestAfterVoiceRef.current = true;
     setVoiceSessionActive(false);
     onModeChange?.("chat");
   }, [onModeChange, setVoiceSessionActive]);
@@ -617,8 +639,11 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       requestControllerRef.current = null;
       setIsTyping(false);
     }
+    if (nextMode === "chat" && isVoiceMode) {
+      scrollToLatestAfterVoiceRef.current = true;
+    }
     onModeChange?.(nextMode);
-  }, [isTyping, onModeChange]);
+  }, [isTyping, isVoiceMode, onModeChange]);
 
   const handleSend = useCallback(async (text: string) => {
     if (isTyping || apiStatus?.chatReady !== true) return;
@@ -768,7 +793,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
         return;
       }
 
-      if (isNearBottomRef.current) {
+      if (shouldScrollChatToLatest(isNearBottomRef.current, false)) {
         container.scrollTo({ top: container.scrollHeight, behavior });
         setShowJumpToLatest(false);
       } else {
@@ -778,6 +803,32 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
 
     return () => window.cancelAnimationFrame(frame);
   }, [isKeyboardOpen, messages.length, isTyping, showQuickPrompts]);
+
+  useLayoutEffect(() => {
+    const previousMode = previousModeRef.current;
+    previousModeRef.current = mode;
+    if (shouldForceLatestAfterModeChange(previousMode, mode)) {
+      scrollToLatestAfterVoiceRef.current = true;
+    }
+    if (isVoiceMode || !scrollToLatestAfterVoiceRef.current) return;
+
+    let secondFrame: number | null = null;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+        scrollToLatestAfterVoiceRef.current = false;
+        isNearBottomRef.current = true;
+        setShowJumpToLatest(false);
+        container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame !== null) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [isVoiceMode, messages.length, mode]);
 
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -881,7 +932,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   };
 
   return (
-    <div className={cn(
+    <div ref={chatPageRef} className={cn(
       "relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent",
       isVoiceMode && "voice-page",
       isImmersiveVoice && "voice-session-active",
@@ -946,7 +997,6 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           onAppendUserMessage={appendVoiceUserMessage}
           onAppendAssistantMessage={appendVoiceAssistantMessage}
           onAcceptShadowNotes={acceptPersistedShadowNotes}
-          onContinueInChat={continueInChat}
           onExitVoice={continueInChat}
           onSessionActiveChange={setVoiceSessionActive}
           reservation={voiceReservation}
@@ -1097,22 +1147,20 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
 
       <div
         className={cn(
-          "shrink-0 border-t border-[color:color-mix(in_srgb,var(--app-divider)_50%,transparent)] transition-colors duration-300",
-          isCompactPhone ? "px-3 pb-safe-tight pt-1.5" : "px-4 pb-safe pt-2 sm:px-6",
+          "shrink-0 transition-colors duration-300",
+          isCompactPhone ? "px-3 pt-1" : "px-4 pt-1 sm:px-6",
+          isKeyboardOpen ? "pb-1" : "pb-safe-tight",
         )}
         style={{
-          backgroundColor: "var(--bg-base)",
-          backgroundImage: "linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 92%, transparent) 0%, var(--bg-base) 100%)",
+          background: "transparent",
         }}
       >
         <div className="mx-auto w-full max-w-3xl">
-          <div className="mb-1 min-h-0" aria-live="polite">{(isRecording ||
+          <div className="min-h-0" aria-live="polite">{(isRecording ||
             isTranscribingSpeech ||
             speakingMessageId ||
-            chatUnavailable ||
             speechError ||
             speechNotice ||
-            speechUnavailableReason ||
             ttsError) && (
             <p
               className="mb-1 px-1 text-center text-[11px]"
@@ -1120,18 +1168,14 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
                 color: speechError || ttsError ? "var(--app-danger)" : "var(--app-text-muted)",
               }}
             >
-              {speechError || speechNotice || speechUnavailableReason || ttsError
-                ? speechError || speechNotice || speechUnavailableReason || ttsError
+              {speechError || speechNotice || ttsError
+                ? speechError || speechNotice || ttsError
                 : speakingMessageId
                 ? "Playing audio."
                 : isRecording
                 ? "Listening. Tap stop when you're done."
                 : isTranscribingSpeech
                 ? "Transcribing your speech..."
-                : isCheckingApiStatus
-                ? "Checking chat connection."
-                : chatUnavailable
-                ? "Chat is temporarily unavailable."
                 : ""}
             </p>
           )}</div>
@@ -1142,10 +1186,10 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
               isCompactPhone ? "pl-3" : "pl-3.5",
             )}
             style={{
-              backgroundColor: "var(--app-surface-solid)",
-              backgroundImage: "var(--app-shell-highlight)",
-              borderColor: "color-mix(in srgb, var(--app-card-border) 80%, transparent)",
-              boxShadow: "0 12px 36px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.06)",
+              backgroundColor: "var(--app-input-bg)",
+              backgroundImage: "none",
+              borderColor: "color-mix(in srgb, var(--app-input-border) 72%, transparent)",
+              boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
             }}
           >
             <textarea

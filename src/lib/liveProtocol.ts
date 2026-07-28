@@ -1,6 +1,8 @@
 import type { ConversationMessage } from "../types/live";
 
 const LIVE_CONTEXT_MESSAGES = 8;
+export const MIN_PLAYBACK_GAIN = 1;
+export const MAX_PLAYBACK_GAIN = 1.35;
 
 type RealtimeInputSession = {
   sendRealtimeInput: (params: { audioStreamEnd?: boolean }) => void;
@@ -108,6 +110,30 @@ export const shouldResumeListeningAfterPlayback = ({
   playbackGeneration === currentGeneration &&
   !stopRequested &&
   remainingSources === 0;
+
+export const getSafePlaybackGain = (requestedGain: number) => {
+  if (!Number.isFinite(requestedGain)) return MIN_PLAYBACK_GAIN;
+  return Math.min(MAX_PLAYBACK_GAIN, Math.max(MIN_PLAYBACK_GAIN, requestedGain));
+};
+
+export const nextPlaybackGeneration = (currentGeneration: number) =>
+  Math.max(0, Math.floor(currentGeneration)) + 1;
+
+export const createIdempotentAsyncAction = () => {
+  let inFlight: Promise<void> | null = null;
+
+  return (action: () => Promise<void>) => {
+    if (inFlight) return inFlight;
+
+    const currentAction = action();
+    inFlight = currentAction;
+    const clear = () => {
+      if (inFlight === currentAction) inFlight = null;
+    };
+    void currentAction.then(clear, clear);
+    return currentAction;
+  };
+};
 
 export const shouldReconnectLiveSession = (
   completedAttempts: number,
