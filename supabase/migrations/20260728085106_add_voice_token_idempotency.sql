@@ -8,8 +8,36 @@ create table if not exists private.voice_token_idempotency (
   primary key (user_id, request_id)
 );
 
+create index if not exists voice_token_idempotency_expires_at_idx
+  on private.voice_token_idempotency (expires_at);
+
 revoke all privileges on table private.voice_token_idempotency from public, anon, authenticated;
 grant select, insert, update, delete on table private.voice_token_idempotency to service_role;
+
+create or replace function public.cleanup_expired_voice_token_idempotency()
+returns void
+language plpgsql
+security definer
+set search_path = public, private
+as $$
+begin
+  update private.voice_session_leases as leases
+  set ended_at = coalesce(leases.ended_at, now())
+  from private.voice_token_idempotency as requests
+  where requests.expires_at <= now()
+    and requests.lease_id = leases.id
+    and requests.response is null
+    and leases.ended_at is null;
+
+  delete from private.voice_token_idempotency
+  where expires_at <= now();
+end;
+$$;
+
+revoke all privileges on function public.cleanup_expired_voice_token_idempotency()
+  from public, anon, authenticated;
+grant execute on function public.cleanup_expired_voice_token_idempotency()
+  to service_role;
 
 create or replace function public.release_voice_session_lease(
   p_user_id uuid,

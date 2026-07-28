@@ -5,6 +5,7 @@ import {
 } from "../../live-api.js";
 import {
   acquireVoiceSessionLease,
+  attachVoiceTokenIdempotencyLease,
   cancelUnstartedVoiceSessionLease,
   claimVoiceSessionRenewal,
   createVoiceReservationHandle,
@@ -17,6 +18,7 @@ import {
   completeVoiceTokenIdempotency,
   getVoiceTokenIdempotencyResponse,
   hashVoiceReservationHandle,
+  releaseVoiceSessionLease,
   rollbackVoiceSessionRenewal,
   requireAuthenticatedRequest,
 } from "../../server-security.js";
@@ -45,6 +47,18 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
+    if (body.action === "release") {
+      const handleHash = hashVoiceReservationHandle(body.reservationHandle);
+      if (!handleHash) {
+        res.status(400).json({ error: "This Voice reservation is invalid." });
+        return;
+      }
+      await releaseVoiceSessionLease(userId, handleHash);
+      res.status(204).end();
+      return;
+    }
+
     const requestHeader = req.headers?.["x-client-request-id"];
     const requestId = Array.isArray(requestHeader) ? requestHeader[0] : requestHeader;
     if (typeof requestId !== "string") {
@@ -70,7 +84,6 @@ export default async function handler(req: any, res: any) {
       { key: `live-token:ip:${ip}`, limit: 12 },
     ]);
 
-    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
     if (body.reservationHandle !== undefined) {
       const handleHash = hashVoiceReservationHandle(body.reservationHandle);
       if (!handleHash) {
@@ -115,6 +128,7 @@ export default async function handler(req: any, res: any) {
       handleHash,
     );
     try {
+      await attachVoiceTokenIdempotencyLease(userId, requestId, lease.leaseId);
       const shadowNotes = await getServerShadowNotes(userId);
       const session = await createGeminiLiveEphemeralToken({
         shadowNotes,

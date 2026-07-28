@@ -5,6 +5,7 @@ import type {
 } from "@google/genai";
 import { apiFetch } from "../lib/apiClient";
 import { isNativePlatform } from "../lib/native/platform";
+import { nativeStorage } from "../lib/native/storage";
 import { refreshNativeSubscriptionEntitlement } from "../lib/native/subscriptionSync";
 import {
   createIdempotentAsyncAction,
@@ -38,6 +39,9 @@ type LiveTokenResponse = {
   reason?: VoiceErrorCode;
   error?: string;
 };
+
+const PENDING_VOICE_RELEASE_KEY = "pending_voice_release_handle";
+const MAX_RESUMABLE_AUDIO_CHUNKS = 250;
 
 type VoiceErrorCode =
   | "subscription_required"
@@ -232,8 +236,12 @@ export function useGeminiLive({
   const endTimerRef = useRef<number | null>(null);
   const failureHandledRef = useRef(false);
   const sessionResumptionHandleRef = useRef<string | null>(null);
+  const nextClientMessageIndexRef = useRef(0);
+  const resumableAudioRef = useRef<Array<{ index: number; data: string }>>([]);
   const reservationHandleRef = useRef<string | null>(reservation?.handle ?? null);
   const reservationExpiresAtRef = useRef<string | null>(reservation?.expiresAt ?? null);
+  const pendingReleaseHandleRef = useRef<string | null>(null);
+  const tokenRequestIdRef = useRef<string | null>(null);
   const stopActionRef = useRef<ReturnType<typeof createIdempotentAsyncAction> | null>(null);
   if (!stopActionRef.current) stopActionRef.current = createIdempotentAsyncAction();
 
@@ -249,6 +257,52 @@ export function useGeminiLive({
     reservationHandleRef.current = reservation?.handle ?? null;
     reservationExpiresAtRef.current = reservation?.expiresAt ?? null;
   }, [reservation]);
+
+  const persistPendingRelease = useCallback(async (handle: string | null) => {
+    if (!isNativePlatform()) return;
+    try {
+      if (handle) await nativeStorage.set(PENDING_VOICE_RELEASE_KEY, handle);
+      else await nativeStorage.remove(PENDING_VOICE_RELEASE_KEY);
+    } catch {
+      // A later in-memory retry can still release the current process's lease.
+    }
+  }, []);
+
+  const retryPendingRelease = useCallback(async () => {
+    const handle = pendingReleaseHandleRef.current;
+    if (!handle || (typeof navigator !== "undefined" && !navigator.onLine)) return false;
+    try {
+      const response = await apiFetch("/api/live/token", {
+        method: "POST",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "release", reservationHandle: handle }),
+      });
+      if (!response.ok) return false;
+      if (pendingReleaseHandleRef.current === handle) {
+        pendingReleaseHandleRef.current = null;
+        await persistPendingRelease(null);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }, [persistPendingRelease]);
+
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    let disposed = false;
+    void nativeStorage.get(PENDING_VOICE_RELEASE_KEY)
+      .then((handle) => {
+        if (disposed || !handle) return;
+        pendingReleaseHandleRef.current = handle;
+        void retryPendingRelease();
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+    };
+  }, [retryPendingRelease]);
 
   const clearTimers = useCallback(() => {
     if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
@@ -408,15 +462,14 @@ export function useGeminiLive({
       );
       suppressPlaybackRef.current = false;
       sessionResumptionHandleRef.current = null;
+      nextClientMessageIndexRef.current = 0;
+      resumableAudioRef.current = [];
       reservationHandleRef.current = null;
       reservationExpiresAtRef.current = null;
       onReservationChange(null);
       if (reservationHandle) {
-        void apiFetch("/api/live/release", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reservationHandle }),
-        }).catch(() => undefined);
+        pendingReleaseHandleRef.current = reservationHandle;
+        void persistPendingRelease(reservationHandle).then(retryPendingRelease);
       }
       if (mountedRef.current) setState("ending");
       clearTimers();
@@ -434,7 +487,15 @@ export function useGeminiLive({
         setState(nextState);
       }
     });
-  }, [clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, releaseAudio]);
+  }, [
+    clearTimers,
+    finalizeAssistantTranscript,
+    finalizeUserTranscript,
+    onReservationChange,
+    persistPendingRelease,
+    releaseAudio,
+    retryPendingRelease,
+  ]);
 
   const handleConnectionFailure = useCallback((
     failedSession: GeminiLiveSession,
@@ -507,6 +568,8 @@ export function useGeminiLive({
     setRetryUntil(null);
     setSessionNotice(null);
     if (!isReconnect) {
+      nextClientMessageIndexRef.current = 0;
+      resumableAudioRef.current = [];
       userTranscriptRef.current = "";
       assistantTranscriptRef.current = "";
       userTranscriptFinalizedRef.current = false;
@@ -521,6 +584,8 @@ export function useGeminiLive({
     }
 
     try {
+      if (!isReconnect) await retryPendingRelease();
+      assertStartIsCurrent();
       const activatedAudioContext = audioContextRef.current || getAudioContext();
       audioContextRef.current = activatedAudioContext;
       await activatedAudioContext.resume();
@@ -594,16 +659,24 @@ export function useGeminiLive({
       const renewingHandle = eligibility.reason === "reservation_resume"
         ? reservationHandleRef.current
         : null;
+      tokenRequestIdRef.current ||= crypto.randomUUID();
       const response = await apiFetch(
         "/api/live/token",
         renewingHandle
           ? {
               method: "POST",
               signal: abortController.signal,
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                "X-Client-Request-Id": tokenRequestIdRef.current,
+              },
               body: JSON.stringify({ reservationHandle: renewingHandle }),
             }
-          : { method: "POST", signal: abortController.signal },
+          : {
+              method: "POST",
+              signal: abortController.signal,
+              headers: { "X-Client-Request-Id": tokenRequestIdRef.current },
+            },
       );
       assertStartIsCurrent();
       const data = (await response.json().catch(() => ({}))) as LiveTokenResponse;
@@ -619,6 +692,7 @@ export function useGeminiLive({
           data.error || "Voice is temporarily unavailable. You can continue in Chat.",
         );
       }
+      tokenRequestIdRef.current = null;
       if (!guardLiveTokenTiming(data, releaseAudio)) {
         reservationHandleRef.current = null;
         reservationExpiresAtRef.current = null;
@@ -681,12 +755,22 @@ export function useGeminiLive({
           onmessage: (message) => {
             if (stopRequestedRef.current || startGenerationRef.current !== startGeneration) return;
             const providerMessage = message as {
-              sessionResumptionUpdate?: { resumable?: boolean; newHandle?: string };
+              sessionResumptionUpdate?: {
+                resumable?: boolean;
+                newHandle?: string;
+                lastConsumedClientMessageIndex?: string | number;
+              };
               goAway?: { timeLeft?: unknown };
             };
             const resumptionUpdate = providerMessage.sessionResumptionUpdate;
             if (resumptionUpdate?.resumable && resumptionUpdate.newHandle) {
               sessionResumptionHandleRef.current = resumptionUpdate.newHandle;
+            }
+            const lastConsumed = Number(resumptionUpdate?.lastConsumedClientMessageIndex);
+            if (Number.isFinite(lastConsumed)) {
+              resumableAudioRef.current = resumableAudioRef.current.filter(
+                ({ index }) => index > lastConsumed,
+              );
             }
             const goAwayDelay = getGoAwayTimeLeftMs(providerMessage.goAway?.timeLeft);
             if (goAwayDelay > 0 && reconnectTimerRef.current === null) {
@@ -792,6 +876,13 @@ export function useGeminiLive({
       suppressPlaybackRef.current = false;
       const initialHistory = createInitialHistoryPayload(history);
       if (initialHistory && !resumingProviderSession) session.sendClientContent(initialHistory);
+      if (resumingProviderSession) {
+        resumableAudioRef.current.forEach(({ data: bufferedData }) => {
+          session.sendRealtimeInput({
+            audio: { data: bufferedData, mimeType: `audio/pcm;rate=${INPUT_SAMPLE_RATE}` },
+          });
+        });
+      }
 
       const audioContext = audioContextRef.current || getAudioContext();
       audioContextRef.current = audioContext;
@@ -804,8 +895,20 @@ export function useGeminiLive({
       const sendPcmAudio = (pcm: Uint8Array) => {
         if (stopRequestedRef.current || isMutedRef.current) return;
         audioStreamEndedRef.current = false;
+        const data = bytesToBase64(pcm);
+        resumableAudioRef.current.push({
+          index: nextClientMessageIndexRef.current,
+          data,
+        });
+        nextClientMessageIndexRef.current += 1;
+        if (resumableAudioRef.current.length > MAX_RESUMABLE_AUDIO_CHUNKS) {
+          resumableAudioRef.current.splice(
+            0,
+            resumableAudioRef.current.length - MAX_RESUMABLE_AUDIO_CHUNKS,
+          );
+        }
         session.sendRealtimeInput({
-          audio: { data: bytesToBase64(pcm), mimeType: `audio/pcm;rate=${INPUT_SAMPLE_RATE}` },
+          audio: { data, mimeType: `audio/pcm;rate=${INPUT_SAMPLE_RATE}` },
         });
       };
 
@@ -935,7 +1038,7 @@ export function useGeminiLive({
         startingRef.current = false;
       }
     }
-  }, [finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, onReservationChange, playAudioChunk, releaseAudio, stop, stopPlayback]);
+  }, [finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, onReservationChange, playAudioChunk, releaseAudio, retryPendingRelease, stop, stopPlayback]);
 
   useEffect(() => {
     startRef.current = start;
@@ -978,6 +1081,14 @@ export function useGeminiLive({
   }, [stop]);
 
   useEffect(() => {
+    const handleOnline = () => {
+      void retryPendingRelease();
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [retryPendingRelease]);
+
+  useEffect(() => {
     if (!retryUntil) return;
     const remaining = retryUntil - Date.now();
     if (remaining <= 0) {
@@ -1004,8 +1115,11 @@ export function useGeminiLive({
     let disposed = false;
     void import("@capacitor/app")
       .then(({ App }) => App.addListener("appStateChange", ({ isActive }) => {
+        if (isActive) {
+          void retryPendingRelease();
+          return;
+        }
         if (
-          !isActive &&
           (startingRef.current || startAbortControllerRef.current || mediaStreamRef.current || sessionRef.current)
         ) void stop("ended");
       }))
@@ -1019,7 +1133,7 @@ export function useGeminiLive({
       disposed = true;
       if (listener) void listener.remove();
     };
-  }, [stop]);
+  }, [retryPendingRelease, stop]);
 
   useEffect(() => () => {
     void stop("ended");

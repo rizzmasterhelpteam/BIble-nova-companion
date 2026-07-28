@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const security = vi.hoisted(() => ({
   acquire: vi.fn(),
+  attachLease: vi.fn(),
   cancel: vi.fn(),
   limits: vi.fn(),
   notes: vi.fn(),
@@ -14,11 +15,13 @@ const security = vi.hoisted(() => ({
   getIdempotency: vi.fn(),
   beginIdempotency: vi.fn(),
   completeIdempotency: vi.fn(),
+  release: vi.fn(),
 }));
 const createToken = vi.hoisted(() => vi.fn());
 
 vi.mock("../server-security", () => ({
   acquireVoiceSessionLease: security.acquire,
+  attachVoiceTokenIdempotencyLease: security.attachLease,
   cancelUnstartedVoiceSessionLease: security.cancel,
   enforceRateLimits: security.limits,
   claimVoiceSessionRenewal: security.claimRenewal,
@@ -26,6 +29,7 @@ vi.mock("../server-security", () => ({
   getVoiceTokenIdempotencyResponse: security.getIdempotency,
   beginVoiceTokenIdempotency: security.beginIdempotency,
   completeVoiceTokenIdempotency: security.completeIdempotency,
+  releaseVoiceSessionLease: security.release,
   getHttpErrorDetails: (error: unknown) => ({
     statusCode: 500,
     message: error instanceof Error ? error.message : String(error),
@@ -89,6 +93,7 @@ describe("Gemini Live token endpoint", () => {
       leaseId: "11111111-1111-4111-8111-111111111111",
       expiresAt: "2026-07-23T12:00:00.000Z",
     });
+    security.attachLease.mockResolvedValue(undefined);
     security.createHandle.mockReturnValue({
       handle: "opaque-reservation-handle",
       handleHash: "a".repeat(64),
@@ -106,6 +111,7 @@ describe("Gemini Live token endpoint", () => {
     security.getIdempotency.mockResolvedValue(null);
     security.beginIdempotency.mockResolvedValue(true);
     security.completeIdempotency.mockResolvedValue(undefined);
+    security.release.mockResolvedValue(undefined);
     createToken.mockResolvedValue({
       token: "ephemeral",
       model: "live",
@@ -136,6 +142,21 @@ describe("Gemini Live token endpoint", () => {
       token: "ephemeral",
       reservationHandle: "existing-opaque-handle",
     });
+  });
+
+  it("releases an existing lease before token idempotency and rate limits", async () => {
+    const response = createResponse();
+    await tokenHandler({
+      method: "POST",
+      headers: { "x-client-request-id": "release-id-00000001" },
+      body: { action: "release", reservationHandle: "existing-opaque-handle" },
+    }, response);
+
+    expect(security.release).toHaveBeenCalledWith("user-1", "b".repeat(64));
+    expect(security.getIdempotency).not.toHaveBeenCalled();
+    expect(security.limits).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(204);
+    expect(response.end).toHaveBeenCalled();
   });
 
   it("rolls back a renewal claim when Gemini token minting fails", async () => {

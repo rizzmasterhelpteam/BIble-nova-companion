@@ -219,7 +219,10 @@ export const finalizeVoiceSessionRenewal = async (userId: string, claimHash: str
     p_user_id: userId,
     p_claim_hash: claimHash,
   });
-  if (error) console.error("Voice renewal finalization failed:", error.message);
+  if (error) {
+    console.error("Voice renewal finalization failed:", error.message);
+    throw new HttpError("Voice reconnection could not be finalized.", 503);
+  }
 };
 
 export const rollbackVoiceSessionRenewal = async (userId: string, claimHash: string) => {
@@ -263,13 +266,8 @@ export const beginVoiceTokenIdempotency = async (userId: string, requestId: stri
     throw new HttpError("Voice request identifier is invalid.", 400);
   }
   const client = getSupabaseAdminClient();
-  await client
-    .schema("private")
-    .from("voice_token_idempotency")
-    .delete()
-    .eq("user_id", userId)
-    .eq("request_id", requestId)
-    .lt("expires_at", new Date().toISOString());
+  const { error: cleanupError } = await client.rpc("cleanup_expired_voice_token_idempotency");
+  if (cleanupError) throw new HttpError("Voice start is temporarily unavailable.", 503);
   const { error } = await client
     .schema("private")
     .from("voice_token_idempotency")
@@ -290,6 +288,21 @@ export const completeVoiceTokenIdempotency = async (
     .schema("private")
     .from("voice_token_idempotency")
     .update({ response, lease_id: leaseId || null })
+    .eq("user_id", userId)
+    .eq("request_id", requestId);
+  if (error) throw new HttpError("Voice start is temporarily unavailable.", 503);
+};
+
+export const attachVoiceTokenIdempotencyLease = async (
+  userId: string,
+  requestId: string,
+  leaseId: string,
+) => {
+  const client = getSupabaseAdminClient();
+  const { error } = await client
+    .schema("private")
+    .from("voice_token_idempotency")
+    .update({ lease_id: leaseId })
     .eq("user_id", userId)
     .eq("request_id", requestId);
   if (error) throw new HttpError("Voice start is temporarily unavailable.", 503);

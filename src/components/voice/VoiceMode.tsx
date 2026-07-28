@@ -181,10 +181,12 @@ export default function VoiceMode({
           }),
         });
         const data = (await response.json().catch(() => ({}))) as { shadowNotes?: string | null };
-        if (response.ok && typeof data.shadowNotes === "string" && data.shadowNotes.trim()) {
-          onAcceptShadowNotes(data.shadowNotes);
+        if (response.ok) {
+          if (typeof data.shadowNotes === "string" && data.shadowNotes.trim()) {
+            onAcceptShadowNotes(data.shadowNotes);
+          }
+          lastPersistedVoiceCountRef.current = voiceMessageCount;
         }
-        lastPersistedVoiceCountRef.current = voiceMessageCount;
       } catch {
         // Voice remains usable if note persistence is temporarily unavailable.
       } finally {
