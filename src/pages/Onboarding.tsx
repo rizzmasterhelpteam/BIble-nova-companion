@@ -119,7 +119,7 @@ export default function Onboarding() {
     isPerformanceMode ||
       (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches),
   );
-  const shouldAnimateLightly = !prefersReducedMotion;
+  const shouldAnimateLightly = !isPerformanceMode;
   const [currentStep, setCurrentStep] = useState(0);
   const [prevStep, setPrevStep] = useState(-1);
   const [answers, setAnswers] = useState<Record<string, string>>(() =>
@@ -310,7 +310,7 @@ export default function Onboarding() {
             <motion.div
               className="sanctuary-preview relative overflow-hidden rounded-[1.5rem] p-6"
               initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
+              animate={isPerformanceMode ? undefined : { opacity: 1, y: 0 }}
               transition={isPerformanceMode ? { duration: 0 } : { duration: 0.5, delay: 0.2 }}
             >
               <div className="absolute top-0 right-0 p-5 pointer-events-none" style={{ opacity: 0.05 }}>
@@ -330,10 +330,10 @@ export default function Onboarding() {
             onClick={handleGetStarted}
             className="app-primary-button touch-target w-full font-bold text-lg rounded-[1.25rem] py-4 flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
             initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
+            animate={isPerformanceMode ? undefined : { opacity: 1, y: 0 }}
             transition={isPerformanceMode ? { duration: 0 } : { duration: 0.5, delay: 0.44 }}
-            whileHover={isPerformanceMode ? {} : { scale: 1.01, boxShadow: "var(--app-accent-shadow)" }}
-            whileTap={isPerformanceMode ? {} : { scale: 0.98 }}
+            whileHover={isPerformanceMode ? undefined : { scale: 1.01, boxShadow: "var(--app-accent-shadow)" }}
+            whileTap={isPerformanceMode ? undefined : { scale: 0.98 }}
           >
             Enter Bible Nova
           </motion.button>
@@ -352,6 +352,103 @@ export default function Onboarding() {
     animate: { opacity: 1, x: 0 },
     exit: { opacity: 0, x: isGoingForward ? -24 : 24 },
   };
+
+  const questionStep = (
+    <motion.div
+      key={currentStep}
+      variants={shouldAnimateLightly ? slideVariants : undefined}
+      initial={shouldAnimateLightly ? "initial" : false}
+      animate={shouldAnimateLightly ? "animate" : undefined}
+      exit={shouldAnimateLightly ? "exit" : undefined}
+      transition={shouldAnimateLightly ? { duration: 0.2, ease: [0.22, 1, 0.36, 1] } : undefined}
+      className="w-full"
+    >
+      <h1
+        className="app-heading font-serif text-3xl sm:text-4xl leading-tight mb-3 tracking-tight"
+      >
+        {question.title}
+      </h1>
+      <p className="app-muted text-[14px] mb-8">
+        Choose what feels most true right now.
+      </p>
+
+      <div role="radiogroup" aria-label={question.title} className="space-y-3">
+        {question.options.map((option, optIdx) => {
+          const isSelected = answers[question.id] === option.id;
+          return (
+            <motion.button
+              key={option.id}
+              role="radio"
+              aria-checked={isSelected}
+              onClick={() => handleSelect(option.id)}
+              whileHover={shouldAnimateLightly ? { scale: 1.02, y: -1 } : undefined}
+              whileTap={shouldAnimateLightly ? { scale: 0.985 } : undefined}
+              className="onboarding-choice touch-target w-full flex items-center justify-between p-4 sm:p-5 rounded-2xl text-left relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              initial={shouldAnimateLightly ? { opacity: 0, y: 16 } : false}
+              animate={shouldAnimateLightly ? { opacity: 1, y: 0 } : undefined}
+              transition={shouldAnimateLightly ? { duration: 0.26, delay: optIdx * 0.04 } : undefined}
+            >
+              {isSelected && (
+                <motion.div
+                  layoutId={shouldAnimateLightly ? "active-option-bg" : undefined}
+                  className="absolute inset-0 pointer-events-none"
+                  style={{ background: "linear-gradient(90deg, color-mix(in srgb, var(--app-accent) 8%, transparent), transparent)" }}
+                />
+              )}
+
+              <div className="flex items-center gap-4 relative z-10">
+                {option.icon && (
+                  <div
+                    className="p-2.5 rounded-xl transition-colors duration-300"
+                    style={{
+                      background: isSelected ? "var(--app-accent)" : "var(--app-card-soft)",
+                      color: isSelected ? "var(--app-accent-contrast)" : "var(--app-text-muted)",
+                    }}
+                  >
+                    {option.icon}
+                  </div>
+                )}
+                <span
+                  className="text-[15px] sm:text-[16px] transition-colors duration-300 font-medium"
+                  style={{ color: isSelected ? "var(--app-accent)" : "var(--app-text)" }}
+                >
+                  {option.label}
+                </span>
+              </div>
+
+              <div
+                className="flex shrink-0 items-center justify-center rounded-full border-2 transition-all duration-300 w-6 h-6 relative z-10 ml-3"
+                style={{
+                  borderColor: isSelected ? "var(--app-accent)" : "var(--app-card-border)",
+                  background: isSelected ? "var(--app-accent)" : "transparent",
+                }}
+              >
+                {isSelected && (
+                  <motion.div
+                    initial={shouldAnimateLightly ? { scale: 0.5, opacity: 0 } : false}
+                    animate={shouldAnimateLightly ? { scale: 1, opacity: 1 } : undefined}
+                    transition={shouldAnimateLightly ? { duration: 0.16, ease: "easeOut" } : undefined}
+                  >
+                    <Check className="w-3.5 h-3.5" style={{ color: "var(--app-accent-contrast)" }} strokeWidth={3.5} />
+                  </motion.div>
+                )}
+              </div>
+            </motion.button>
+          );
+        })}
+      </div>
+
+      <button
+        type="button"
+        onClick={handleContinue}
+        disabled={!answers[question.id]}
+        className="app-primary-button touch-target mt-5 w-full rounded-pill py-3.5 text-[15px] font-semibold disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+      >
+        {currentStep === questions.length - 1 ? "Review my space" : "Continue"}
+        <ChevronRight className="ml-1 inline-block h-4 w-4" />
+      </button>
+    </motion.div>
+  );
 
   return (
     <div
@@ -377,9 +474,10 @@ export default function Onboarding() {
             <div className="onboarding-progress-track h-1.5 w-full rounded-full overflow-hidden">
               <motion.div
                 className="onboarding-progress-fill h-full rounded-full"
-                initial={{ width: 0 }}
-                animate={{ width: `${progressPercent}%` }}
-                transition={{ duration: 0.45, ease: "easeOut" }}
+                initial={isPerformanceMode ? false : { width: 0 }}
+                animate={isPerformanceMode ? undefined : { width: `${progressPercent}%` }}
+                transition={isPerformanceMode ? undefined : { duration: 0.45, ease: "easeOut" }}
+                style={isPerformanceMode ? { width: `${progressPercent}%` } : undefined}
               />
             </div>
             <div className="text-right mt-1.5">
@@ -391,102 +489,11 @@ export default function Onboarding() {
         </div>
 
         <div className="flex-1 flex flex-col justify-center">
-          <AnimatePresence mode="wait" custom={isGoingForward}>
-            <motion.div
-              key={currentStep}
-              variants={shouldAnimateLightly ? slideVariants : {}}
-              initial={shouldAnimateLightly ? "initial" : false}
-              animate={shouldAnimateLightly ? "animate" : undefined}
-              exit={shouldAnimateLightly ? "exit" : undefined}
-              transition={shouldAnimateLightly ? { duration: 0.2, ease: [0.22, 1, 0.36, 1] } : undefined}
-              className="w-full"
-            >
-              <h1
-                className="app-heading font-serif text-3xl sm:text-4xl leading-tight mb-3 tracking-tight"
-              >
-                {question.title}
-              </h1>
-              <p className="app-muted text-[14px] mb-8">
-                Choose what feels most true right now.
-              </p>
-
-              <div role="radiogroup" aria-label={question.title} className="space-y-3">
-                {question.options.map((option, optIdx) => {
-                  const isSelected = answers[question.id] === option.id;
-                  return (
-                    <motion.button
-                      key={option.id}
-                      role="radio"
-                      aria-checked={isSelected}
-                      onClick={() => handleSelect(option.id)}
-                      whileHover={isPerformanceMode ? {} : { scale: 1.02, y: -1 }}
-                      whileTap={shouldAnimateLightly ? { scale: 0.985 } : {}}
-                      className="onboarding-choice touch-target w-full flex items-center justify-between p-4 sm:p-5 rounded-2xl text-left relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-                      initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
-                      animate={isPerformanceMode ? undefined : { opacity: 1, y: 0 }}
-                      transition={isPerformanceMode ? undefined : { duration: 0.26, delay: optIdx * 0.04 }}
-                    >
-                      {isSelected && (
-                        <motion.div
-                          layoutId="active-option-bg"
-                          className="absolute inset-0 pointer-events-none"
-                          style={{ background: "linear-gradient(90deg, color-mix(in srgb, var(--app-accent) 8%, transparent), transparent)" }}
-                        />
-                      )}
-                      
-                      <div className="flex items-center gap-4 relative z-10">
-                        {option.icon && (
-                          <div
-                            className="p-2.5 rounded-xl transition-colors duration-300"
-                            style={{
-                              background: isSelected ? "var(--app-accent)" : "var(--app-card-soft)",
-                              color: isSelected ? "var(--app-accent-contrast)" : "var(--app-text-muted)",
-                            }}
-                          >
-                            {option.icon}
-                          </div>
-                        )}
-                        <span
-                          className="text-[15px] sm:text-[16px] transition-colors duration-300 font-medium"
-                          style={{ color: isSelected ? "var(--app-accent)" : "var(--app-text)" }}
-                        >
-                          {option.label}
-                        </span>
-                      </div>
-                      
-                      <div
-                        className="flex shrink-0 items-center justify-center rounded-full border-2 transition-all duration-300 w-6 h-6 relative z-10 ml-3"
-                        style={{
-                          borderColor: isSelected ? "var(--app-accent)" : "var(--app-card-border)",
-                          background: isSelected ? "var(--app-accent)" : "transparent",
-                        }}
-                      >
-                        {isSelected && (
-                          <motion.div
-                            initial={shouldAnimateLightly ? { scale: 0.5, opacity: 0 } : false}
-                            animate={{ scale: 1, opacity: 1 }}
-                            transition={shouldAnimateLightly ? { duration: 0.16, ease: "easeOut" } : undefined}
-                          >
-                            <Check className="w-3.5 h-3.5" style={{ color: "var(--app-accent-contrast)" }} strokeWidth={3.5} />
-                          </motion.div>
-                        )}
-                      </div>
-                    </motion.button>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                onClick={handleContinue}
-                disabled={!answers[question.id]}
-                className="app-primary-button touch-target mt-5 w-full rounded-pill py-3.5 text-[15px] font-semibold disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-              >
-                {currentStep === questions.length - 1 ? "Review my space" : "Continue"}
-                <ChevronRight className="ml-1 inline-block h-4 w-4" />
-              </button>
-            </motion.div>
-          </AnimatePresence>
+          {isPerformanceMode ? questionStep : (
+            <AnimatePresence mode="wait" custom={isGoingForward}>
+              {questionStep}
+            </AnimatePresence>
+          )}
         </div>
 
         <button

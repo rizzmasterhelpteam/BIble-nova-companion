@@ -246,17 +246,33 @@ export const cancelUnstartedVoiceSessionLease = async (userId: string, leaseId: 
 const isValidVoiceRequestId = (value: unknown): value is string =>
   typeof value === "string" && value.length >= 16 && value.length <= 128 && /^[A-Za-z0-9_-]+$/.test(value);
 
+const isPostgrestNoRowError = (error: unknown) => {
+  const details = error as { code?: unknown; status?: unknown; message?: unknown } | null;
+  const message = typeof details?.message === "string" ? details.message.toLowerCase() : "";
+  return details?.code === "PGRST116" || details?.status === 406 || message.includes("0 rows");
+};
+
 export const getVoiceTokenIdempotencyResponse = async (userId: string, requestId: string) => {
   if (!isValidVoiceRequestId(requestId)) return null;
   const client = getSupabaseAdminClient();
-  const { data, error } = await client
-    .schema("private")
-    .from("voice_token_idempotency")
-    .select("response, expires_at, acknowledged_at")
-    .eq("user_id", userId)
-    .eq("request_id", requestId)
-    .maybeSingle();
-  if (error) throw new HttpError("Voice start is temporarily unavailable.", 503);
+  let data: { response?: unknown; expires_at: string; acknowledged_at?: string | null } | null = null;
+  try {
+    const result = await client
+      .schema("private")
+      .from("voice_token_idempotency")
+      .select("response, expires_at, acknowledged_at")
+      .eq("user_id", userId)
+      .eq("request_id", requestId)
+      .maybeSingle();
+    data = result.data;
+    if (result.error) throw result.error;
+  } catch (error) {
+    if (isPostgrestNoRowError(error)) {
+      console.info("Voice token recovery miss: idempotency row was not found.");
+      return null;
+    }
+    throw new HttpError("Voice start is temporarily unavailable.", 503);
+  }
   if (!data || data.acknowledged_at || Date.parse(data.expires_at) <= Date.now()) return null;
   return data.response && typeof data.response === "object" ? data.response : null;
 };
@@ -318,16 +334,25 @@ export const acknowledgeVoiceTokenIdempotency = async (userId: string, requestId
     throw new HttpError("Voice request identifier is invalid.", 400);
   }
   const client = getSupabaseAdminClient();
-  const { data, error } = await client
-    .schema("private")
-    .from("voice_token_idempotency")
-    .update({ acknowledged_at: new Date().toISOString() })
-    .eq("user_id", userId)
-    .eq("request_id", requestId)
-    .not("response", "is", null)
-    .select("request_id")
-    .maybeSingle();
-  if (error) throw new HttpError("Voice start acknowledgement failed.", 503);
+  let data: { request_id?: string } | null = null;
+  let error: unknown = null;
+  try {
+    const result = await client
+      .schema("private")
+      .from("voice_token_idempotency")
+      .update({ acknowledged_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("request_id", requestId)
+      .not("response", "is", null)
+      .select("request_id")
+      .maybeSingle();
+    data = result.data;
+    error = result.error;
+  } catch (caughtError) {
+    error = caughtError;
+  }
+  if (error && !isPostgrestNoRowError(error)) throw new HttpError("Voice start acknowledgement failed.", 503);
+  if (error && isPostgrestNoRowError(error)) return;
   if (!data) throw new HttpError("Voice start acknowledgement was not found.", 404);
 };
 
