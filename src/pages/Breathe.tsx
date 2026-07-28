@@ -261,7 +261,7 @@ export default function Breathe() {
             <button
               type="button"
               onClick={startSession}
-              className="touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 py-3.5 text-[15px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              className="touch-target app-primary-button inline-flex min-h-12 w-auto max-w-full min-w-[220px] items-center justify-center gap-2 rounded-pill px-5 py-3 text-[14px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
             >
               <Play className="h-4 w-4 fill-current" />
               Begin breathing

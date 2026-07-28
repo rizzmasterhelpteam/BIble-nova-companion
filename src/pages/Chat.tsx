@@ -6,8 +6,6 @@ import {
   StopCircle,
   AlertCircle,
   Sparkles,
-  Volume2,
-  Square,
   ChevronRight,
   Copy,
   ArrowDown,
@@ -37,10 +35,6 @@ import {
   type RecognitionMode,
   type SpeechRecognitionSession,
 } from "../lib/speechRecognition";
-import {
-  createTextToSpeechSession,
-  type TextToSpeechSession,
-} from "../lib/textToSpeech";
 import { VoiceModeToggle } from "../components/voice/VoiceModeToggle";
 import VoiceMode from "../components/voice/VoiceMode";
 import type { ConversationMessage, HomeMode } from "../types/live";
@@ -125,18 +119,12 @@ type ChatMessageProps = {
   isAndroidApp: boolean;
   isCompactPhone: boolean;
   message: Message;
-  onSpeak: (message: Message) => void;
-  speakingMessageId: string | null;
-  voiceSupported: boolean;
 };
 
 const ChatMessage = React.memo(function ChatMessage({
   isAndroidApp,
   isCompactPhone,
   message,
-  onSpeak,
-  speakingMessageId,
-  voiceSupported,
 }: ChatMessageProps) {
   const isError = message.tone === "error";
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
@@ -260,16 +248,6 @@ const ChatMessage = React.memo(function ChatMessage({
                   <Copy className="h-3.5 w-3.5" />
                   {copyStatus === "copied" ? "Copied" : copyStatus === "error" ? "Copy failed" : "Copy"}
                 </button>
-                {voiceSupported && (
-                  <button
-                    type="button"
-                    onClick={() => onSpeak(message)}
-                    className="touch-target app-ghost-button inline-flex items-center gap-1.5 rounded-pill px-3 py-2 text-xs"
-                  >
-                    {speakingMessageId === message.id ? <Square className="h-3.5 w-3.5 fill-current" /> : <Volume2 className="h-3.5 w-3.5" />}
-                    {speakingMessageId === message.id ? "Stop" : "Listen"}
-                  </button>
-                )}
               </div>
             )}
           </div>
@@ -321,12 +299,9 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const [isCheckingSpeechSupport, setIsCheckingSpeechSupport] = useState(true);
   const [speechNotice, setSpeechNotice] = useState<string | null>(null);
   const [speechError, setSpeechError] = useState<string | null>(null);
-  const [ttsError, setTtsError] = useState<string | null>(null);
   const [hasLoadedMessages, setHasLoadedMessages] = useState(false);
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
   const [isCheckingApiStatus, setIsCheckingApiStatus] = useState(true);
-  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
-  const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceReservation, setVoiceReservation] = useState<VoiceReservation | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -334,7 +309,6 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const messagesRef = useRef(messages);
   const requestControllerRef = useRef<AbortController | null>(null);
   const speechSessionRef = useRef<SpeechRecognitionSession | null>(null);
-  const ttsSessionRef = useRef<TextToSpeechSession | null>(null);
   const handledRouteActionRef = useRef<string | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
   const storageWriteTimerRef = useRef<number | null>(null);
@@ -478,24 +452,10 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       }
     });
 
-    const ttsSession = createTextToSpeechSession({
-      onSpeakingChange: (messageId) => {
-        setSpeakingMessageId(messageId);
-      },
-      onError: (message) => {
-        setTtsError(message);
-      },
-    });
-
-    ttsSessionRef.current = ttsSession;
-    setVoiceSupported(ttsSession.isSupported());
-
     return () => {
       const speechSession = speechSessionRef.current;
       speechSessionRef.current = null;
-      ttsSessionRef.current = null;
       void speechSession?.destroy();
-      ttsSession.destroy();
     };
   }, [updateInputValue]);
 
@@ -656,8 +616,6 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
     if (isRecording) {
       await speechSessionRef.current?.stop();
     }
-
-    ttsSessionRef.current?.stop();
 
     requestControllerRef.current?.abort();
     const controller = new AbortController();
@@ -897,31 +855,6 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
     }
   };
 
-  const handleSpeakMessage = useCallback(async (message: Message) => {
-    if (
-      message.role !== "ai" ||
-      message.tone === "error" ||
-      !voiceSupported
-    ) {
-      return;
-    }
-
-    setTtsError(null);
-
-    if (speakingMessageId === message.id) {
-      ttsSessionRef.current?.stop();
-      return;
-    }
-
-    try {
-      await ttsSessionRef.current?.speak(message.id, message.content);
-    } catch (error) {
-      setTtsError(
-        error instanceof Error ? error.message : "Voice playback could not start on this device.",
-      );
-    }
-  }, [speakingMessageId, voiceSupported]);
-
   const toggleRecording = async () => {
     if (isRecording) {
       await stopSpeechRecognition();
@@ -983,7 +916,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
             <VoiceModeToggle
               value={mode}
               onChange={handleModeChange}
-              className="w-full justify-center sm:w-auto"
+              className="w-auto max-w-full justify-center"
             />
           </div>
         </div>
@@ -1101,9 +1034,6 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
               isAndroidApp={isAndroidApp}
               isCompactPhone={isCompactPhone}
               message={message}
-              onSpeak={handleSpeakMessage}
-              speakingMessageId={speakingMessageId}
-              voiceSupported={voiceSupported}
             />
           ))}
         </AnimatePresence>
@@ -1158,20 +1088,16 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
         <div className="mx-auto w-full max-w-3xl">
           <div className="min-h-0" aria-live="polite">{(isRecording ||
             isTranscribingSpeech ||
-            speakingMessageId ||
             speechError ||
-            speechNotice ||
-            ttsError) && (
+            speechNotice) && (
             <p
               className="mb-1 px-1 text-center text-[11px]"
               style={{
-                color: speechError || ttsError ? "var(--app-danger)" : "var(--app-text-muted)",
+                color: speechError ? "var(--app-danger)" : "var(--app-text-muted)",
               }}
             >
-              {speechError || speechNotice || ttsError
-                ? speechError || speechNotice || ttsError
-                : speakingMessageId
-                ? "Playing audio."
+              {speechError || speechNotice
+                ? speechError || speechNotice
                 : isRecording
                 ? "Listening. Tap stop when you're done."
                 : isTranscribingSpeech
