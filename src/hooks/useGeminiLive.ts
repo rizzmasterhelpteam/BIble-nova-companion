@@ -232,6 +232,7 @@ export function useGeminiLive({
   const mountedRef = useRef(true);
   const startGenerationRef = useRef(0);
   const startAbortControllerRef = useRef<AbortController | null>(null);
+  const audioResumePromiseRef = useRef<Promise<void> | null>(null);
   const isRequestingPermissionRef = useRef(false);
   const permissionPromptGraceUntilRef = useRef(0);
   const startingRef = useRef(false);
@@ -250,7 +251,7 @@ export function useGeminiLive({
   if (!stopActionRef.current) stopActionRef.current = createIdempotentAsyncAction();
 
   const logVoiceDiagnostics = useCallback((event: string, details: Record<string, unknown> = {}) => {
-    console.info("[Bible Nova voice diagnostics]", {
+    const payload = {
       event,
       platform: isNativePlatform() ? getNativePlatform() : "web",
       liveReady,
@@ -258,8 +259,29 @@ export function useGeminiLive({
       online: typeof navigator === "undefined" ? null : navigator.onLine,
       getUserMediaAvailable: Boolean(typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia),
       ...details,
-    });
+    };
+    console.info("[Bible Nova voice diagnostics]", payload);
+    // Capacitor's Android console turns object arguments into "[object Object]".
+    // Emit an equivalent primitive log so physical-device traces identify the
+    // exact startup boundary without logging tokens or user content.
+    if (isNativePlatform()) console.info(`[Bible Nova voice diagnostics] ${JSON.stringify(payload)}`);
   }, [apiStatusConnectionError, liveReady]);
+
+  const primeAudioForUserGesture = useCallback(() => {
+    try {
+      const audioContext = audioContextRef.current || getAudioContext();
+      audioContextRef.current = audioContext;
+      if (!audioResumePromiseRef.current) {
+        audioResumePromiseRef.current = audioContext.resume();
+        void audioResumePromiseRef.current.catch(() => undefined);
+      }
+      logVoiceDiagnostics("audio-context-primed", { state: audioContext.state });
+    } catch (audioError) {
+      logVoiceDiagnostics("audio-context-prime-failed", {
+        error: audioError instanceof Error ? audioError.message : "Voice audio could not be initialized.",
+      });
+    }
+  }, [logVoiceDiagnostics]);
 
   useEffect(() => () => {
     mountedRef.current = false;
@@ -411,6 +433,7 @@ export function useGeminiLive({
 
     const audioContext = audioContextRef.current;
     audioContextRef.current = null;
+    audioResumePromiseRef.current = null;
     if (audioContext && audioContext.state !== "closed") {
       audioContext.onstatechange = null;
       void audioContext.close().catch(() => undefined);
@@ -639,7 +662,8 @@ export function useGeminiLive({
       const activatedAudioContext = audioContextRef.current || getAudioContext();
       audioContextRef.current = activatedAudioContext;
       logVoiceDiagnostics("audio-context-created", { state: activatedAudioContext.state });
-      const audioResumePromise = activatedAudioContext.resume();
+      const audioResumePromise = audioResumePromiseRef.current || activatedAudioContext.resume();
+      audioResumePromiseRef.current = audioResumePromise;
       await audioResumePromise;
       assertStartIsCurrent();
       logVoiceDiagnostics("audio-context-ready", { state: activatedAudioContext.state });
@@ -1346,6 +1370,7 @@ export function useGeminiLive({
     start,
     stop,
     toggleMute,
+    primeAudioForUserGesture,
     interrupt,
   };
 }
