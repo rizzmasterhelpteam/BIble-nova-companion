@@ -107,6 +107,7 @@ const VOICE_API_TIMEOUT_MS = 12_000;
 const VOICE_STORAGE_TIMEOUT_MS = 750;
 const VOICE_AUDIO_RESUME_TIMEOUT_MS = 4_000;
 const VOICE_PERMISSION_TIMEOUT_MS = 45_000;
+const VOICE_ENTITLEMENT_SYNC_TIMEOUT_MS = 12_000;
 
 const withVoiceStartupTimeout = <T,>(
   promise: Promise<T>,
@@ -381,6 +382,33 @@ export function useGeminiLive({
     } finally {
       isRequestingPermissionRef.current = false;
       permissionPromptGraceUntilRef.current = Date.now() + 1_000;
+    }
+  }, [logVoiceDiagnostics, runVoiceStartupStep]);
+
+  const refreshNativeVoiceEntitlement = useCallback(async () => {
+    if (!isNativePlatform() || getNativePlatform() !== "android") return false;
+
+    logVoiceDiagnostics("native-entitlement-recovery", { phase: "started" });
+    try {
+      const synced = await runVoiceStartupStep(
+        "native-entitlement-sync",
+        async () => {
+          try {
+            const { refreshNativeSubscriptionEntitlement } = await import("../lib/native/subscriptionSync");
+            return await refreshNativeSubscriptionEntitlement();
+          } catch {
+            throw new Error("Premium verification could not complete.");
+          }
+        },
+        VOICE_ENTITLEMENT_SYNC_TIMEOUT_MS,
+      );
+      logVoiceDiagnostics("native-entitlement-recovery", {
+        phase: synced ? "succeeded" : "not-found",
+      });
+      return synced;
+    } catch {
+      logVoiceDiagnostics("native-entitlement-recovery", { phase: "failed" });
+      return false;
     }
   }, [logVoiceDiagnostics, runVoiceStartupStep]);
 
@@ -867,28 +895,45 @@ export function useGeminiLive({
       if (recoveredTokenData) {
         eligibility = { available: true, reason: "reservation_resume" };
       } else {
-        const eligibilityResponse = await runVoiceStartupStep("eligibility-request", () => apiFetch("/api/live/eligibility", {
-          method: "GET",
-          signal: abortController.signal,
-          headers: reservationHandle
-            ? { "X-Voice-Reservation": reservationHandle }
-            : undefined,
-        }));
-        assertStartIsCurrent();
-        eligibility = (await eligibilityResponse.json().catch(() => ({}))) as VoiceEligibilityResponse;
-        assertStartIsCurrent();
-        logVoiceDiagnostics("eligibility-response", {
-          status: eligibilityResponse.status,
-          ok: eligibilityResponse.ok,
-          available: eligibility.available === true,
-          reason: eligibility.reason || null,
-          retryAfterSeconds: eligibility.retryAfterSeconds ?? null,
-        });
-        if (!eligibilityResponse.ok) {
-          throw new VoiceStartError(
-            "eligibility_failed",
-            eligibility.error || "Voice eligibility could not be checked.",
-          );
+        const requestEligibility = async (stage: string) => {
+          const eligibilityResponse = await runVoiceStartupStep(stage, () => apiFetch("/api/live/eligibility", {
+            method: "GET",
+            signal: abortController.signal,
+            headers: reservationHandle
+              ? { "X-Voice-Reservation": reservationHandle }
+              : undefined,
+          }));
+          assertStartIsCurrent();
+          const nextEligibility = (await eligibilityResponse.json().catch(() => ({}))) as VoiceEligibilityResponse;
+          assertStartIsCurrent();
+          logVoiceDiagnostics("eligibility-response", {
+            stage,
+            status: eligibilityResponse.status,
+            ok: eligibilityResponse.ok,
+            available: nextEligibility.available === true,
+            reason: nextEligibility.reason || null,
+            retryAfterSeconds: nextEligibility.retryAfterSeconds ?? null,
+          });
+          if (!eligibilityResponse.ok) {
+            throw new VoiceStartError(
+              "eligibility_failed",
+              nextEligibility.error || "Voice eligibility could not be checked.",
+            );
+          }
+          return nextEligibility;
+        };
+
+        eligibility = await requestEligibility("eligibility-request");
+        if (
+          !isReconnect &&
+          eligibility.reason === "subscription_required" &&
+          !eligibility.available
+        ) {
+          const entitlementSynced = await refreshNativeVoiceEntitlement();
+          assertStartIsCurrent();
+          if (entitlementSynced) {
+            eligibility = await requestEligibility("eligibility-retry-after-entitlement-sync");
+          }
         }
       }
       if (!eligibility.available) {
@@ -1405,7 +1450,7 @@ export function useGeminiLive({
         startingRef.current = false;
       }
     }
-  }, [clearPendingTokenRequest, clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, logVoiceDiagnostics, onReservationChange, persistPendingTokenRequest, playAudioChunk, releaseAudio, releaseReservation, requestNativeVoiceMicrophonePermission, retryPendingRelease, runNativeVoiceStorageOperation, runVoiceStartupStep, stop, stopPlayback]);
+  }, [clearPendingTokenRequest, clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, logVoiceDiagnostics, onReservationChange, persistPendingTokenRequest, playAudioChunk, refreshNativeVoiceEntitlement, releaseAudio, releaseReservation, requestNativeVoiceMicrophonePermission, retryPendingRelease, runNativeVoiceStorageOperation, runVoiceStartupStep, stop, stopPlayback]);
 
   useEffect(() => {
     startRef.current = start;

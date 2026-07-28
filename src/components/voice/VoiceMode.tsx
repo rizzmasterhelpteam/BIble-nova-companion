@@ -250,11 +250,6 @@ export default function VoiceMode({
   }, [persistVoiceNotes, stopLive]);
 
   const handleStart = useCallback(async () => {
-    if (premiumRequired) {
-      navigate("/paywall");
-      return;
-    }
-
     // Android requires audio to be activated directly from the tap. Do this
     // before a status retry yields to the network or the Capacitor bridge.
     live.primeAudioForUserGesture();
@@ -270,7 +265,7 @@ export default function VoiceMode({
       void onRetryLiveReady();
     }
     if (ready) await live.start();
-  }, [live.primeAudioForUserGesture, live.start, liveReady, navigate, onRetryLiveReady, premiumRequired]);
+  }, [live.primeAudioForUserGesture, live.start, liveReady, onRetryLiveReady]);
 
   const handleExitVoice = useCallback(() => {
     if (exitPromiseRef.current) return exitPromiseRef.current;
@@ -310,7 +305,7 @@ export default function VoiceMode({
   }, [active, handleExitVoice]);
 
   const startLabel = premiumRequired
-    ? "Unlock Voice"
+    ? "Restore premium access"
     : isCheckingLiveReady
       ? "Checking Voice"
       : !liveReady || live.state === "error" || live.state === "permission-denied" || live.state === "offline"
@@ -322,11 +317,11 @@ export default function VoiceMode({
       : "Start voice reflection";
   const showStartButton = !active;
   const sessionNotice = premiumRequired
-    ? "Unlock private, voice-led reflections with your premium plan."
+    ? live.error || "We could not confirm your premium plan yet. Restore it with Google Play and try Voice again."
     : !isCheckingLiveReady && !liveReady
       ? apiStatusConnectionError || "Voice mode is temporarily unavailable. You can retry the connection or continue in Chat."
     : live.error || live.sessionNotice;
-  const sessionNoticeIsError = (Boolean(live.error) || (!isCheckingLiveReady && !liveReady)) && !premiumRequired;
+  const sessionNoticeIsError = Boolean(live.error) || (!isCheckingLiveReady && !liveReady);
 
   return (
     <div className="voice-mode relative flex min-h-0 flex-1 overflow-hidden bg-transparent">
@@ -426,7 +421,7 @@ export default function VoiceMode({
                 disabled={isTyping || cooldownActive || isCheckingLiveReady}
                 className="voice-primary-action touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 text-[15px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {premiumRequired ? <LockKeyhole className="h-5 w-5" /> : live.state === "error" || live.state === "permission-denied" || live.state === "offline" ? <RotateCcw className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
+                {premiumRequired ? <RotateCcw className="h-5 w-5" /> : live.state === "error" || live.state === "permission-denied" || live.state === "offline" ? <RotateCcw className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
                 {startLabel}
               </button>
             ) : (
@@ -462,6 +457,16 @@ export default function VoiceMode({
                   <span>End</span>
                 </button>
               </div>
+            )}
+
+            {premiumRequired && (
+              <button
+                type="button"
+                onClick={() => navigate("/paywall")}
+                className="touch-target app-muted mt-3 w-full rounded-pill px-4 py-2 text-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              >
+                Manage premium plan
+              </button>
             )}
 
             {isTyping && <p className="app-muted mt-1 text-center text-xs">Finishing your previous reflection...</p>}
