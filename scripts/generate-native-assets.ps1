@@ -47,7 +47,7 @@ function Write-Icon {
     [System.Drawing.Image]$SourceImage,
     [string]$Destination,
     [int]$Size,
-    [double]$Scale = 0.88,
+    [double]$Scale = 1.0,
     [string]$Background = "#FFFFFF"
   )
 

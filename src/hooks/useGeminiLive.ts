@@ -7,11 +7,14 @@ import { apiFetch } from "../lib/apiClient";
 import { isNativePlatform } from "../lib/native/platform";
 import { refreshNativeSubscriptionEntitlement } from "../lib/native/subscriptionSync";
 import {
+  createIdempotentAsyncAction,
   createInitialHistoryPayload,
   getLiveReconnectDelay,
   getLiveSessionDurationMs,
+  getSafePlaybackGain,
   guardLiveTokenTiming,
   mergeLiveTranscript,
+  nextPlaybackGeneration,
   shouldReconnectLiveSession,
   shouldResumeListeningAfterPlayback,
   signalAudioStreamEnd,
@@ -79,6 +82,7 @@ type Gemini31LiveConnectConfig = LiveConnectConfig & {
 const INPUT_SAMPLE_RATE = 16_000;
 const OUTPUT_SAMPLE_RATE = 24_000;
 const MAX_RECONNECT_ATTEMPTS = 2;
+const PLAYBACK_GAIN = getSafePlaybackGain(1.3);
 
 const base64ToBytes = (value: string) => {
   const binary = window.atob(value);
@@ -145,7 +149,9 @@ const getAudioContext = () => {
   if (!AudioContextConstructor) {
     throw new Error("Voice is not supported on this device.");
   }
-  return new AudioContextConstructor({ sampleRate: INPUT_SAMPLE_RATE });
+  // Let the device select its native output rate. Mic input is resampled to
+  // 16 kHz separately before it is sent to Gemini.
+  return new AudioContextConstructor();
 };
 
 export function useGeminiLive({
@@ -172,6 +178,8 @@ export function useGeminiLive({
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
   const muteGainRef = useRef<GainNode | null>(null);
+  const playbackGainRef = useRef<GainNode | null>(null);
+  const playbackCompressorRef = useRef<DynamicsCompressorNode | null>(null);
   const playbackSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const nextPlaybackTimeRef = useRef(0);
   const userTranscriptRef = useRef("");
@@ -191,6 +199,8 @@ export function useGeminiLive({
   const failureHandledRef = useRef(false);
   const reservationHandleRef = useRef<string | null>(reservation?.handle ?? null);
   const reservationExpiresAtRef = useRef<string | null>(reservation?.expiresAt ?? null);
+  const stopActionRef = useRef<ReturnType<typeof createIdempotentAsyncAction> | null>(null);
+  if (!stopActionRef.current) stopActionRef.current = createIdempotentAsyncAction();
 
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -211,13 +221,18 @@ export function useGeminiLive({
   }, []);
 
   const stopPlayback = useCallback(() => {
+    playbackGenerationRef.current = nextPlaybackGeneration(playbackGenerationRef.current);
     playbackSourcesRef.current.forEach((source) => {
       try {
         source.stop();
       } catch {
         // The source may already have ended.
       }
-      source.disconnect();
+      try {
+        source.disconnect();
+      } catch {
+        // The source may already be disconnected by its ended handler.
+      }
     });
     playbackSourcesRef.current = [];
     nextPlaybackTimeRef.current = 0;
@@ -227,9 +242,13 @@ export function useGeminiLive({
     processorNodeRef.current?.disconnect();
     sourceNodeRef.current?.disconnect();
     muteGainRef.current?.disconnect();
+    playbackGainRef.current?.disconnect();
+    playbackCompressorRef.current?.disconnect();
     processorNodeRef.current = null;
     sourceNodeRef.current = null;
     muteGainRef.current = null;
+    playbackGainRef.current = null;
+    playbackCompressorRef.current = null;
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     mediaStreamRef.current = null;
     stopPlayback();
@@ -240,6 +259,26 @@ export function useGeminiLive({
       void audioContext.close().catch(() => undefined);
     }
   }, [stopPlayback]);
+
+  const getPlaybackInput = useCallback((audioContext: AudioContext) => {
+    if (playbackGainRef.current && playbackCompressorRef.current) {
+      return playbackGainRef.current;
+    }
+
+    const playbackGain = audioContext.createGain();
+    const compressor = audioContext.createDynamicsCompressor();
+    playbackGain.gain.value = PLAYBACK_GAIN;
+    compressor.threshold.value = -18;
+    compressor.knee.value = 12;
+    compressor.ratio.value = 4;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.25;
+    playbackGain.connect(compressor);
+    compressor.connect(audioContext.destination);
+    playbackGainRef.current = playbackGain;
+    playbackCompressorRef.current = compressor;
+    return playbackGain;
+  }, []);
 
   const finalizeUserTranscript = useCallback(() => {
     const finalText = userTranscriptRef.current.trim();
@@ -269,13 +308,18 @@ export function useGeminiLive({
     const buffer = decodePcmAudio(audioContext, data, sampleRate);
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
-    source.connect(audioContext.destination);
+    source.connect(getPlaybackInput(audioContext));
 
     const startAt = Math.max(audioContext.currentTime, nextPlaybackTimeRef.current);
     source.start(startAt);
     nextPlaybackTimeRef.current = startAt + buffer.duration;
     playbackSourcesRef.current.push(source);
     source.addEventListener("ended", () => {
+      try {
+        source.disconnect();
+      } catch {
+        // A stopped source may already be disconnected.
+      }
       playbackSourcesRef.current = playbackSourcesRef.current.filter((item) => item !== source);
       if (shouldResumeListeningAfterPlayback({
         playbackGeneration,
@@ -287,29 +331,30 @@ export function useGeminiLive({
       }
     });
     setState("assistant-speaking");
-  }, []);
+  }, [getPlaybackInput]);
 
-  const stop = useCallback(async (nextState: VoiceState = "ended") => {
-    stopRequestedRef.current = true;
-    playbackGenerationRef.current += 1;
-    audioStreamEndedRef.current = signalAudioStreamEnd(
-      sessionRef.current,
-      audioStreamEndedRef.current,
-    );
-    suppressPlaybackRef.current = false;
-    setState("ending");
-    clearTimers();
-    finalizeUserTranscript();
-    finalizeAssistantTranscript();
-    releaseAudio();
+  const stop = useCallback((nextState: VoiceState = "ended") => {
+    return stopActionRef.current!(async () => {
+      stopRequestedRef.current = true;
+      audioStreamEndedRef.current = signalAudioStreamEnd(
+        sessionRef.current,
+        audioStreamEndedRef.current,
+      );
+      suppressPlaybackRef.current = false;
+      setState("ending");
+      clearTimers();
+      finalizeUserTranscript();
+      finalizeAssistantTranscript();
+      releaseAudio();
 
-    const session = sessionRef.current;
-    sessionRef.current = null;
-    session?.close();
-    setIsMuted(false);
-    audioStreamEndedRef.current = true;
-    setSessionNotice(null);
-    setState(nextState);
+      const session = sessionRef.current;
+      sessionRef.current = null;
+      session?.close();
+      setIsMuted(false);
+      audioStreamEndedRef.current = true;
+      setSessionNotice(null);
+      setState(nextState);
+    });
   }, [clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, releaseAudio]);
 
   const handleConnectionFailure = useCallback((
@@ -319,7 +364,6 @@ export function useGeminiLive({
     if (stopRequestedRef.current || failureHandledRef.current || sessionRef.current !== failedSession) return;
 
     failureHandledRef.current = true;
-    playbackGenerationRef.current += 1;
     audioStreamEndedRef.current = signalAudioStreamEnd(failedSession, audioStreamEndedRef.current);
     suppressPlaybackRef.current = false;
     releaseAudio();

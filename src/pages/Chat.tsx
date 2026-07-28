@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   Mic,
@@ -27,7 +27,11 @@ import {
   saveVoiceReservation,
   type VoiceReservation,
 } from "../lib/voiceReservation";
-import { getChatScrollBehavior } from "../lib/mobileLayout";
+import {
+  getChatScrollBehavior,
+  shouldForceLatestAfterModeChange,
+  shouldScrollChatToLatest,
+} from "../lib/mobileLayout";
 import {
   createSpeechRecognitionSession,
   type RecognitionMode,
@@ -176,7 +180,7 @@ const ChatMessage = React.memo(function ChatMessage({
       {message.role === "ai" && (
         <div className="flex w-full max-w-full min-w-0 items-start gap-3">
           <div
-            className="w-[30px] h-[30px] mt-0.5 flex-shrink-0 rounded-full border flex items-center justify-center"
+            className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border"
             style={
               isError
                 ? {
@@ -201,7 +205,7 @@ const ChatMessage = React.memo(function ChatMessage({
           <div className="relative flex min-w-0 flex-1 flex-col gap-2">
             <div
               className={cn(
-                "break-words whitespace-pre-wrap text-[16px] leading-[1.8] font-serif font-light",
+                "break-words whitespace-pre-wrap text-[15px] leading-[1.68] font-serif font-light",
                 isError ? "rounded-[1.5rem] border px-4 py-3" : "",
               )}
               style={
@@ -213,10 +217,10 @@ const ChatMessage = React.memo(function ChatMessage({
                     }
                   : {
                       color: "var(--app-text)",
-                      background: "var(--app-card-soft)",
-                      border: "1px solid var(--app-card-border)",
-                      borderRadius: "1.35rem",
-                      padding: "0.85rem 1rem",
+                      background: "transparent",
+                      border: "0",
+                      borderRadius: "0",
+                      padding: "0.25rem 0",
                     }
               }
             >
@@ -246,7 +250,7 @@ const ChatMessage = React.memo(function ChatMessage({
               </motion.div>
             )}
             {!isError && (
-              <div className="mt-1 flex items-center gap-1 border-t pt-1" style={{ borderColor: "var(--app-divider)" }}>
+              <div className="mt-0.5 flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => void handleCopy()}
@@ -275,8 +279,8 @@ const ChatMessage = React.memo(function ChatMessage({
       {message.role === "user" && (
         <div
           className={cn(
-            "break-words whitespace-pre-wrap rounded-[1.5rem] rounded-tr-[0.5rem] border text-[15px] font-light leading-relaxed",
-            isCompactPhone ? "max-w-[90%] px-5 py-3.5" : "max-w-[85%] px-6 py-4",
+            "break-words whitespace-pre-wrap rounded-[1.2rem] rounded-tr-[0.45rem] border text-[15px] font-light leading-[1.55]",
+            isCompactPhone ? "max-w-[88%] px-4 py-3" : "max-w-[82%] px-5 py-3.5",
           )}
           style={{
             background: "var(--app-accent-soft)",
@@ -336,9 +340,26 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const storageWriteTimerRef = useRef<number | null>(null);
   const lastScrolledMessageCountRef = useRef(0);
   const isNearBottomRef = useRef(true);
+  const scrollToLatestAfterVoiceRef = useRef(false);
+  const previousModeRef = useRef<HomeMode>(mode);
   const showQuickPrompts = messages.length === 1 && !isTyping;
   const isVoiceMode = mode === "voice";
   const isImmersiveVoice = isVoiceMode && isVoiceSessionActive;
+  const chatPageRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const page = chatPageRef.current;
+    const screen = page?.closest(".app-screen");
+    const shell = page?.closest(".app-shell");
+
+    screen?.classList.toggle("voice-host", isVoiceMode);
+    shell?.classList.toggle("voice-host", isVoiceMode);
+
+    return () => {
+      screen?.classList.remove("voice-host");
+      shell?.classList.remove("voice-host");
+    };
+  }, [isVoiceMode]);
   const chatUnavailable = apiStatus?.chatReady !== true;
   const speechUnavailableReason = isCheckingSpeechSupport
     ? null
@@ -607,6 +628,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   }, [appendAiMessage]);
 
   const continueInChat = useCallback(() => {
+    scrollToLatestAfterVoiceRef.current = true;
     setVoiceSessionActive(false);
     onModeChange?.("chat");
   }, [onModeChange, setVoiceSessionActive]);
@@ -617,8 +639,11 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       requestControllerRef.current = null;
       setIsTyping(false);
     }
+    if (nextMode === "chat" && isVoiceMode) {
+      scrollToLatestAfterVoiceRef.current = true;
+    }
     onModeChange?.(nextMode);
-  }, [isTyping, onModeChange]);
+  }, [isTyping, isVoiceMode, onModeChange]);
 
   const handleSend = useCallback(async (text: string) => {
     if (isTyping || apiStatus?.chatReady !== true) return;
@@ -768,7 +793,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
         return;
       }
 
-      if (isNearBottomRef.current) {
+      if (shouldScrollChatToLatest(isNearBottomRef.current, false)) {
         container.scrollTo({ top: container.scrollHeight, behavior });
         setShowJumpToLatest(false);
       } else {
@@ -778,6 +803,32 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
 
     return () => window.cancelAnimationFrame(frame);
   }, [isKeyboardOpen, messages.length, isTyping, showQuickPrompts]);
+
+  useLayoutEffect(() => {
+    const previousMode = previousModeRef.current;
+    previousModeRef.current = mode;
+    if (shouldForceLatestAfterModeChange(previousMode, mode)) {
+      scrollToLatestAfterVoiceRef.current = true;
+    }
+    if (isVoiceMode || !scrollToLatestAfterVoiceRef.current) return;
+
+    let secondFrame: number | null = null;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+        scrollToLatestAfterVoiceRef.current = false;
+        isNearBottomRef.current = true;
+        setShowJumpToLatest(false);
+        container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame !== null) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [isVoiceMode, messages.length, mode]);
 
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -881,7 +932,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   };
 
   return (
-    <div className={cn(
+    <div ref={chatPageRef} className={cn(
       "relative flex min-h-0 flex-1 flex-col overflow-hidden bg-transparent",
       isVoiceMode && "voice-page",
       isImmersiveVoice && "voice-session-active",
@@ -890,7 +941,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
         className={cn(
           "z-20 flex shrink-0 items-center justify-between border-b pr-14 transition-colors duration-200",
           !isVoiceMode && "backdrop-blur-xl",
-          isCompactPhone ? "min-h-[64px] px-4 py-2" : "min-h-[72px] px-5 py-3 sm:px-6",
+          isCompactPhone ? "min-h-[56px] px-3.5 py-1.5" : "min-h-[64px] px-4 py-2 sm:px-6",
         )}
         style={{
           backgroundColor: isVoiceMode ? "transparent" : "var(--app-surface-solid)",
@@ -927,7 +978,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       </header>}
 
       {!isImmersiveVoice && onModeChange && (
-        <div className="voice-mode-row shrink-0 px-4 pt-1 sm:px-6 sm:pt-2">
+        <div className={cn("shrink-0 px-3 pt-0.5 sm:px-6 sm:pt-1", isVoiceMode && "voice-mode-row")}>
           <div className="mx-auto flex w-full max-w-[680px] justify-center sm:justify-start">
             <VoiceModeToggle
               value={mode}
@@ -946,7 +997,6 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           onAppendUserMessage={appendVoiceUserMessage}
           onAppendAssistantMessage={appendVoiceAssistantMessage}
           onAcceptShadowNotes={acceptPersistedShadowNotes}
-          onContinueInChat={continueInChat}
           onExitVoice={continueInChat}
           onSessionActiveChange={setVoiceSessionActive}
           reservation={voiceReservation}
@@ -961,10 +1011,10 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
         onScroll={handleScroll}
         className={cn(
           "app-scroll-region z-10 flex flex-1 flex-col scrollbar-hide",
-          isCompactPhone ? "px-4 py-4" : "px-5 py-5 sm:px-6",
+          isCompactPhone ? "px-3 py-3" : "px-4 py-4 sm:px-6",
         )}
       >
-        <div className={cn("mx-auto flex w-full max-w-3xl flex-col", isCompactPhone ? "gap-4" : "gap-6")}>
+        <div className={cn("mx-auto flex w-full max-w-3xl flex-col", isCompactPhone ? "gap-3" : "gap-4")}>
         {showQuickPrompts && !chatUnavailable && (
           <motion.div
             initial={isAndroidApp ? false : { opacity: 0 }}
@@ -1097,55 +1147,49 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
 
       <div
         className={cn(
-          "shrink-0 border-t border-[color:color-mix(in_srgb,var(--app-divider)_50%,transparent)] transition-colors duration-300",
-          isCompactPhone ? "px-4 pb-safe pt-3" : "px-5 pb-safe pt-3 sm:px-6",
+          "shrink-0 transition-colors duration-300",
+          isCompactPhone ? "px-3 pt-1" : "px-4 pt-1 sm:px-6",
+          isKeyboardOpen ? "pb-1" : "pb-safe-tight",
         )}
         style={{
-          backgroundColor: "var(--bg-base)",
-          backgroundImage: "linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 92%, transparent) 0%, var(--bg-base) 100%)",
+          background: "transparent",
         }}
       >
         <div className="mx-auto w-full max-w-3xl">
-          <div className="mb-2 min-h-4" aria-live="polite">{(isRecording ||
+          <div className="min-h-0" aria-live="polite">{(isRecording ||
             isTranscribingSpeech ||
             speakingMessageId ||
-            chatUnavailable ||
             speechError ||
             speechNotice ||
-            speechUnavailableReason ||
             ttsError) && (
             <p
-              className="mb-3 px-1 text-center text-[11px]"
+              className="mb-1 px-1 text-center text-[11px]"
               style={{
                 color: speechError || ttsError ? "var(--app-danger)" : "var(--app-text-muted)",
               }}
             >
-              {speechError || speechNotice || speechUnavailableReason || ttsError
-                ? speechError || speechNotice || speechUnavailableReason || ttsError
+              {speechError || speechNotice || ttsError
+                ? speechError || speechNotice || ttsError
                 : speakingMessageId
                 ? "Playing audio."
                 : isRecording
                 ? "Listening. Tap stop when you're done."
                 : isTranscribingSpeech
                 ? "Transcribing your speech..."
-                : isCheckingApiStatus
-                ? "Checking chat connection."
-                : chatUnavailable
-                ? "Chat is temporarily unavailable."
                 : ""}
             </p>
           )}</div>
 
           <div
             className={cn(
-              "flex w-full items-end gap-2 rounded-pill border p-1.5 transition-all duration-300 focus-within:ring-2 focus-within:ring-[color:color-mix(in_srgb,var(--app-accent)_25%,transparent)] focus-within:border-[color:color-mix(in_srgb,var(--app-accent)_50%,transparent)]",
-              isCompactPhone ? "pl-3.5" : "pl-4",
+              "flex w-full items-end gap-1.5 rounded-pill border p-1 transition-all duration-300 focus-within:ring-1 focus-within:ring-[color:color-mix(in_srgb,var(--app-accent)_25%,transparent)] focus-within:border-[color:color-mix(in_srgb,var(--app-accent)_50%,transparent)]",
+              isCompactPhone ? "pl-3" : "pl-3.5",
             )}
             style={{
-              backgroundColor: "var(--app-surface-solid)",
-              backgroundImage: "var(--app-shell-highlight)",
-              borderColor: "color-mix(in srgb, var(--app-card-border) 80%, transparent)",
-              boxShadow: "0 12px 36px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.06)",
+              backgroundColor: "var(--app-input-bg)",
+              backgroundImage: "none",
+              borderColor: "color-mix(in srgb, var(--app-input-border) 72%, transparent)",
+              boxShadow: "0 6px 18px rgba(0,0,0,0.08)",
             }}
           >
             <textarea
@@ -1171,21 +1215,21 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
               enterKeyHint="send"
               aria-label="Message Bible Nova Companion"
               className={cn(
-                "scrollbar-hide w-full resize-none bg-transparent py-3 font-sans font-light leading-[1.6] outline-none",
-                isShortPhone ? "min-h-[44px] max-h-28 text-[14px]" : "min-h-[44px] max-h-32 text-[15px]",
+                "scrollbar-hide w-full resize-none bg-transparent py-2.5 font-sans font-light leading-[1.5] outline-none",
+                isShortPhone ? "min-h-[42px] max-h-24 text-[14px]" : "min-h-[42px] max-h-28 text-[15px]",
               )}
               style={{ color: "var(--app-heading)" }}
               rows={1}
             />
 
-            <div className="flex-shrink-0 flex items-center justify-center h-[44px] pr-1">
+            <div className="flex h-[42px] flex-shrink-0 items-center justify-center pr-0.5">
               {isRecording ? (
                 <button
                   onClick={() => {
                     void toggleRecording();
                   }}
                   disabled={isTyping}
-                  className={cn("touch-target relative flex h-[38px] w-[38px] items-center justify-center rounded-full border transition-all duration-300 active:scale-[0.97] shadow-sm", isTyping && "cursor-not-allowed opacity-50")}
+                  className={cn("touch-target relative flex h-9 w-9 items-center justify-center rounded-full border transition-all duration-300 active:scale-[0.97] shadow-sm", isTyping && "cursor-not-allowed opacity-50")}
                   style={{
                     background: "var(--app-danger-soft)",
                     color: "var(--app-danger)",
@@ -1210,7 +1254,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
                   onClick={() => handleSend(input)}
                   disabled={isTyping || chatUnavailable || isTranscribingSpeech}
                   className={cn(
-                    "touch-target app-primary-button flex h-[38px] w-[38px] items-center justify-center rounded-full transition-all active:scale-95",
+                    "touch-target app-primary-button flex h-9 w-9 items-center justify-center rounded-full transition-all active:scale-95",
                     isTyping && "cursor-not-allowed opacity-50 grayscale",
                   )}
                   style={{
@@ -1225,7 +1269,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
                     void toggleRecording();
                   }}
                   disabled={isTyping || chatUnavailable || isTranscribingSpeech || isCheckingSpeechSupport || speechMode === "unsupported" || (speechMode === "web" && apiStatus?.speechReady !== true)}
-                  className={cn("touch-target relative flex h-[38px] w-[38px] items-center justify-center rounded-full border transition-all duration-300 active:scale-[0.97] shadow-sm", (isTyping || isCheckingSpeechSupport || speechMode === "unsupported" || (speechMode === "web" && apiStatus?.speechReady !== true)) && "cursor-not-allowed opacity-50")}
+                  className={cn("touch-target relative flex h-9 w-9 items-center justify-center rounded-full border transition-all duration-300 active:scale-[0.97] shadow-sm", (isTyping || isCheckingSpeechSupport || speechMode === "unsupported" || (speechMode === "web" && apiStatus?.speechReady !== true)) && "cursor-not-allowed opacity-50")}
                   aria-label={
                     speechMode === "unsupported"
                       ? "Microphone input is unavailable"

@@ -746,26 +746,59 @@
     --app-success: #57b69c;
     --app-success-soft: rgba(87, 182, 156, 0.12);
     --app-divider: rgba(238, 245, 255, 0.08);
-    background-color: #050b14;
+    background-color: #050b14 !important;
     background-image:
       linear-gradient(180deg, rgba(5, 11, 20, 0.28) 0%, rgba(5, 11, 20, 0.04) 42%, rgba(5, 11, 20, 0.28) 100%),
-      url("./assets/voice-sanctuary-bg-dark.webp");
-    background-position: center, center bottom;
-    background-repeat: no-repeat;
-    background-size: cover, cover;
+      url("./assets/voice-sanctuary-bg-dark.webp") !important;
+    background-position: center, center bottom !important;
+    background-repeat: no-repeat !important;
+    background-size: cover, cover !important;
   }
 
-  :root.dark[data-design="nocturne"] .voice-page {
+  /* Voice is deliberately a fixed dark sanctuary in every app theme. */
+  :root.light .voice-page,
+  :root.dark .voice-page {
+    background-color: #050b14 !important;
     background-image:
       linear-gradient(180deg, rgba(5, 11, 20, 0.28) 0%, rgba(5, 11, 20, 0.04) 42%, rgba(5, 11, 20, 0.28) 100%),
-      url("./assets/voice-sanctuary-bg-dark.webp");
-    background-blend-mode: normal;
+      url("./assets/voice-sanctuary-bg-dark.webp") !important;
+    background-position: center, center bottom !important;
+    background-repeat: no-repeat !important;
+    background-size: cover, cover !important;
   }
 
+  :root.light .voice-page .voice-scroll-region,
   .voice-page .voice-scroll-region {
+    background: transparent !important;
     overflow: hidden;
     overscroll-behavior: none;
     touch-action: manipulation;
+  }
+
+  /* The Voice page is rendered inside the normal app shell. Turn off its
+     light-theme atmosphere while Voice is visible, otherwise it shows through
+     the transparent header and changes the scene's brightness. */
+  .app-screen.voice-host,
+  .app-screen:has(.voice-page) {
+    background: #050b14;
+  }
+
+  .app-screen.voice-host .app-atmosphere,
+  .app-screen:has(.voice-page) .app-atmosphere {
+    opacity: 0 !important;
+  }
+
+  .app-shell.voice-host,
+  .app-shell:has(.voice-page) {
+    background: #050b14 !important;
+    background-image: none !important;
+    border-color: rgba(111, 214, 255, 0.1);
+    box-shadow: none;
+  }
+
+  .app-shell.voice-host::before,
+  .app-shell:has(.voice-page)::before {
+    background: none !important;
   }
 
   .voice-page .voice-mode-row {
@@ -1502,6 +1535,27 @@
   .native-android .app-nav-shell,
   .native-android .app-primary-button {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+
+  /* Keep Voice visually identical in light and dark themes, including Android
+     WebViews where relational :has() matching may be unreliable. */
+  .app-screen.voice-host {
+    background: #050b14 !important;
+  }
+
+  .app-screen.voice-host .app-atmosphere {
+    opacity: 0 !important;
+  }
+
+  .app-shell.voice-host {
+    background: #050b14 !important;
+    background-image: none !important;
+    border-color: rgba(111, 214, 255, 0.1) !important;
+    box-shadow: none !important;
+  }
+
+  .app-shell.voice-host::before {
+    background: none !important;
   }
 
   .native-android .app-card-shimmer::after,
