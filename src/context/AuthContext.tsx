@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import type { Session, User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { hasActiveSubscription } from "../lib/native/purchases";
-import { apiFetch } from "../lib/apiClient";
+import { apiFetch, setApiAccessToken } from "../lib/apiClient";
 import { isNativePlatform } from "../lib/native/platform";
 import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
 import { startup } from "../lib/startup";
@@ -271,7 +271,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const serverSubscription = hasActiveServerSubscription(currentUser);
       let nativeSubscriptionActive = false;
       let nativeCheckCompleted = false;
-      const allowStoredNativeFallback = options?.allowStoredNativeFallback === true;
+      const allowStoredNativeFallback = options?.allowStoredNativeFallback !== false;
 
       if (
         !serverSubscription &&
@@ -325,6 +325,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIsSubscribed(hasEntitlement);
     };
 
+    const restoreCachedSubscriptionState = (currentUser: User) => {
+      const id = currentUser.id;
+      const storedSubscription = storageGet(`isSubscribed_${id}`) === "true";
+      const storedSubscriptionSource = getStoredSubscriptionSource(id);
+      const hasCachedEntitlement =
+        hasActiveServerSubscription(currentUser) ||
+        (storedSubscription && isNativeSubscriptionSource(storedSubscriptionSource));
+
+      setIsSubscribed(hasCachedEntitlement);
+    };
+
     const clearActiveSession = async () => {
       if (isDisposed) return;
       setSession(null);
@@ -362,7 +373,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       syncOnboardingState(currentUser.id);
       syncProfileState(currentUser);
       syncShadowNotes(currentUser);
-      await syncSubscriptionState(currentUser, { allowStoredNativeFallback: true });
+      restoreCachedSubscriptionState(currentUser);
     };
 
     const refreshAuthenticatedUser = async (currentSession: Session, initialUser: User) => {
@@ -391,6 +402,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (isDisposed) return;
 
       activeSessionToken = currentSession?.access_token || null;
+      setApiAccessToken(activeSessionToken);
       setSession(currentSession);
       const currentUser = currentSession?.user || null;
 

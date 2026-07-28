@@ -9,13 +9,14 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../lib/apiClient";
 import { isNativePlatform } from "../../lib/native/platform";
 import { cn } from "../../lib/utils";
 import { useMobileViewport } from "../../context/MobileViewportContext";
 import { useGeminiLive } from "../../hooks/useGeminiLive";
+import { usePerformanceMode } from "../../hooks/usePerformanceMode";
 import type { ConversationMessage, VoiceState } from "../../types/live";
 
 type VoiceModeProps = {
@@ -100,7 +101,7 @@ export default function VoiceMode({
 }: VoiceModeProps) {
   const { isCompactPhone, isShortPhone } = useMobileViewport();
   const navigate = useNavigate();
-  const prefersReducedMotion = useReducedMotion();
+  const isPerformanceMode = usePerformanceMode();
   const [cooldownNow, setCooldownNow] = useState(() => Date.now());
   const persistTimerRef = useRef<number | null>(null);
   const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -206,7 +207,7 @@ export default function VoiceMode({
   }, [active, onSessionActiveChange]);
   useEffect(() => () => onSessionActiveChange(false), [onSessionActiveChange]);
 
-  const presenceShouldMove = !prefersReducedMotion && active && live.state !== "ending";
+  const presenceShouldMove = !isPerformanceMode && active && live.state !== "ending";
   const isSpeaking = live.state === "user-speaking" || live.state === "assistant-speaking";
 
   const handleEnd = useCallback(async () => {
@@ -328,8 +329,8 @@ export default function VoiceMode({
                       <motion.span
                         key={bar}
                         className="voice-audio-bar w-1 rounded-pill"
-                        animate={prefersReducedMotion ? { height: 8 } : { height: [6, 14, 8, 6] }}
-                        transition={{ duration: 0.8, delay: bar * 0.12, repeat: Infinity, ease: "easeInOut" }}
+                        animate={isPerformanceMode ? { height: 8 } : { height: [6, 14, 8, 6] }}
+                        transition={isPerformanceMode ? { duration: 0 } : { duration: 0.8, delay: bar * 0.12, repeat: Infinity, ease: "easeInOut" }}
                       />
                     ))}
                   </div>

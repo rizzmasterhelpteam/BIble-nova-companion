@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { AppLogo } from "../components/AppLogo";
 import { cn, useDocumentTitle } from "../lib/utils";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import { useAuth } from "../context/AuthContext";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { useVoiceSession } from "../context/VoiceSessionContext";
@@ -35,9 +35,11 @@ import {
   type RecognitionMode,
   type SpeechRecognitionSession,
 } from "../lib/speechRecognition";
+import { scheduleIdleTask } from "../lib/idleTask";
 import { VoiceModeToggle } from "../components/voice/VoiceModeToggle";
-import VoiceMode from "../components/voice/VoiceMode";
 import type { ConversationMessage, HomeMode } from "../types/live";
+
+const VoiceMode = React.lazy(() => import("../components/voice/VoiceMode"));
 
 export type Message = ConversationMessage;
 
@@ -69,6 +71,7 @@ const QUICK_PROMPTS = [
 ];
 
 const MAX_STORED_MESSAGES = 80;
+const MAX_CHAT_REQUEST_MESSAGES = 12;
 
 const BIBLE_BOOKS =
   /\b(Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|Samuel|Kings|Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|Corinthians|Galatians|Ephesians|Philippians|Colossians|Thessalonians|Timothy|Titus|Philemon|Hebrews|James|Peter|Jude|Revelation)\s+\d+:\d+\b/i;
@@ -161,7 +164,7 @@ const ChatMessage = React.memo(function ChatMessage({
       animate={{ opacity: 1 }}
       transition={{ duration: isAndroidApp ? 0 : 0.2, ease: "easeOut" }}
       className={cn(
-        "flex flex-col w-full",
+        "chat-message-row flex w-full flex-col",
         message.role === "user" ? "items-end" : "items-start",
       )}
     >
@@ -274,6 +277,54 @@ const ChatMessage = React.memo(function ChatMessage({
   );
 });
 
+const ChatMessageList = React.memo(function ChatMessageList({
+  isAndroidApp,
+  isCompactPhone,
+  isTyping,
+  messages,
+}: {
+  isAndroidApp: boolean;
+  isCompactPhone: boolean;
+  isTyping: boolean;
+  messages: Message[];
+}) {
+  return (
+    <>
+      {messages.map((message) => (
+        <ChatMessage
+          key={message.id}
+          isAndroidApp={isAndroidApp}
+          isCompactPhone={isCompactPhone}
+          message={message}
+        />
+      ))}
+
+      {isTyping && (
+        <motion.div
+          initial={isAndroidApp ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex max-w-[88%] items-center gap-3"
+        >
+          <div className="flex h-[30px] w-[30px] flex-shrink-0 items-center justify-center">
+            <AppLogo alt="" className="h-4 w-4 rounded-full object-cover opacity-80" />
+          </div>
+          <div
+            className="flex items-center gap-[6px] rounded-card rounded-tl-[0.5rem] px-5 py-3.5 shadow-sm"
+            style={{
+              background: "var(--app-card-soft)",
+              border: "1px solid var(--app-card-border)",
+            }}
+          >
+            <span className="app-typing-dot" />
+            <span className="app-typing-dot" />
+            <span className="app-typing-dot" />
+          </div>
+        </motion.div>
+      )}
+    </>
+  );
+});
+
 type ChatProps = {
   mode?: HomeMode;
   onModeChange?: (mode: HomeMode) => void;
@@ -311,7 +362,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const speechSessionRef = useRef<SpeechRecognitionSession | null>(null);
   const handledRouteActionRef = useRef<string | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
-  const storageWriteTimerRef = useRef<number | null>(null);
+  const cancelStorageWriteRef = useRef<(() => void) | null>(null);
   const lastScrolledMessageCountRef = useRef(0);
   const isNearBottomRef = useRef(true);
   const scrollToLatestAfterVoiceRef = useRef(false);
@@ -484,22 +535,35 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   useEffect(() => {
     const storageKey = getMessageStorageKey(identityKey);
     if (!storageKey || !hasLoadedMessages) return;
-    if (storageWriteTimerRef.current !== null) {
-      window.clearTimeout(storageWriteTimerRef.current);
-    }
-
-    storageWriteTimerRef.current = window.setTimeout(() => {
-      storageWriteTimerRef.current = null;
+    cancelStorageWriteRef.current?.();
+    cancelStorageWriteRef.current = scheduleIdleTask(() => {
+      cancelStorageWriteRef.current = null;
       storageSet(storageKey, JSON.stringify(trimStoredMessages(messages)));
-    }, isAndroidApp ? 450 : 180);
+    }, isAndroidApp ? 1_200 : 600);
 
     return () => {
-      if (storageWriteTimerRef.current !== null) {
-        window.clearTimeout(storageWriteTimerRef.current);
-        storageWriteTimerRef.current = null;
-      }
+      cancelStorageWriteRef.current?.();
+      cancelStorageWriteRef.current = null;
     };
   }, [hasLoadedMessages, identityKey, isAndroidApp, messages]);
+
+  useEffect(() => {
+    if (!hasLoadedMessages) return;
+    const storageKey = getMessageStorageKey(identityKey);
+    if (!storageKey) return;
+
+    const flushMessages = () => {
+      if (document.visibilityState !== "hidden") return;
+      cancelStorageWriteRef.current?.();
+      cancelStorageWriteRef.current = null;
+      storageSet(storageKey, JSON.stringify(trimStoredMessages(messagesRef.current)));
+    };
+
+    document.addEventListener("visibilitychange", flushMessages);
+    return () => {
+      document.removeEventListener("visibilitychange", flushMessages);
+    };
+  }, [hasLoadedMessages, identityKey]);
 
   useEffect(() => {
     return () => {
@@ -507,9 +571,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       if (resizeFrameRef.current) {
         window.cancelAnimationFrame(resizeFrameRef.current);
       }
-      if (storageWriteTimerRef.current !== null) {
-        window.clearTimeout(storageWriteTimerRef.current);
-      }
+      cancelStorageWriteRef.current?.();
     };
   }, []);
 
@@ -645,7 +707,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: nextMessages.map((message) => ({
+          messages: nextMessages.slice(-MAX_CHAT_REQUEST_MESSAGES).map((message) => ({
             role: message.role,
             content: message.content,
           })),
@@ -923,20 +985,22 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       )}
 
       {isVoiceMode ? (
-        <VoiceMode
-          messages={messages}
-          shadowNotes={shadowNotes}
-          isTyping={isTyping}
-          onAppendUserMessage={appendVoiceUserMessage}
-          onAppendAssistantMessage={appendVoiceAssistantMessage}
-          onAcceptShadowNotes={acceptPersistedShadowNotes}
-          onExitVoice={continueInChat}
-          onSessionActiveChange={setVoiceSessionActive}
-          reservation={voiceReservation}
-          onReservationChange={updateVoiceReservation}
-          liveReady={apiStatus?.liveReady === true}
-          isCheckingLiveReady={isCheckingApiStatus}
-        />
+        <React.Suspense fallback={<div className="min-h-0 flex-1" aria-busy="true" />}>
+          <VoiceMode
+            messages={messages}
+            shadowNotes={shadowNotes}
+            isTyping={isTyping}
+            onAppendUserMessage={appendVoiceUserMessage}
+            onAppendAssistantMessage={appendVoiceAssistantMessage}
+            onAcceptShadowNotes={acceptPersistedShadowNotes}
+            onExitVoice={continueInChat}
+            onSessionActiveChange={setVoiceSessionActive}
+            reservation={voiceReservation}
+            onReservationChange={updateVoiceReservation}
+            liveReady={apiStatus?.liveReady === true}
+            isCheckingLiveReady={isCheckingApiStatus}
+          />
+        </React.Suspense>
       ) : (
       <>
       <div
@@ -1027,40 +1091,12 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           </motion.div>
         )}
 
-        <AnimatePresence initial={false}>
-          {messages.map((message) => (
-            <ChatMessage
-              key={message.id}
-              isAndroidApp={isAndroidApp}
-              isCompactPhone={isCompactPhone}
-              message={message}
-            />
-          ))}
-        </AnimatePresence>
-
-        {isTyping && (
-          <motion.div
-            initial={isAndroidApp ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex max-w-[88%] items-center gap-3"
-          >
-            <div className="w-[30px] h-[30px] flex-shrink-0 flex items-center justify-center">
-              <AppLogo alt="" className="h-4 w-4 rounded-full object-cover opacity-80" />
-            </div>
-            <div
-              className="flex items-center gap-[6px] rounded-card rounded-tl-[0.5rem] px-5 py-3.5 shadow-sm"
-              style={{
-                background: "var(--app-card-soft)",
-                border: "1px solid var(--app-card-border)",
-              }}
-            >
-              <span className="app-typing-dot" />
-              <span className="app-typing-dot" />
-              <span className="app-typing-dot" />
-            </div>
-          </motion.div>
-        )}
+        <ChatMessageList
+          isAndroidApp={isAndroidApp}
+          isCompactPhone={isCompactPhone}
+          isTyping={isTyping}
+          messages={messages}
+        />
         </div>
       </div>
 
