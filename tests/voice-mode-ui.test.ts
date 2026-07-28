@@ -34,14 +34,33 @@ describe("Voice mode interface", () => {
     expect(chatSource).not.toContain('await refreshSpeechSupport("api-status-retry");');
   });
 
-  it("activates Android audio before native storage or network awaits", () => {
+  it("does not let stale native recovery block Voice eligibility", () => {
     const resumeIndex = liveHookSource.indexOf(
       "const audioResumePromise = audioResumePromiseRef.current || activatedAudioContext.resume();",
     );
-    const pendingReleaseIndex = liveHookSource.indexOf("if (!isReconnect) await retryPendingRelease();");
+    const pendingStorageIndex = liveHookSource.indexOf('"pending-token-read-before-start"');
+    const eligibilityIndex = liveHookSource.indexOf('"eligibility-request"');
 
     expect(resumeIndex).toBeGreaterThan(-1);
-    expect(pendingReleaseIndex).toBeGreaterThan(resumeIndex);
+    expect(pendingStorageIndex).toBeGreaterThan(resumeIndex);
+    expect(eligibilityIndex).toBeGreaterThan(pendingStorageIndex);
+    expect(liveHookSource).not.toContain("await retryPendingRelease();");
+    expect(liveHookSource).toContain("runNativeVoiceStorageOperation");
+  });
+
+  it("requests Android microphone access before WebView capture", () => {
+    const eligibilityIndex = liveHookSource.indexOf('"eligibility-request"');
+    const nativePermissionIndex = liveHookSource.indexOf("await requestNativeVoiceMicrophonePermission();");
+    const captureIndex = liveHookSource.indexOf("stream = await navigator.mediaDevices.getUserMedia");
+
+    expect(liveHookSource).toContain("SpeechRecognition.checkPermissions()");
+    expect(liveHookSource).toContain("SpeechRecognition.requestPermissions()");
+    expect(nativePermissionIndex).toBeGreaterThan(eligibilityIndex);
+    expect(captureIndex).toBeGreaterThan(nativePermissionIndex);
+  });
+
+  it("keeps Google Billing restoration out of the Voice tap path", () => {
+    expect(liveHookSource).not.toContain("refreshNativeSubscriptionEntitlement");
   });
 
   it("primes Android audio before a readiness retry can yield", () => {
