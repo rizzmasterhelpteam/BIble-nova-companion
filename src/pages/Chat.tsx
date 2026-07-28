@@ -18,6 +18,7 @@ import { useMobileViewport } from "../context/MobileViewportContext";
 import { useVoiceSession } from "../context/VoiceSessionContext";
 import { apiFetch } from "../lib/apiClient";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
+import { createApiStatusLoader, type ApiStatus } from "../lib/apiStatus";
 import { storageGetJson, storageSet } from "../lib/webStorage";
 import {
   clearVoiceReservation,
@@ -44,21 +45,6 @@ import type { ConversationMessage, HomeMode } from "../types/live";
 const VoiceMode = React.lazy(() => import("../components/voice/VoiceMode"));
 
 export type Message = ConversationMessage;
-
-type ApiStatus = {
-  chatReady: boolean;
-  prayerReady: boolean;
-  speechReady?: boolean;
-  liveReady?: boolean;
-  connectionError?: string;
-};
-
-const DEFAULT_API_STATUS: ApiStatus = {
-  chatReady: false,
-  prayerReady: false,
-  speechReady: false,
-  liveReady: false,
-};
 
 const WELCOME_MESSAGE: Message = {
   id: "welcome",
@@ -92,33 +78,7 @@ const extractReference = (message: string) => {
   return match?.[0];
 };
 
-let apiStatusPromise: Promise<ApiStatus> | null = null;
-
-const loadApiStatus = (forceRefresh = false) => {
-  if (forceRefresh) {
-    apiStatusPromise = null;
-  }
-
-  if (!apiStatusPromise) {
-    apiStatusPromise = apiFetch("/api/status")
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Status request failed with ${response.status}.`);
-        }
-
-        return response.json() as Promise<ApiStatus>;
-      })
-      .catch((error: unknown) => {
-        apiStatusPromise = null;
-        return {
-          ...DEFAULT_API_STATUS,
-          connectionError: error instanceof Error ? error.message : "Server connection is unavailable.",
-        };
-      });
-  }
-
-  return apiStatusPromise;
-};
+const loadApiStatus = createApiStatusLoader();
 
 type ChatMessageProps = {
   isAndroidApp: boolean;
