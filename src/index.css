@@ -778,9 +778,10 @@
   :root.light .voice-page .voice-scroll-region,
   .voice-page .voice-scroll-region {
     background: transparent !important;
-    overflow: hidden;
-    overscroll-behavior: none;
-    touch-action: manipulation;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
   }
 
   /* The Voice page is rendered inside the normal app shell. Turn off its
@@ -897,6 +898,8 @@
   }
 
   .voice-session-close {
+    top: max(1rem, calc(env(safe-area-inset-top, 0px) + 0.5rem)) !important;
+    right: max(1rem, calc(env(safe-area-inset-right, 0px) + 1rem)) !important;
     color: var(--app-heading);
     background-color: color-mix(in srgb, var(--app-surface-elevated) 72%, transparent);
     border-color: color-mix(in srgb, var(--app-card-border) 92%, transparent);
@@ -1573,6 +1576,30 @@
   .native-android .app-nav-shell,
   .native-android .app-primary-button {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+
+  .native-android .voice-page .voice-scroll-region {
+    scroll-behavior: auto;
+  }
+
+  .native-android .voice-page .voice-mode-row > div > div,
+  .native-android .voice-page .voice-privacy-pill,
+  .native-android .voice-page .voice-session-notice,
+  .native-android .voice-page .voice-primary-action,
+  .native-android .voice-page .voice-presence-core,
+  .native-android .voice-session-close {
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+  }
+
+  .native-android .voice-session-close {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .native-android .voice-page .voice-primary-action,
+  .native-android .voice-page .voice-control-button,
+  .native-android .voice-session-close {
+    transition-duration: 0ms !important;
   }
 
   /* Keep Voice visually identical in light and dark themes, including Android

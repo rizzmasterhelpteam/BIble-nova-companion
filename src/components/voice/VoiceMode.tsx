@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AlertTriangle,
   CircleStop,
   LockKeyhole,
   Mic,
@@ -206,6 +207,10 @@ export default function VoiceMode({
     persistQueueRef.current = queuedPersistence;
     return queuedPersistence;
   }, [onAcceptShadowNotes, shadowNotes]);
+  const latestPersistVoiceNotesRef = useRef(persistVoiceNotes);
+  useEffect(() => {
+    latestPersistVoiceNotesRef.current = persistVoiceNotes;
+  }, [persistVoiceNotes]);
 
   useEffect(() => {
     const voiceMessageCount = messages.filter(isVoiceMessage).length;
@@ -232,8 +237,8 @@ export default function VoiceMode({
 
   useEffect(() => () => {
     if (persistTimerRef.current !== null) window.clearTimeout(persistTimerRef.current);
-    void persistVoiceNotes(true);
-  }, [persistVoiceNotes]);
+    void latestPersistVoiceNotesRef.current(true);
+  }, []);
 
   const active = ACTIVE_STATES.includes(live.state);
   useEffect(() => {
@@ -259,10 +264,9 @@ export default function VoiceMode({
       live.state === "error" ||
       live.state === "permission-denied" ||
       live.state === "offline";
-    if (!ready) {
-      ready = await onRetryLiveReady();
-    } else if (shouldRefreshStatus) {
-      void onRetryLiveReady();
+    if (shouldRefreshStatus) {
+      const refreshedReady = await onRetryLiveReady();
+      ready = refreshedReady || ready;
     }
     if (ready) await live.start();
   }, [live.primeAudioForUserGesture, live.start, liveReady, onRetryLiveReady]);
@@ -305,17 +309,29 @@ export default function VoiceMode({
   }, [active, handleExitVoice]);
 
   const startLabel = premiumRequired
-    ? "Restore premium access"
-    : isCheckingLiveReady
-      ? "Checking Voice"
-      : !liveReady || live.state === "error" || live.state === "permission-denied" || live.state === "offline"
-      ? "Check connection and retry"
+    ? "Recheck premium access"
     : cooldownActive
       ? `Available in ${cooldownMinutes} min`
-    : live.state === "ended"
-      ? "Begin another reflection"
-      : "Start voice reflection";
+      : isCheckingLiveReady
+        ? "Retry Voice"
+        : live.state === "permission-denied"
+          ? "Try microphone again"
+          : live.state === "offline"
+            ? "Reconnect and retry"
+            : !liveReady || live.state === "error"
+              ? "Try Voice again"
+              : live.state === "ended"
+                ? "Begin another reflection"
+                : "Start voice reflection";
   const showStartButton = !active;
+  const canControlMicrophone = [
+    "ready",
+    "listening",
+    "user-speaking",
+    "thinking",
+    "assistant-speaking",
+    "interrupted",
+  ].includes(live.state);
   const sessionNotice = premiumRequired
     ? live.error || "We could not confirm your premium plan yet. Restore it with Google Play and try Voice again."
     : !isCheckingLiveReady && !liveReady
@@ -355,7 +371,7 @@ export default function VoiceMode({
                 }}
               >
                 <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Saved to your chat; continuity notes stay on your account</span>
+                <span>Saved to Chat; continuity notes stay private to your account</span>
               </div>
 
               <div className={cn(
@@ -389,7 +405,7 @@ export default function VoiceMode({
                 )}
               </div>
 
-              <h2 className="voice-state-title app-heading max-w-[20ch] font-serif text-[38px] font-semibold leading-tight tracking-[-0.02em] sm:text-[48px]">
+              <h2 className="voice-state-title app-heading max-w-[20ch] font-serif text-[clamp(2rem,10vw,2.375rem)] font-semibold leading-tight tracking-[-0.02em] sm:text-[48px]">
                 {STATE_HEADLINES[live.state]}
               </h2>
               <p className="voice-state-description app-muted mt-2 max-w-md text-[15px] leading-relaxed sm:text-[17px]">
@@ -400,7 +416,8 @@ export default function VoiceMode({
 
           {sessionNotice && (
             <div
-              role="status"
+              role={sessionNoticeIsError ? "alert" : "status"}
+              aria-live={sessionNoticeIsError ? "assertive" : "polite"}
               className="voice-session-notice mt-3 flex w-full items-start gap-2.5 rounded-[1rem] border px-3.5 py-3 text-left text-sm leading-relaxed"
               style={{
                 background: sessionNoticeIsError ? "var(--app-danger-soft)" : "var(--app-accent-soft)",
@@ -408,7 +425,9 @@ export default function VoiceMode({
                 color: sessionNoticeIsError ? "var(--app-danger)" : "var(--app-text)",
               }}
             >
-              <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              {sessionNoticeIsError
+                ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                : <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
               <span>{sessionNotice}</span>
             </div>
           )}
@@ -418,14 +437,18 @@ export default function VoiceMode({
               <button
                 type="button"
                 onClick={() => void handleStart()}
-                disabled={isTyping || cooldownActive || isCheckingLiveReady}
+                disabled={isTyping || cooldownActive}
+                aria-busy={isCheckingLiveReady}
                 className="voice-primary-action touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 text-[15px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {premiumRequired ? <RotateCcw className="h-5 w-5" /> : live.state === "error" || live.state === "permission-denied" || live.state === "offline" ? <RotateCcw className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
                 {startLabel}
               </button>
-            ) : (
-              <div className="grid w-full grid-cols-3 gap-2">
+            ) : canControlMicrophone ? (
+              <div className={cn(
+                "grid w-full gap-2",
+                live.state === "assistant-speaking" ? "grid-cols-3" : "grid-cols-2",
+              )}>
                 <button
                   type="button"
                   onClick={live.toggleMute}
@@ -445,7 +468,7 @@ export default function VoiceMode({
                     <Pause className="h-4 w-4" />
                     <span>Stop audio</span>
                   </button>
-                ) : <div className="min-h-12" aria-hidden="true" />}
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void handleEnd()}
@@ -457,6 +480,17 @@ export default function VoiceMode({
                   <span>End</span>
                 </button>
               </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleEnd()}
+                disabled={live.state === "ending"}
+                className="voice-control-button voice-end-button touch-target flex min-h-12 w-full items-center justify-center gap-2 rounded-[1rem] border px-4 text-[14px] font-medium disabled:cursor-wait disabled:opacity-70"
+                style={{ color: "var(--app-danger)", borderColor: "color-mix(in srgb, var(--app-danger) 30%, transparent)", background: "var(--app-danger-soft)" }}
+              >
+                <CircleStop className="h-4 w-4" />
+                <span>{live.state === "ending" ? "Ending…" : "Cancel Voice start"}</span>
+              </button>
             )}
 
             {premiumRequired && (
