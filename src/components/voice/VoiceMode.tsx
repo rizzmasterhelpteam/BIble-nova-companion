@@ -110,6 +110,7 @@ export default function VoiceMode({
   const exitPromiseRef = useRef<Promise<void> | null>(null);
   const messagesRef = useRef(messages);
   const lastPersistedVoiceCountRef = useRef(0);
+  const sessionVoiceBaselineRef = useRef(0);
   const lastPersistAttemptAtRef = useRef(0);
   const persistenceBaselineInitializedRef = useRef(false);
 
@@ -117,6 +118,7 @@ export default function VoiceMode({
     messagesRef.current = messages;
     if (!persistenceBaselineInitializedRef.current) {
       lastPersistedVoiceCountRef.current = messages.filter(isVoiceMessage).length;
+      sessionVoiceBaselineRef.current = lastPersistedVoiceCountRef.current;
       persistenceBaselineInitializedRef.current = true;
     }
   }, [messages]);
@@ -157,7 +159,9 @@ export default function VoiceMode({
       const voiceMessages = messagesRef.current.filter(isVoiceMessage);
       if (!voiceMessages.length || voiceMessages.length === lastPersistedVoiceCountRef.current) return;
       const voiceMessageCount = voiceMessages.length;
-      if (!force && voiceMessageCount % 2 !== 0) return;
+      const sessionVoiceMessageCount = voiceMessageCount - sessionVoiceBaselineRef.current;
+      const hasCompletedTurn = sessionVoiceMessageCount >= 2 && sessionVoiceMessageCount % 2 === 0;
+      if (!hasCompletedTurn) return;
       if (!force && Date.now() - lastPersistAttemptAtRef.current < SHADOW_NOTE_PERSIST_INTERVAL_MS) return;
       const noteMessages = messagesRef.current
         .slice(-12)
@@ -180,13 +184,11 @@ export default function VoiceMode({
         if (response.ok && typeof data.shadowNotes === "string" && data.shadowNotes.trim()) {
           onAcceptShadowNotes(data.shadowNotes);
         }
+        lastPersistedVoiceCountRef.current = voiceMessageCount;
       } catch {
         // Voice remains usable if note persistence is temporarily unavailable.
       } finally {
         window.clearTimeout(timeout);
-        // Advance even after a refused request. New completed turns can retry
-        // later, but one rate-limited request must not retry in a tight loop.
-        lastPersistedVoiceCountRef.current = voiceMessageCount;
       }
     };
 
@@ -199,10 +201,12 @@ export default function VoiceMode({
 
   useEffect(() => {
     const voiceMessageCount = messages.filter(isVoiceMessage).length;
+    const sessionVoiceMessageCount = voiceMessageCount - sessionVoiceBaselineRef.current;
     if (
       !voiceMessageCount ||
       voiceMessageCount === lastPersistedVoiceCountRef.current ||
-      voiceMessageCount % 2 !== 0
+      sessionVoiceMessageCount < 2 ||
+      sessionVoiceMessageCount % 2 !== 0
     ) return;
     if (persistTimerRef.current !== null) window.clearTimeout(persistTimerRef.current);
     persistTimerRef.current = window.setTimeout(() => {

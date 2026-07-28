@@ -14,6 +14,7 @@ import {
   transcribeAudio,
 } from "./server-api";
 import liveTokenHandler from "./api/live/token";
+import liveReleaseHandler from "./api/live/release";
 import liveEligibilityHandler from "./api/live/eligibility";
 import { createShadowNotes, type ChatMessage } from "./chat-api";
 import {
@@ -36,6 +37,7 @@ app.get("/api/status", (_req, res) => {
 });
 
 app.post("/api/live/token", liveTokenHandler);
+app.post("/api/live/release", liveReleaseHandler);
 app.get("/api/live/eligibility", liveEligibilityHandler);
 app.options("/api/live/eligibility", liveEligibilityHandler);
 

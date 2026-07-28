@@ -219,6 +219,7 @@ export function useGeminiLive({
   const audioStreamEndedRef = useRef(true);
   const suppressPlaybackRef = useRef(false);
   const playbackGenerationRef = useRef(0);
+  const generationCompleteRef = useRef(false);
   const stopRequestedRef = useRef(false);
   const mountedRef = useRef(true);
   const startGenerationRef = useRef(0);
@@ -386,7 +387,7 @@ export function useGeminiLive({
         currentGeneration: playbackGenerationRef.current,
         stopRequested: stopRequestedRef.current,
         remainingSources: playbackSourcesRef.current.size,
-      })) {
+      }) && generationCompleteRef.current) {
         setState("listening");
       }
     });
@@ -396,6 +397,7 @@ export function useGeminiLive({
   const stop = useCallback((nextState: VoiceState = "ended") => {
     return stopActionRef.current!(async () => {
       stopRequestedRef.current = true;
+      const reservationHandle = reservationHandleRef.current;
       startGenerationRef.current += 1;
       startAbortControllerRef.current?.abort();
       startAbortControllerRef.current = null;
@@ -405,6 +407,17 @@ export function useGeminiLive({
         audioStreamEndedRef.current,
       );
       suppressPlaybackRef.current = false;
+      sessionResumptionHandleRef.current = null;
+      reservationHandleRef.current = null;
+      reservationExpiresAtRef.current = null;
+      onReservationChange(null);
+      if (reservationHandle) {
+        void apiFetch("/api/live/release", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reservationHandle }),
+        }).catch(() => undefined);
+      }
       if (mountedRef.current) setState("ending");
       clearTimers();
       finalizeUserTranscript();
@@ -447,10 +460,16 @@ export function useGeminiLive({
       reconnectTimerRef.current = window.setTimeout(() => {
         reconnectTimerRef.current = null;
         failureHandledRef.current = false;
-        if (!stopRequestedRef.current && navigator.onLine) void startRef.current?.(true);
+        if (!stopRequestedRef.current && navigator.onLine) {
+          void startRef.current?.(true);
+        } else if (!stopRequestedRef.current) {
+          setState("offline");
+          setError("Reconnect to the internet to continue Voice mode.");
+        }
       }, getLiveReconnectDelay(attempt));
       return;
     }
+    sessionResumptionHandleRef.current = null;
     finalizeUserTranscript();
     finalizeAssistantTranscript();
     setState("error");
@@ -476,6 +495,7 @@ export function useGeminiLive({
     };
     startingRef.current = true;
     if (!isReconnect) reconnectAttemptsRef.current = 0;
+    if (!isReconnect) sessionResumptionHandleRef.current = null;
     playbackGenerationRef.current += 1;
     audioStreamEndedRef.current = true;
     if (!isReconnect) suppressPlaybackRef.current = false;
@@ -680,6 +700,7 @@ export function useGeminiLive({
             const outputText = serverContent?.outputTranscription?.text?.trim();
 
             if (inputText) {
+              generationCompleteRef.current = false;
               userTranscriptFinalizedRef.current = false;
               userTranscriptRef.current = mergeLiveTranscript(userTranscriptRef.current, inputText);
               setState("user-speaking");
@@ -702,6 +723,7 @@ export function useGeminiLive({
             }
 
             const parts = serverContent?.modelTurn?.parts || [];
+            if (parts.length) generationCompleteRef.current = false;
             for (const part of parts) {
               if (
                 part.inlineData?.data &&
@@ -712,12 +734,14 @@ export function useGeminiLive({
               }
             }
 
+            if (serverContent?.generationComplete) generationCompleteRef.current = true;
+
             if (serverContent?.turnComplete) {
               reconnectAttemptsRef.current = 0;
               suppressPlaybackRef.current = false;
               finalizeUserTranscript();
               finalizeAssistantTranscript();
-              if (playbackSourcesRef.current.size === 0) {
+              if (generationCompleteRef.current && playbackSourcesRef.current.size === 0) {
                 setState("listening");
               }
             }
@@ -763,6 +787,9 @@ export function useGeminiLive({
       }
 
       sessionRef.current = session;
+      // Callbacks from the failed connection are fenced by startGeneration.
+      // The newly connected session must not inherit its local audio suppression.
+      suppressPlaybackRef.current = false;
       const initialHistory = createInitialHistoryPayload(history);
       if (initialHistory && !resumingProviderSession) session.sendClientContent(initialHistory);
 
@@ -854,7 +881,13 @@ export function useGeminiLive({
         }
       };
 
-      const maxDuration = getLiveSessionDeadlineMs(data) || getLiveSessionDurationMs(data);
+      const maxDuration = getLiveSessionDeadlineMs(data);
+      if (maxDuration <= 0) {
+        throw new VoiceStartError(
+          "renewal_unavailable",
+          "This Voice reservation is nearly complete.",
+        );
+      }
       if (maxDuration > 60_000) {
         noticeTimerRef.current = window.setTimeout(() => {
           setSessionNotice("This reflection is nearly complete. We can continue in a new session.");
@@ -933,7 +966,10 @@ export function useGeminiLive({
 
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden" && sessionRef.current) {
+      if (
+        document.visibilityState === "hidden" &&
+        (startingRef.current || startAbortControllerRef.current || mediaStreamRef.current || sessionRef.current)
+      ) {
         void stop("ended");
       }
     };
@@ -968,7 +1004,10 @@ export function useGeminiLive({
     let disposed = false;
     void import("@capacitor/app")
       .then(({ App }) => App.addListener("appStateChange", ({ isActive }) => {
-        if (!isActive && sessionRef.current) void stop("ended");
+        if (
+          !isActive &&
+          (startingRef.current || startAbortControllerRef.current || mediaStreamRef.current || sessionRef.current)
+        ) void stop("ended");
       }))
       .then((handle) => {
         if (disposed) void handle.remove();

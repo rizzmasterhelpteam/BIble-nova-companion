@@ -13,6 +13,9 @@ import {
   getServerShadowNotes,
   getVoiceUsageLimits,
   finalizeVoiceSessionRenewal,
+  beginVoiceTokenIdempotency,
+  completeVoiceTokenIdempotency,
+  getVoiceTokenIdempotencyResponse,
   hashVoiceReservationHandle,
   rollbackVoiceSessionRenewal,
   requireAuthenticatedRequest,
@@ -42,6 +45,26 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
+    const requestHeader = req.headers?.["x-client-request-id"];
+    const requestId = Array.isArray(requestHeader) ? requestHeader[0] : requestHeader;
+    if (typeof requestId !== "string") {
+      res.status(400).json({ error: "Voice request identifier is required.", reason: "connection_failed" });
+      return;
+    }
+    const previousResponse = await getVoiceTokenIdempotencyResponse(userId, requestId);
+    if (previousResponse) {
+      res.status(200).json(previousResponse);
+      return;
+    }
+    if (!await beginVoiceTokenIdempotency(userId, requestId)) {
+      const completedResponse = await getVoiceTokenIdempotencyResponse(userId, requestId);
+      if (completedResponse) {
+        res.status(200).json(completedResponse);
+        return;
+      }
+      res.status(409).json({ error: "Voice start is already in progress. Please retry shortly.", reason: "connection_failed" });
+      return;
+    }
     await enforceRateLimits([
       { key: `live-token:user:${userId}`, limit: 6 },
       { key: `live-token:ip:${ip}`, limit: 12 },
@@ -66,12 +89,14 @@ export default async function handler(req: any, res: any) {
           reservationExpiresAt: renewal.expiresAt,
         });
         await finalizeVoiceSessionRenewal(userId, renewal.claimHash);
-        res.status(200).json({
+        const responsePayload = {
           ...session,
           reservationHandle: body.reservationHandle,
           reservationExpiresAt: renewal.expiresAt,
           remainingSeconds: getRemainingSeconds(renewal.expiresAt),
-        });
+        };
+        await completeVoiceTokenIdempotency(userId, requestId, responsePayload, renewal.leaseId);
+        res.status(200).json(responsePayload);
       } catch (error) {
         await rollbackVoiceSessionRenewal(userId, renewal.claimHash);
         throw error;
@@ -95,12 +120,14 @@ export default async function handler(req: any, res: any) {
         shadowNotes,
         reservationExpiresAt: lease.expiresAt,
       });
-      res.status(200).json({
+      const responsePayload = {
         ...session,
         reservationHandle: handle,
         reservationExpiresAt: lease.expiresAt,
         remainingSeconds: getRemainingSeconds(lease.expiresAt),
-      });
+      };
+      await completeVoiceTokenIdempotency(userId, requestId, responsePayload, lease.leaseId);
+      res.status(200).json(responsePayload);
     } catch (error) {
       await cancelUnstartedVoiceSessionLease(userId, lease.leaseId);
       throw error;

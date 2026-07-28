@@ -240,6 +240,70 @@ export const cancelUnstartedVoiceSessionLease = async (userId: string, leaseId: 
   if (error) console.error("Unstarted Voice lease cancellation failed:", error.message);
 };
 
+const isValidVoiceRequestId = (value: unknown): value is string =>
+  typeof value === "string" && value.length >= 16 && value.length <= 128 && /^[A-Za-z0-9_-]+$/.test(value);
+
+export const getVoiceTokenIdempotencyResponse = async (userId: string, requestId: string) => {
+  if (!isValidVoiceRequestId(requestId)) return null;
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .schema("private")
+    .from("voice_token_idempotency")
+    .select("response, expires_at")
+    .eq("user_id", userId)
+    .eq("request_id", requestId)
+    .maybeSingle();
+  if (error) throw new HttpError("Voice start is temporarily unavailable.", 503);
+  if (!data || Date.parse(data.expires_at) <= Date.now()) return null;
+  return data.response && typeof data.response === "object" ? data.response : null;
+};
+
+export const beginVoiceTokenIdempotency = async (userId: string, requestId: string) => {
+  if (!isValidVoiceRequestId(requestId)) {
+    throw new HttpError("Voice request identifier is invalid.", 400);
+  }
+  const client = getSupabaseAdminClient();
+  await client
+    .schema("private")
+    .from("voice_token_idempotency")
+    .delete()
+    .eq("user_id", userId)
+    .eq("request_id", requestId)
+    .lt("expires_at", new Date().toISOString());
+  const { error } = await client
+    .schema("private")
+    .from("voice_token_idempotency")
+    .insert({ user_id: userId, request_id: requestId });
+  if (!error) return true;
+  if (error.code === "23505") return false;
+  throw new HttpError("Voice start is temporarily unavailable.", 503);
+};
+
+export const completeVoiceTokenIdempotency = async (
+  userId: string,
+  requestId: string,
+  response: Record<string, unknown>,
+  leaseId?: string,
+) => {
+  const client = getSupabaseAdminClient();
+  const { error } = await client
+    .schema("private")
+    .from("voice_token_idempotency")
+    .update({ response, lease_id: leaseId || null })
+    .eq("user_id", userId)
+    .eq("request_id", requestId);
+  if (error) throw new HttpError("Voice start is temporarily unavailable.", 503);
+};
+
+export const releaseVoiceSessionLease = async (userId: string, handleHash: string) => {
+  const client = getSupabaseAdminClient();
+  const { error } = await client.rpc("release_voice_session_lease", {
+    p_user_id: userId,
+    p_handle_hash: handleHash,
+  });
+  if (error) throw new HttpError("Voice session release failed.", 503);
+};
+
 export const getServerShadowNotes = async (userId: string) => {
   const client = getSupabaseAdminClient();
   const { data, error } = await client

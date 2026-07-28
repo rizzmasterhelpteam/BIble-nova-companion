@@ -11,6 +11,9 @@ const security = vi.hoisted(() => ({
   claimRenewal: vi.fn(),
   finalizeRenewal: vi.fn(),
   rollbackRenewal: vi.fn(),
+  getIdempotency: vi.fn(),
+  beginIdempotency: vi.fn(),
+  completeIdempotency: vi.fn(),
 }));
 const createToken = vi.hoisted(() => vi.fn());
 
@@ -20,6 +23,9 @@ vi.mock("../server-security", () => ({
   enforceRateLimits: security.limits,
   claimVoiceSessionRenewal: security.claimRenewal,
   finalizeVoiceSessionRenewal: security.finalizeRenewal,
+  getVoiceTokenIdempotencyResponse: security.getIdempotency,
+  beginVoiceTokenIdempotency: security.beginIdempotency,
+  completeVoiceTokenIdempotency: security.completeIdempotency,
   getHttpErrorDetails: (error: unknown) => ({
     statusCode: 500,
     message: error instanceof Error ? error.message : String(error),
@@ -97,6 +103,9 @@ describe("Gemini Live token endpoint", () => {
     });
     security.finalizeRenewal.mockResolvedValue(undefined);
     security.rollbackRenewal.mockResolvedValue(undefined);
+    security.getIdempotency.mockResolvedValue(null);
+    security.beginIdempotency.mockResolvedValue(true);
+    security.completeIdempotency.mockResolvedValue(undefined);
     createToken.mockResolvedValue({
       token: "ephemeral",
       model: "live",
@@ -113,7 +122,7 @@ describe("Gemini Live token endpoint", () => {
     const response = createResponse();
     await tokenHandler({
       method: "POST",
-      headers: {},
+      headers: { "x-client-request-id": "request-id-0000001" },
       body: { reservationHandle: "existing-opaque-handle" },
     }, response);
     expect(security.claimRenewal).toHaveBeenCalledWith("user-1", "b".repeat(64));
@@ -134,7 +143,7 @@ describe("Gemini Live token endpoint", () => {
     const response = createResponse();
     await tokenHandler({
       method: "POST",
-      headers: {},
+      headers: { "x-client-request-id": "request-id-0000002" },
       body: { reservationHandle: "existing-opaque-handle" },
     }, response);
     expect(security.rollbackRenewal).toHaveBeenCalledWith("user-1", "c".repeat(64));
@@ -143,7 +152,7 @@ describe("Gemini Live token endpoint", () => {
 
   it("returns only an opaque reservation handle, never the database lease identifier", async () => {
     const response = createResponse();
-    await tokenHandler({ method: "POST", headers: {} }, response);
+    await tokenHandler({ method: "POST", headers: { "x-client-request-id": "request-id-0000003" } }, response);
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
       token: "ephemeral",
@@ -167,7 +176,7 @@ describe("Gemini Live token endpoint", () => {
   it("cancels only the unstarted lease when token creation fails", async () => {
     createToken.mockRejectedValueOnce(new Error("Gemini token failure"));
     const response = createResponse();
-    await tokenHandler({ method: "POST", headers: {} }, response);
+    await tokenHandler({ method: "POST", headers: { "x-client-request-id": "request-id-0000004" } }, response);
     expect(security.cancel).toHaveBeenCalledWith(
       "user-1",
       "11111111-1111-4111-8111-111111111111",
@@ -187,7 +196,7 @@ describe("Gemini Live token endpoint", () => {
 
     await tokenHandler({
       method: "POST",
-      headers: {},
+      headers: { "x-client-request-id": "request-id-0000005" },
       body: { reservationHandle: "existing-opaque-handle" },
     }, response);
 
