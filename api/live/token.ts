@@ -62,8 +62,10 @@ export default async function handler(req: any, res: any) {
   let activeUserId: string | null = null;
   let activeRequestId: string | null = null;
   let activeAction = "unknown";
+  let activeStage = "request";
   let idempotencyStarted = false;
   try {
+    activeStage = "authenticate";
     const { userId, ip } = await requireAuthenticatedRequest(req);
     activeUserId = userId;
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
@@ -98,13 +100,16 @@ export default async function handler(req: any, res: any) {
     }
     activeRequestId = requestId;
     if (body.action === "acknowledge") {
+      activeStage = "idempotency-acknowledge";
       await acknowledgeVoiceTokenIdempotency(userId, requestId);
       logTokenEvent("acknowledged", { action: activeAction, userIdHash, requestIdPresent: true });
       res.status(204).end();
       return;
     }
     if (body.action === "recover") {
+      activeStage = "idempotency-cleanup";
       await cleanupExpiredVoiceTokenIdempotency();
+      activeStage = "idempotency-recovery-read";
       const previousResponse = await getVoiceTokenIdempotencyResponse(userId, requestId);
       if (previousResponse) {
         logTokenEvent("recovery", { action: activeAction, userIdHash, requestIdPresent: true, recoveryHit: true });
@@ -121,6 +126,7 @@ export default async function handler(req: any, res: any) {
       res.status(404).json({ error: "No recoverable Voice start was found.", reason: "connection_failed" });
       return;
     }
+    activeStage = "idempotency-read";
     const previousResponse = await getVoiceTokenIdempotencyResponse(userId, requestId);
     if (previousResponse) {
       res.status(200).json(previousResponse);
@@ -142,7 +148,9 @@ export default async function handler(req: any, res: any) {
       { key: `live-token:user:${userId}`, limit: 6 },
       { key: `live-token:ip:${ip}`, limit: 12 },
     ]);
+    activeStage = "idempotency-begin";
     if (!await beginVoiceTokenIdempotency(userId, requestId)) {
+      activeStage = "idempotency-duplicate-read";
       const completedResponse = await getVoiceTokenIdempotencyResponse(userId, requestId);
       if (completedResponse) {
         logTokenEvent("idempotency-hit", { action: activeAction, userIdHash, requestIdPresent: true });
@@ -156,14 +164,18 @@ export default async function handler(req: any, res: any) {
     idempotencyStarted = true;
 
     if (body.reservationHandle !== undefined) {
+      activeStage = "renewal-claim";
       const renewal = await claimVoiceSessionRenewal(userId, renewalHandleHash!);
       logTokenEvent("eligibility", { action: activeAction, userIdHash, eligible: true, mode: "renewal" });
       try {
+        activeStage = "shadow-notes";
         const shadowNotes = await getServerShadowNotes(userId);
+        activeStage = "gemini-token";
         const session = await createGeminiLiveEphemeralToken({
           shadowNotes,
           reservationExpiresAt: renewal.expiresAt,
         });
+        activeStage = "renewal-finalize";
         await finalizeVoiceSessionRenewal(userId, renewal.claimHash);
         const responsePayload = {
           ...session,
@@ -171,6 +183,7 @@ export default async function handler(req: any, res: any) {
           reservationExpiresAt: renewal.expiresAt,
           remainingSeconds: getRemainingSeconds(renewal.expiresAt),
         };
+        activeStage = "idempotency-complete";
         await completeVoiceTokenIdempotency(userId, requestId, responsePayload, renewal.leaseId);
         res.status(200).json(responsePayload);
       } catch (error) {
@@ -189,6 +202,7 @@ export default async function handler(req: any, res: any) {
     const { maxMinutes } = getVoiceSessionConfig();
     const { dailyMinutes, resetOffsetMinutes } = getVoiceUsageLimits(maxMinutes);
     const { handle, handleHash } = createVoiceReservationHandle();
+    activeStage = "lease-acquire";
     const lease = await acquireVoiceSessionLease(
       userId,
       maxMinutes,
@@ -198,8 +212,11 @@ export default async function handler(req: any, res: any) {
     );
     logTokenEvent("eligibility", { action: activeAction, userIdHash, eligible: true, mode: "new_reservation" });
     try {
+      activeStage = "idempotency-attach-lease";
       await attachVoiceTokenIdempotencyLease(userId, requestId, lease.leaseId);
+      activeStage = "shadow-notes";
       const shadowNotes = await getServerShadowNotes(userId);
+      activeStage = "gemini-token";
       const session = await createGeminiLiveEphemeralToken({
         shadowNotes,
         reservationExpiresAt: lease.expiresAt,
@@ -210,6 +227,7 @@ export default async function handler(req: any, res: any) {
         reservationExpiresAt: lease.expiresAt,
         remainingSeconds: getRemainingSeconds(lease.expiresAt),
       };
+      activeStage = "idempotency-complete";
       await completeVoiceTokenIdempotency(userId, requestId, responsePayload, lease.leaseId);
       res.status(200).json(responsePayload);
     } catch (error) {
@@ -224,7 +242,17 @@ export default async function handler(req: any, res: any) {
     }
   } catch (error) {
     if (idempotencyStarted && activeUserId && activeRequestId) {
-      await deleteVoiceTokenIdempotency(activeUserId, activeRequestId);
+      try {
+        await deleteVoiceTokenIdempotency(activeUserId, activeRequestId);
+      } catch (cleanupError) {
+        console.error("Voice token idempotency cleanup threw after a failed start:", {
+          stage: activeStage,
+          action: activeAction,
+          userIdHash: hashUserId(activeUserId),
+          requestIdPresent: true,
+          reason: getSafeErrorReason(cleanupError),
+        });
+      }
     }
     const tokenTimingError = error instanceof VoiceTokenTimingError ? error : null;
     const details = tokenTimingError
@@ -235,12 +263,19 @@ export default async function handler(req: any, res: any) {
         }
       : getHttpErrorDetails(error);
     if (details.statusCode >= 500) {
-      console.error("Gemini Live token request failed:", getSafeErrorReason(error));
+      console.error("Voice token request failed:", {
+        stage: activeStage,
+        action: activeAction,
+        userIdHash: activeUserId ? hashUserId(activeUserId) : null,
+        requestIdPresent: Boolean(activeRequestId),
+        reason: getSafeErrorReason(error),
+      });
     }
     logTokenEvent("failure", {
       action: activeAction,
       userIdHash: activeUserId ? hashUserId(activeUserId) : null,
       requestIdPresent: Boolean(activeRequestId),
+      stage: activeStage,
       statusCode: details.statusCode,
       reason: getSafeErrorReason(error),
     });
