@@ -5,13 +5,13 @@ import type {
 } from "@google/genai";
 import { apiFetch } from "../lib/apiClient";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
-import { nativeStorage } from "../lib/native/storage";
+import { nativeRecoveryStorage, nativeStorage } from "../lib/native/storage";
 import {
   createIdempotentAsyncAction,
   createInitialHistoryPayload,
+  getPcm16PeakAmplitude,
   getLiveReconnectDelay,
   getLiveSessionDeadlineMs,
-  getLiveSessionDurationMs,
   getSafePlaybackGain,
   guardLiveTokenTiming,
   mergeLiveTranscript,
@@ -19,6 +19,7 @@ import {
   shouldReconnectLiveSession,
   shouldResumeListeningAfterPlayback,
   signalAudioStreamEnd,
+  toPcmByteView,
 } from "../lib/liveProtocol";
 import type { ConversationMessage, VoiceState } from "../types/live";
 import {
@@ -106,8 +107,20 @@ const GO_AWAY_SAFETY_MARGIN_MS = 750;
 const VOICE_API_TIMEOUT_MS = 12_000;
 const VOICE_STORAGE_TIMEOUT_MS = 750;
 const VOICE_AUDIO_RESUME_TIMEOUT_MS = 4_000;
+const VOICE_LIVE_CONNECT_TIMEOUT_MS = 15_000;
 const VOICE_PERMISSION_TIMEOUT_MS = 45_000;
 const VOICE_ENTITLEMENT_SYNC_TIMEOUT_MS = 12_000;
+const VOICE_AUDIO_FRAME_TIMEOUT_MS = 3_500;
+const VOICE_AUDIO_FALLBACK_TIMEOUT_MS = 4_000;
+const VOICE_SPEECH_ACTIVITY_NOTICE_MS = 10_000;
+const VOICE_NATIVE_BACKGROUND_GRACE_MS = 10_000;
+const VOICE_SPEECH_ACTIVITY_PEAK = 0.012;
+const MIC_NO_ACTIVITY_NOTICE =
+  "I'm connected, but I have not heard speech yet. Speak near the microphone or check your Android microphone route.";
+const MIC_NO_FRAMES_NOTICE =
+  "Your microphone is allowed, but no audio is reaching Voice. Check microphone access, then end and retry.";
+const MIC_ADJUSTING_NOTICE =
+  "Adjusting microphone capture for this device. Keep speaking.";
 
 const withVoiceStartupTimeout = <T,>(
   promise: Promise<T>,
@@ -273,6 +286,14 @@ export function useGeminiLive({
   const reconnectTimerRef = useRef<number | null>(null);
   const noticeTimerRef = useRef<number | null>(null);
   const endTimerRef = useRef<number | null>(null);
+  const audioFrameTimerRef = useRef<number | null>(null);
+  const speechActivityTimerRef = useRef<number | null>(null);
+  const nativeBackgroundStopTimerRef = useRef<number | null>(null);
+  const firstAudioFrameRef = useRef(false);
+  const speechActivityDetectedRef = useRef(false);
+  const providerMessageReceivedRef = useRef(false);
+  const realtimeSendFailedRef = useRef(false);
+  const legacyRecoveryMigrationStartedRef = useRef(false);
   const failureHandledRef = useRef(false);
   const sessionResumptionHandleRef = useRef<string | null>(null);
   const reservationHandleRef = useRef<string | null>(reservation?.handle ?? null);
@@ -280,6 +301,9 @@ export function useGeminiLive({
   const pendingReleaseHandleRef = useRef<string | null>(null);
   const tokenRequestIdRef = useRef<string | null>(null);
   const stopActionRef = useRef<ReturnType<typeof createIdempotentAsyncAction> | null>(null);
+  const latestStopRef = useRef<((nextState?: VoiceState) => Promise<void>) | null>(null);
+  const latestRetryPendingReleaseRef = useRef<(() => Promise<boolean>) | null>(null);
+  const latestDiagnosticsRef = useRef<((event: string, details?: Record<string, unknown>) => void) | null>(null);
   if (!stopActionRef.current) stopActionRef.current = createIdempotentAsyncAction();
 
   const logVoiceDiagnostics = useCallback((event: string, details: Record<string, unknown> = {}) => {
@@ -454,8 +478,8 @@ export function useGeminiLive({
     await runNativeVoiceStorageOperation(
       handle ? "pending-release-write" : "pending-release-clear",
       () => handle
-        ? nativeStorage.set(PENDING_VOICE_RELEASE_KEY, handle)
-        : nativeStorage.remove(PENDING_VOICE_RELEASE_KEY),
+        ? nativeRecoveryStorage.set(PENDING_VOICE_RELEASE_KEY, handle)
+        : nativeRecoveryStorage.remove(PENDING_VOICE_RELEASE_KEY),
     );
   }, [runNativeVoiceStorageOperation]);
 
@@ -464,8 +488,8 @@ export function useGeminiLive({
     await runNativeVoiceStorageOperation(
       requestId ? "pending-token-write" : "pending-token-clear",
       () => requestId
-        ? nativeStorage.set(PENDING_VOICE_TOKEN_REQUEST_KEY, requestId)
-        : nativeStorage.remove(PENDING_VOICE_TOKEN_REQUEST_KEY),
+        ? nativeRecoveryStorage.set(PENDING_VOICE_TOKEN_REQUEST_KEY, requestId)
+        : nativeRecoveryStorage.remove(PENDING_VOICE_TOKEN_REQUEST_KEY),
     );
   }, [runNativeVoiceStorageOperation]);
 
@@ -511,11 +535,11 @@ export function useGeminiLive({
     void Promise.all([
       runNativeVoiceStorageOperation(
         "pending-release-read-on-mount",
-        () => nativeStorage.get(PENDING_VOICE_RELEASE_KEY),
+        () => nativeRecoveryStorage.get(PENDING_VOICE_RELEASE_KEY),
       ),
       runNativeVoiceStorageOperation(
         "pending-token-read-on-mount",
-        () => nativeStorage.get(PENDING_VOICE_TOKEN_REQUEST_KEY),
+        () => nativeRecoveryStorage.get(PENDING_VOICE_TOKEN_REQUEST_KEY),
       ),
     ])
       .then(([handle, requestId]) => {
@@ -536,14 +560,72 @@ export function useGeminiLive({
     };
   }, [retryPendingRelease, runNativeVoiceStorageOperation]);
 
+  useEffect(() => {
+    if (!isNativePlatform() || legacyRecoveryMigrationStartedRef.current) return;
+    legacyRecoveryMigrationStartedRef.current = true;
+
+    // Older Android builds stored these non-secret recovery identifiers in
+    // Capacitor Preferences. Migrate them in the background so a slow bridge
+    // cannot delay a new start, while still releasing any lease left by the
+    // previous installed bundle.
+    void Promise.allSettled([
+      nativeStorage.get(PENDING_VOICE_RELEASE_KEY),
+      nativeStorage.get(PENDING_VOICE_TOKEN_REQUEST_KEY),
+    ]).then(async ([releaseResult, requestResult]) => {
+      if (!mountedRef.current) return;
+      const handle = releaseResult.status === "fulfilled" ? releaseResult.value : null;
+      const requestId = requestResult.status === "fulfilled" ? requestResult.value : null;
+      if (handle && !pendingReleaseHandleRef.current) {
+        pendingReleaseHandleRef.current = handle;
+        await persistPendingRelease(handle);
+        void retryPendingRelease();
+      }
+      if (
+        requestId &&
+        !tokenRequestIdRef.current &&
+        !startingRef.current &&
+        !sessionRef.current
+      ) {
+        tokenRequestIdRef.current = requestId;
+        await persistPendingTokenRequest(requestId);
+      }
+      logVoiceDiagnostics("legacy-native-recovery-migration", {
+        releaseHandleFound: Boolean(handle),
+        tokenRequestFound: Boolean(requestId),
+      });
+    }).catch(() => undefined).finally(() => {
+      void Promise.allSettled([
+        nativeStorage.remove(PENDING_VOICE_RELEASE_KEY),
+        nativeStorage.remove(PENDING_VOICE_TOKEN_REQUEST_KEY),
+      ]);
+    });
+  }, [
+    logVoiceDiagnostics,
+    persistPendingRelease,
+    persistPendingTokenRequest,
+    retryPendingRelease,
+  ]);
+
+  const clearAudioHealthTimers = useCallback(() => {
+    if (audioFrameTimerRef.current !== null) window.clearTimeout(audioFrameTimerRef.current);
+    if (speechActivityTimerRef.current !== null) window.clearTimeout(speechActivityTimerRef.current);
+    audioFrameTimerRef.current = null;
+    speechActivityTimerRef.current = null;
+  }, []);
+
   const clearTimers = useCallback(() => {
     if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
     if (endTimerRef.current !== null) window.clearTimeout(endTimerRef.current);
     if (reconnectTimerRef.current !== null) window.clearTimeout(reconnectTimerRef.current);
+    if (nativeBackgroundStopTimerRef.current !== null) {
+      window.clearTimeout(nativeBackgroundStopTimerRef.current);
+    }
     noticeTimerRef.current = null;
     endTimerRef.current = null;
     reconnectTimerRef.current = null;
-  }, []);
+    nativeBackgroundStopTimerRef.current = null;
+    clearAudioHealthTimers();
+  }, [clearAudioHealthTimers]);
 
   const stopPlayback = useCallback(() => {
     playbackGenerationRef.current = nextPlaybackGeneration(playbackGenerationRef.current);
@@ -564,6 +646,7 @@ export function useGeminiLive({
   }, []);
 
   const releaseAudio = useCallback(() => {
+    clearAudioHealthTimers();
     const processorNode = processorNodeRef.current;
     if (
       processorNode &&
@@ -601,7 +684,7 @@ export function useGeminiLive({
       audioContext.onstatechange = null;
       void audioContext.close().catch(() => undefined);
     }
-  }, [stopPlayback]);
+  }, [clearAudioHealthTimers, stopPlayback]);
 
   const getPlaybackInput = useCallback((audioContext: AudioContext) => {
     if (playbackGainRef.current && playbackCompressorRef.current) {
@@ -788,6 +871,10 @@ export function useGeminiLive({
     if (!isReconnect) sessionResumptionHandleRef.current = null;
     playbackGenerationRef.current += 1;
     audioStreamEndedRef.current = true;
+    firstAudioFrameRef.current = false;
+    speechActivityDetectedRef.current = false;
+    providerMessageReceivedRef.current = false;
+    realtimeSendFailedRef.current = false;
     if (!isReconnect) suppressPlaybackRef.current = false;
     stopRequestedRef.current = false;
     failureHandledRef.current = false;
@@ -837,7 +924,7 @@ export function useGeminiLive({
       if (!isReconnect && isNativePlatform() && !tokenRequestIdRef.current) {
         const pendingTokenRequestId = await runNativeVoiceStorageOperation(
           "pending-token-read-before-start",
-          () => nativeStorage.get(PENDING_VOICE_TOKEN_REQUEST_KEY),
+          () => nativeRecoveryStorage.get(PENDING_VOICE_TOKEN_REQUEST_KEY),
         );
         tokenRequestIdRef.current = pendingTokenRequestId;
         assertStartIsCurrent();
@@ -966,8 +1053,41 @@ export function useGeminiLive({
       isRequestingPermissionRef.current = true;
       let stream: MediaStream;
       try {
+        const isNativeAndroid = isNativePlatform() && getNativePlatform() === "android";
+        const audioConstraints: MediaTrackConstraints = isNativeAndroid
+          ? {
+              channelCount: 1,
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false,
+            }
+          : {
+              channelCount: 1,
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            };
+        logVoiceDiagnostics("microphone-capture-request", {
+          nativeAndroid: isNativeAndroid,
+          echoCancellation: audioConstraints.echoCancellation,
+          noiseSuppression: audioConstraints.noiseSuppression,
+          autoGainControl: audioConstraints.autoGainControl,
+        });
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          audio: audioConstraints,
+        });
+        const track = stream.getAudioTracks()[0];
+        const settings = track?.getSettings();
+        logVoiceDiagnostics("microphone-capture-ready", {
+          trackCount: stream.getAudioTracks().length,
+          trackState: track?.readyState || null,
+          trackMuted: track?.muted ?? null,
+          trackEnabled: track?.enabled ?? null,
+          sampleRate: settings?.sampleRate ?? null,
+          channelCount: settings?.channelCount ?? null,
+          echoCancellation: settings?.echoCancellation ?? null,
+          noiseSuppression: settings?.noiseSuppression ?? null,
+          autoGainControl: settings?.autoGainControl ?? null,
         });
       } catch (mediaError) {
         const mediaName = mediaError instanceof DOMException
@@ -1133,11 +1253,21 @@ export function useGeminiLive({
         },
         abortSignal: abortController.signal,
       };
-      let session: GeminiLiveSession;
-      session = await client.live.connect({
-        model: data.model,
-        config: liveConfig,
-        callbacks: {
+      let session: GeminiLiveSession | null = null;
+      let connectionCallbackError: string | null = null;
+      const failConnectedSession = (message: string) => {
+        if (session) {
+          handleConnectionFailure(session, message);
+        } else {
+          connectionCallbackError = message;
+        }
+      };
+      session = await runVoiceStartupStep(
+        "gemini-live-connect",
+        () => client.live.connect({
+          model: data.model,
+          config: liveConfig,
+          callbacks: {
           onopen: () => {
             logVoiceDiagnostics("gemini-live-onopen", { model: data.model });
             if (startGenerationRef.current === startGeneration && !stopRequestedRef.current) {
@@ -1146,6 +1276,15 @@ export function useGeminiLive({
           },
           onmessage: (message) => {
             if (stopRequestedRef.current || startGenerationRef.current !== startGeneration) return;
+            if (!providerMessageReceivedRef.current) {
+              providerMessageReceivedRef.current = true;
+              logVoiceDiagnostics("gemini-live-first-message", {
+                hasServerContent: Boolean(message.serverContent),
+                hasSetupComplete: Boolean(
+                  (message as { setupComplete?: unknown }).setupComplete,
+                ),
+              });
+            }
             const providerMessage = message as {
               sessionResumptionUpdate?: { resumable?: boolean; newHandle?: string };
               goAway?: { timeLeft?: unknown };
@@ -1158,7 +1297,7 @@ export function useGeminiLive({
             if (goAwayDelay > 0 && reconnectTimerRef.current === null) {
               reconnectTimerRef.current = window.setTimeout(() => {
                 reconnectTimerRef.current = null;
-                handleConnectionFailure(session, "The voice connection is refreshing.");
+                failConnectedSession("The voice connection is refreshing.");
               }, Math.max(0, goAwayDelay - GO_AWAY_SAFETY_MARGIN_MS));
             }
             const serverContent = message.serverContent;
@@ -1225,8 +1364,7 @@ export function useGeminiLive({
               apiVersion: GEMINI_LIVE_API_VERSION,
               model: data.model,
             });
-            handleConnectionFailure(
-              session,
+            failConnectedSession(
               details?.message
                 ? `Voice connection failed: ${details.message}`
                 : "Voice is temporarily unavailable. You can continue in Chat.",
@@ -1245,15 +1383,20 @@ export function useGeminiLive({
               apiVersion: GEMINI_LIVE_API_VERSION,
               model: data.model,
             });
-            handleConnectionFailure(
-              session,
+            failConnectedSession(
               details?.reason
                 ? `The voice connection ended: ${details.reason}`
                 : "The voice connection ended. You can try again or continue in Chat.",
             );
           },
-        },
-      });
+          },
+        }),
+        VOICE_LIVE_CONNECT_TIMEOUT_MS,
+      );
+      if (connectionCallbackError) {
+        session.close();
+        throw new VoiceStartError("connection_failed", connectionCallbackError);
+      }
 
       try {
         assertStartIsCurrent();
@@ -1262,12 +1405,15 @@ export function useGeminiLive({
         throw error;
       }
 
-      sessionRef.current = session;
+      const connectedSession = session;
+      sessionRef.current = connectedSession;
       // Callbacks from the failed connection are fenced by startGeneration.
       // The newly connected session must not inherit its local audio suppression.
       suppressPlaybackRef.current = false;
       const initialHistory = createInitialHistoryPayload(history);
-      if (initialHistory && !resumingProviderSession) session.sendClientContent(initialHistory);
+      if (initialHistory && !resumingProviderSession) {
+        connectedSession.sendClientContent(initialHistory);
+      }
 
       const audioContext = audioContextRef.current || getAudioContext();
       audioContextRef.current = audioContext;
@@ -1286,19 +1432,92 @@ export function useGeminiLive({
       const muteGain = audioContext.createGain();
       muteGain.gain.value = 0;
 
-      const sendPcmAudio = (pcm: Uint8Array) => {
-        if (stopRequestedRef.current || isMutedRef.current) return;
+      const sendPcmAudio = (
+        pcm: Uint8Array,
+        processorMode: "audio-worklet" | "script-processor",
+      ) => {
+        if (stopRequestedRef.current) return;
+        const shouldMeasurePeak =
+          !firstAudioFrameRef.current || !speechActivityDetectedRef.current;
+        const peak = shouldMeasurePeak ? getPcm16PeakAmplitude(pcm) : 0;
+        if (!firstAudioFrameRef.current) {
+          firstAudioFrameRef.current = true;
+          if (audioFrameTimerRef.current !== null) {
+            window.clearTimeout(audioFrameTimerRef.current);
+            audioFrameTimerRef.current = null;
+          }
+          logVoiceDiagnostics("audio-input-first-frame", {
+            mode: processorMode,
+            byteLength: pcm.byteLength,
+            peak: Number(peak.toFixed(4)),
+          });
+          setSessionNotice((current) =>
+            current === MIC_ADJUSTING_NOTICE ? null : current,
+          );
+        }
+        if (isMutedRef.current) return;
+        if (
+          !speechActivityDetectedRef.current &&
+          peak >= VOICE_SPEECH_ACTIVITY_PEAK
+        ) {
+          speechActivityDetectedRef.current = true;
+          if (speechActivityTimerRef.current !== null) {
+            window.clearTimeout(speechActivityTimerRef.current);
+            speechActivityTimerRef.current = null;
+          }
+          setSessionNotice((current) =>
+            current === MIC_NO_ACTIVITY_NOTICE ||
+            current === MIC_NO_FRAMES_NOTICE ||
+            current === MIC_ADJUSTING_NOTICE
+              ? null
+              : current,
+          );
+          logVoiceDiagnostics("audio-input-activity-detected", {
+            mode: processorMode,
+            peak: Number(peak.toFixed(4)),
+          });
+        }
         audioStreamEndedRef.current = false;
         const data = bytesToBase64(pcm);
-        session.sendRealtimeInput({
-          audio: { data, mimeType: `audio/pcm;rate=${INPUT_SAMPLE_RATE}` },
-        });
+        try {
+          connectedSession.sendRealtimeInput({
+            audio: { data, mimeType: `audio/pcm;rate=${INPUT_SAMPLE_RATE}` },
+          });
+        } catch (sendError) {
+          if (realtimeSendFailedRef.current) return;
+          realtimeSendFailedRef.current = true;
+          const message = sendError instanceof Error
+            ? sendError.message
+            : "The live audio transport rejected microphone input.";
+          logVoiceDiagnostics("audio-input-send-failed", {
+            mode: processorMode,
+            error: message,
+          });
+          window.setTimeout(() => {
+            handleConnectionFailure(
+              connectedSession,
+              "Microphone audio could not reach Voice. End the session and try again.",
+            );
+          }, 0);
+        }
       };
 
       let processor: ScriptProcessorNode | AudioWorkletNode | null = null;
       let processorMode: "audio-worklet" | "script-processor" = "script-processor";
       const audioWorkletAvailable = Boolean(audioContext.audioWorklet && typeof AudioWorkletNode !== "undefined");
       let audioWorkletLoaded = false;
+      const createFallbackProcessor = () => {
+        const fallbackProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+        fallbackProcessor.onaudioprocess = (event) => {
+          if (stopRequestedRef.current || isMutedRef.current) return;
+          const channel = event.inputBuffer.getChannelData(0);
+          const pcm = floatToPcm16(
+            resample(channel, event.inputBuffer.sampleRate, INPUT_SAMPLE_RATE),
+          );
+          sendPcmAudio(pcm, "script-processor");
+        };
+        return fallbackProcessor;
+      };
       if (audioWorkletAvailable) {
         try {
           const workletUrl = new URL(
@@ -1317,14 +1536,16 @@ export function useGeminiLive({
               batchSize: MIC_WORKLET_BATCH_SIZE,
             },
           });
-          worklet.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-            if (
-              sessionRef.current !== session ||
-              !(event.data instanceof ArrayBuffer)
-            ) {
+          worklet.port.onmessage = (event: MessageEvent<unknown>) => {
+            if (sessionRef.current !== connectedSession) return;
+            const pcm = toPcmByteView(event.data);
+            if (!pcm) {
+              logVoiceDiagnostics("audio-worklet-invalid-frame", {
+                payloadType: typeof event.data,
+              });
               return;
             }
-            sendPcmAudio(new Uint8Array(event.data));
+            sendPcmAudio(pcm, "audio-worklet");
           };
           processor = worklet;
           processorMode = "audio-worklet";
@@ -1337,16 +1558,7 @@ export function useGeminiLive({
       }
 
       if (!processor) {
-        const fallbackProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-        fallbackProcessor.onaudioprocess = (event) => {
-          if (stopRequestedRef.current || isMutedRef.current) return;
-          const channel = event.inputBuffer.getChannelData(0);
-          const pcm = floatToPcm16(
-            resample(channel, event.inputBuffer.sampleRate, INPUT_SAMPLE_RATE),
-          );
-          sendPcmAudio(pcm);
-        };
-        processor = fallbackProcessor;
+        processor = createFallbackProcessor();
       }
       logVoiceDiagnostics("audio-input-processor", {
         mode: processorMode,
@@ -1362,22 +1574,99 @@ export function useGeminiLive({
       processorNodeRef.current = processor;
       muteGainRef.current = muteGain;
 
+      const scheduleAudioFrameWatchdog = (allowWorkletFallback: boolean) => {
+        if (audioFrameTimerRef.current !== null) {
+          window.clearTimeout(audioFrameTimerRef.current);
+        }
+        audioFrameTimerRef.current = window.setTimeout(() => {
+          audioFrameTimerRef.current = null;
+          if (
+            firstAudioFrameRef.current ||
+            stopRequestedRef.current ||
+            sessionRef.current !== connectedSession
+          ) return;
+          if (audioContext.state !== "running") {
+            logVoiceDiagnostics("audio-input-watchdog", {
+              phase: "waiting-for-audio-context",
+              mode: processorMode,
+              audioContextState: audioContext.state,
+            });
+            scheduleAudioFrameWatchdog(allowWorkletFallback);
+            return;
+          }
+
+          const currentProcessor = processorNodeRef.current;
+          const canUseScriptProcessor =
+            allowWorkletFallback &&
+            processorMode === "audio-worklet" &&
+            currentProcessor &&
+            typeof AudioWorkletNode !== "undefined" &&
+            currentProcessor instanceof AudioWorkletNode;
+          if (canUseScriptProcessor) {
+            logVoiceDiagnostics("audio-input-watchdog", {
+              phase: "switching-to-script-processor",
+              audioContextState: audioContext.state,
+            });
+            currentProcessor.port.onmessage = null;
+            currentProcessor.port.close();
+            currentProcessor.disconnect();
+            source.disconnect();
+            const fallbackProcessor = createFallbackProcessor();
+            source.connect(fallbackProcessor);
+            fallbackProcessor.connect(muteGain);
+            processorNodeRef.current = fallbackProcessor;
+            processorMode = "script-processor";
+            setSessionNotice(MIC_ADJUSTING_NOTICE);
+            scheduleAudioFrameWatchdog(false);
+            return;
+          }
+
+          if (speechActivityTimerRef.current !== null) {
+            window.clearTimeout(speechActivityTimerRef.current);
+            speechActivityTimerRef.current = null;
+          }
+          logVoiceDiagnostics("audio-input-watchdog", {
+            phase: "no-frames",
+            mode: processorMode,
+            audioContextState: audioContext.state,
+          });
+          setSessionNotice(MIC_NO_FRAMES_NOTICE);
+        }, allowWorkletFallback ? VOICE_AUDIO_FRAME_TIMEOUT_MS : VOICE_AUDIO_FALLBACK_TIMEOUT_MS);
+      };
+      scheduleAudioFrameWatchdog(processorMode === "audio-worklet");
+      speechActivityTimerRef.current = window.setTimeout(() => {
+        speechActivityTimerRef.current = null;
+        if (
+          speechActivityDetectedRef.current ||
+          stopRequestedRef.current ||
+          sessionRef.current !== connectedSession
+        ) return;
+        logVoiceDiagnostics("audio-input-watchdog", {
+          phase: "no-speech-activity",
+          hasAudioFrames: firstAudioFrameRef.current,
+          mode: processorMode,
+        });
+        if (firstAudioFrameRef.current) setSessionNotice(MIC_NO_ACTIVITY_NOTICE);
+      }, VOICE_SPEECH_ACTIVITY_NOTICE_MS);
+
       stream.getAudioTracks().forEach((track) => {
         track.onended = () => {
-          handleConnectionFailure(session, "Your microphone connection ended. Reconnect it and try Voice again.");
+          handleConnectionFailure(connectedSession, "Your microphone connection ended. Reconnect it and try Voice again.");
         };
         track.onmute = () => {
-          if (sessionRef.current === session && !stopRequestedRef.current) {
+          if (sessionRef.current === connectedSession && !stopRequestedRef.current) {
             setSessionNotice("Your microphone was muted or interrupted. Check your audio route if Voice does not resume.");
           }
         };
         track.onunmute = () => {
-          if (sessionRef.current === session && !stopRequestedRef.current) setSessionNotice(null);
+          if (sessionRef.current === connectedSession && !stopRequestedRef.current) {
+            setSessionNotice(null);
+          }
         };
       });
       audioContext.onstatechange = () => {
-        if (audioContext.state === "closed" && sessionRef.current === session) {
-          handleConnectionFailure(session, "Your audio session was interrupted. Try Voice again.");
+        if (audioContext.state === "closed" && sessionRef.current === connectedSession) {
+          handleConnectionFailure(connectedSession, "Your audio session was interrupted. Try Voice again.");
         }
       };
 
@@ -1402,6 +1691,26 @@ export function useGeminiLive({
       setState("listening");
     } catch (startError) {
       if (startError instanceof VoiceStartCancelledError || abortController.signal.aborted) {
+        logVoiceDiagnostics("start-cancelled", {
+          generationCurrent: startGenerationRef.current === startGeneration,
+          stopRequested: stopRequestedRef.current,
+          hasMediaStream: Boolean(mediaStreamRef.current),
+          hasSession: Boolean(sessionRef.current),
+        });
+        isRequestingPermissionRef.current = false;
+        permissionPromptGraceUntilRef.current = 0;
+        if (
+          mountedRef.current &&
+          startGenerationRef.current === startGeneration &&
+          !stopRequestedRef.current
+        ) {
+          clearTimers();
+          releaseAudio();
+          await releaseReservation();
+          await clearPendingTokenRequest();
+          setState("idle");
+          setSessionNotice("Voice start was interrupted. Tap below to try again.");
+        }
         return;
       }
       abortController.abort();
@@ -1456,6 +1765,12 @@ export function useGeminiLive({
     startRef.current = start;
   }, [start]);
 
+  useEffect(() => {
+    latestStopRef.current = stop;
+    latestRetryPendingReleaseRef.current = retryPendingRelease;
+    latestDiagnosticsRef.current = logVoiceDiagnostics;
+  }, [logVoiceDiagnostics, retryPendingRelease, stop]);
+
   const toggleMute = useCallback(() => {
     setIsMuted((current) => {
       const nextMuted = !current;
@@ -1481,20 +1796,21 @@ export function useGeminiLive({
 
   useEffect(() => {
     const handleVisibilityChange = () => {
+      if (isNativePlatform()) return;
       if (isRequestingPermissionRef.current || Date.now() < permissionPromptGraceUntilRef.current) {
-        logVoiceDiagnostics("visibility-ignored-during-permission");
+        latestDiagnosticsRef.current?.("visibility-ignored-during-permission");
         return;
       }
       if (
         document.visibilityState === "hidden" &&
         (mediaStreamRef.current || sessionRef.current)
       ) {
-        void stop("ended");
+        void latestStopRef.current?.("ended");
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [logVoiceDiagnostics, stop]);
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -1532,16 +1848,47 @@ export function useGeminiLive({
     void import("@capacitor/app")
       .then(({ App }) => App.addListener("appStateChange", ({ isActive }) => {
         if (isActive) {
-          void retryPendingRelease();
+          if (nativeBackgroundStopTimerRef.current !== null) {
+            window.clearTimeout(nativeBackgroundStopTimerRef.current);
+            nativeBackgroundStopTimerRef.current = null;
+            latestDiagnosticsRef.current?.("app-state-resumed-within-grace");
+          }
+          const audioContext = audioContextRef.current;
+          if (sessionRef.current && audioContext?.state === "suspended") {
+            void audioContext.resume().then(
+              () => latestDiagnosticsRef.current?.("audio-context-resumed-after-app-resume", {
+                state: audioContext.state,
+              }),
+              (error) => {
+                latestDiagnosticsRef.current?.("audio-context-resume-after-app-resume-failed", {
+                  error: error instanceof Error ? error.message : "Audio resume failed.",
+                });
+                setSessionNotice("Android paused the audio session. End Voice and tap retry.");
+              },
+            );
+          }
+          void latestRetryPendingReleaseRef.current?.();
           return;
         }
         if (isRequestingPermissionRef.current || Date.now() < permissionPromptGraceUntilRef.current) {
-          logVoiceDiagnostics("app-state-ignored-during-permission");
+          latestDiagnosticsRef.current?.("app-state-ignored-during-permission");
           return;
         }
         if (
-          (mediaStreamRef.current || sessionRef.current)
-        ) void stop("ended");
+          (mediaStreamRef.current || sessionRef.current) &&
+          nativeBackgroundStopTimerRef.current === null
+        ) {
+          latestDiagnosticsRef.current?.("app-state-background-grace-started", {
+            graceMs: VOICE_NATIVE_BACKGROUND_GRACE_MS,
+          });
+          nativeBackgroundStopTimerRef.current = window.setTimeout(() => {
+            nativeBackgroundStopTimerRef.current = null;
+            if (mediaStreamRef.current || sessionRef.current) {
+              latestDiagnosticsRef.current?.("app-state-background-grace-expired");
+              void latestStopRef.current?.("ended");
+            }
+          }, VOICE_NATIVE_BACKGROUND_GRACE_MS);
+        }
       }))
       .then((handle) => {
         if (disposed) void handle.remove();
@@ -1553,11 +1900,11 @@ export function useGeminiLive({
       disposed = true;
       if (listener) void listener.remove();
     };
-  }, [logVoiceDiagnostics, retryPendingRelease, stop]);
+  }, []);
 
   useEffect(() => () => {
-    void stop("ended");
-  }, [stop]);
+    void latestStopRef.current?.("ended");
+  }, []);
 
   return {
     state,

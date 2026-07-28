@@ -152,6 +152,27 @@ export const getSafePlaybackGain = (requestedGain: number) => {
 export const nextPlaybackGeneration = (currentGeneration: number) =>
   Math.max(0, Math.floor(currentGeneration)) + 1;
 
+export const toPcmByteView = (value: unknown) => {
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (!ArrayBuffer.isView(value)) return null;
+  return new Uint8Array(
+    value.buffer as ArrayBuffer,
+    value.byteOffset,
+    value.byteLength,
+  );
+};
+
+export const getPcm16PeakAmplitude = (pcm: Uint8Array) => {
+  const sampleCount = Math.floor(pcm.byteLength / 2);
+  if (!sampleCount) return 0;
+  const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+  let peak = 0;
+  for (let index = 0; index < sampleCount; index += 1) {
+    peak = Math.max(peak, Math.abs(view.getInt16(index * 2, true)) / 0x8000);
+  }
+  return Math.min(1, peak);
+};
+
 export const createIdempotentAsyncAction = () => {
   let inFlight: Promise<void> | null = null;
 

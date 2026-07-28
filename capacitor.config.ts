@@ -26,6 +26,11 @@ const config: CapacitorConfig = {
   appId: "com.biblenovacompanion.app",
   appName: "Bible Nova Companion",
   webDir: "dist",
+  android: {
+    // Keep JS diagnostics available in Android Studio while preventing native
+    // bridge calls (including auth payloads) from being echoed to Logcat.
+    loggingBehavior: "none",
+  },
   // Release builds load the verified bundle copied into webDir. External URLs
   // are opt-in for local live reload only.
   server: serverConfig,

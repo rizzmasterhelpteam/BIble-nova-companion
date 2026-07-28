@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createIdempotentAsyncAction,
   createInitialHistoryPayload,
+  getPcm16PeakAmplitude,
   getSafePlaybackGain,
   getLiveReconnectDelay,
   getLiveSessionDeadlineMs,
@@ -13,6 +14,7 @@ import {
   shouldReconnectLiveSession,
   shouldResumeListeningAfterPlayback,
   signalAudioStreamEnd,
+  toPcmByteView,
 } from "../src/lib/liveProtocol";
 import type { ConversationMessage } from "../src/types/live";
 
@@ -144,5 +146,24 @@ describe("Gemini Live protocol helpers", () => {
       expiresAt: "2026-07-23T12:00:00.000Z",
       reservationExpiresAt: "2026-07-23T11:55:00.000Z",
     }, now)).toBe(295_000);
+  });
+
+  it("accepts transferred and typed-array microphone frames", () => {
+    const samples = new Int16Array([0, 16_384, -32_768]);
+    const transferred = samples.buffer.slice(0);
+
+    expect(Array.from(toPcmByteView(transferred) || [])).toEqual(
+      Array.from(new Uint8Array(samples.buffer)),
+    );
+    expect(toPcmByteView(samples)?.byteLength).toBe(samples.byteLength);
+    expect(toPcmByteView("not audio")).toBeNull();
+  });
+
+  it("measures PCM activity without retaining or exposing audio", () => {
+    const silence = new Uint8Array(new Int16Array([0, 0, 0]).buffer);
+    const speech = new Uint8Array(new Int16Array([0, 8_192, -32_768]).buffer);
+
+    expect(getPcm16PeakAmplitude(silence)).toBe(0);
+    expect(getPcm16PeakAmplitude(speech)).toBe(1);
   });
 });
