@@ -6,7 +6,6 @@ import type {
 import { apiFetch } from "../lib/apiClient";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
-import { refreshNativeSubscriptionEntitlement } from "../lib/native/subscriptionSync";
 import {
   createIdempotentAsyncAction,
   createInitialHistoryPayload,
@@ -104,6 +103,38 @@ const PLAYBACK_GAIN = getSafePlaybackGain(1.3);
 const MIC_WORKLET_BATCH_SIZE = 640;
 const MAX_PLAYBACK_QUEUE_SECONDS = 1.1;
 const GO_AWAY_SAFETY_MARGIN_MS = 750;
+const VOICE_API_TIMEOUT_MS = 12_000;
+const VOICE_STORAGE_TIMEOUT_MS = 750;
+const VOICE_AUDIO_RESUME_TIMEOUT_MS = 4_000;
+const VOICE_PERMISSION_TIMEOUT_MS = 45_000;
+
+const withVoiceStartupTimeout = <T,>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+) => new Promise<T>((resolve, reject) => {
+  let settled = false;
+  const timeoutId = window.setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    reject(new VoiceStartError("connection_failed", message));
+  }, timeoutMs);
+
+  promise.then(
+    (value) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      resolve(value);
+    },
+    (error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      reject(error);
+    },
+  );
+});
 
 const getGoAwayTimeLeftMs = (value: unknown) => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -267,13 +298,107 @@ export function useGeminiLive({
     if (isNativePlatform()) console.info(`[Bible Nova voice diagnostics] ${JSON.stringify(payload)}`);
   }, [apiStatusConnectionError, liveReady]);
 
+  const runVoiceStartupStep = useCallback(async <T,>(
+    stage: string,
+    operation: () => Promise<T>,
+    timeoutMs = VOICE_API_TIMEOUT_MS,
+  ) => {
+    logVoiceDiagnostics("startup-stage", { stage, phase: "started" });
+    try {
+      const value = await withVoiceStartupTimeout(
+        operation(),
+        timeoutMs,
+        `Voice startup timed out while ${stage}. Please try again.`,
+      );
+      logVoiceDiagnostics("startup-stage", { stage, phase: "completed" });
+      return value;
+    } catch (error) {
+      logVoiceDiagnostics("startup-stage", {
+        stage,
+        phase: "failed",
+        error: error instanceof Error ? error.message : "Unknown startup error.",
+      });
+      throw error;
+    }
+  }, [logVoiceDiagnostics]);
+
+  // Capacitor Preferences is only used for crash recovery. A blocked native
+  // bridge must not keep a new Voice session from reaching eligibility, nor
+  // keep a failed session from releasing its UI state.
+  const runNativeVoiceStorageOperation = useCallback(async <T,>(
+    stage: string,
+    operation: () => Promise<T>,
+  ): Promise<T | null> => {
+    try {
+      const value = await withVoiceStartupTimeout(
+        operation(),
+        VOICE_STORAGE_TIMEOUT_MS,
+        `Voice recovery storage timed out while ${stage}.`,
+      );
+      logVoiceDiagnostics("native-storage-operation", { stage, phase: "completed" });
+      return value;
+    } catch (error) {
+      logVoiceDiagnostics("native-storage-operation", {
+        stage,
+        phase: "skipped",
+        error: error instanceof Error ? error.message : "Native storage was unavailable.",
+      });
+      return null;
+    }
+  }, [logVoiceDiagnostics]);
+
+  const requestNativeVoiceMicrophonePermission = useCallback(async () => {
+    if (!isNativePlatform() || getNativePlatform() !== "android") return;
+
+    const { SpeechRecognition } = await runVoiceStartupStep(
+      "native-speech-plugin-load",
+      () => import("@capgo/capacitor-speech-recognition"),
+    );
+    const current = await runVoiceStartupStep(
+      "native-microphone-permission-check",
+      () => SpeechRecognition.checkPermissions(),
+    );
+    logVoiceDiagnostics("native-microphone-permission", {
+      phase: "checked",
+      result: current.speechRecognition,
+    });
+    if (current.speechRecognition === "granted") return;
+
+    isRequestingPermissionRef.current = true;
+    try {
+      const requested = await runVoiceStartupStep(
+        "native-microphone-permission-request",
+        () => SpeechRecognition.requestPermissions(),
+        VOICE_PERMISSION_TIMEOUT_MS,
+      );
+      logVoiceDiagnostics("native-microphone-permission", {
+        phase: "requested",
+        result: requested.speechRecognition,
+      });
+      if (requested.speechRecognition !== "granted") {
+        throw new Error("Microphone access is needed for Voice mode. You can continue in Chat.");
+      }
+    } finally {
+      isRequestingPermissionRef.current = false;
+      permissionPromptGraceUntilRef.current = Date.now() + 1_000;
+    }
+  }, [logVoiceDiagnostics, runVoiceStartupStep]);
+
   const primeAudioForUserGesture = useCallback(() => {
     try {
       const audioContext = audioContextRef.current || getAudioContext();
       audioContextRef.current = audioContext;
       if (!audioResumePromiseRef.current) {
-        audioResumePromiseRef.current = audioContext.resume();
-        void audioResumePromiseRef.current.catch(() => undefined);
+        const resumePromise = audioContext.resume();
+        audioResumePromiseRef.current = resumePromise;
+        void resumePromise.catch((error) => {
+          if (audioResumePromiseRef.current === resumePromise) {
+            audioResumePromiseRef.current = null;
+          }
+          logVoiceDiagnostics("audio-context-prime-failed", {
+            error: error instanceof Error ? error.message : "Voice audio could not be resumed.",
+          });
+        });
       }
       logVoiceDiagnostics("audio-context-primed", { state: audioContext.state });
     } catch (audioError) {
@@ -298,23 +423,23 @@ export function useGeminiLive({
 
   const persistPendingRelease = useCallback(async (handle: string | null) => {
     if (!isNativePlatform()) return;
-    try {
-      if (handle) await nativeStorage.set(PENDING_VOICE_RELEASE_KEY, handle);
-      else await nativeStorage.remove(PENDING_VOICE_RELEASE_KEY);
-    } catch {
-      // A later in-memory retry can still release the current process's lease.
-    }
-  }, []);
+    await runNativeVoiceStorageOperation(
+      handle ? "pending-release-write" : "pending-release-clear",
+      () => handle
+        ? nativeStorage.set(PENDING_VOICE_RELEASE_KEY, handle)
+        : nativeStorage.remove(PENDING_VOICE_RELEASE_KEY),
+    );
+  }, [runNativeVoiceStorageOperation]);
 
   const persistPendingTokenRequest = useCallback(async (requestId: string | null) => {
     if (!isNativePlatform()) return;
-    try {
-      if (requestId) await nativeStorage.set(PENDING_VOICE_TOKEN_REQUEST_KEY, requestId);
-      else await nativeStorage.remove(PENDING_VOICE_TOKEN_REQUEST_KEY);
-    } catch {
-      // The in-memory request ID remains usable while this process is alive.
-    }
-  }, []);
+    await runNativeVoiceStorageOperation(
+      requestId ? "pending-token-write" : "pending-token-clear",
+      () => requestId
+        ? nativeStorage.set(PENDING_VOICE_TOKEN_REQUEST_KEY, requestId)
+        : nativeStorage.remove(PENDING_VOICE_TOKEN_REQUEST_KEY),
+    );
+  }, [runNativeVoiceStorageOperation]);
 
   const retryPendingRelease = useCallback(async () => {
     const handle = pendingReleaseHandleRef.current;
@@ -356,12 +481,22 @@ export function useGeminiLive({
     if (!isNativePlatform()) return;
     let disposed = false;
     void Promise.all([
-      nativeStorage.get(PENDING_VOICE_RELEASE_KEY),
-      nativeStorage.get(PENDING_VOICE_TOKEN_REQUEST_KEY),
+      runNativeVoiceStorageOperation(
+        "pending-release-read-on-mount",
+        () => nativeStorage.get(PENDING_VOICE_RELEASE_KEY),
+      ),
+      runNativeVoiceStorageOperation(
+        "pending-token-read-on-mount",
+        () => nativeStorage.get(PENDING_VOICE_TOKEN_REQUEST_KEY),
+      ),
     ])
       .then(([handle, requestId]) => {
         if (disposed) return;
-        if (requestId) tokenRequestIdRef.current = requestId;
+        // Do not allow a late recovery read to replace the request ID of a
+        // Voice start already in progress.
+        if (requestId && !tokenRequestIdRef.current && !startingRef.current && !sessionRef.current) {
+          tokenRequestIdRef.current = requestId;
+        }
         if (handle) {
           pendingReleaseHandleRef.current = handle;
           void retryPendingRelease();
@@ -371,7 +506,7 @@ export function useGeminiLive({
     return () => {
       disposed = true;
     };
-  }, [retryPendingRelease]);
+  }, [retryPendingRelease, runNativeVoiceStorageOperation]);
 
   const clearTimers = useCallback(() => {
     if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
@@ -664,21 +799,24 @@ export function useGeminiLive({
       logVoiceDiagnostics("audio-context-created", { state: activatedAudioContext.state });
       const audioResumePromise = audioResumePromiseRef.current || activatedAudioContext.resume();
       audioResumePromiseRef.current = audioResumePromise;
-      await audioResumePromise;
       assertStartIsCurrent();
-      logVoiceDiagnostics("audio-context-ready", { state: activatedAudioContext.state });
+      logVoiceDiagnostics("audio-context-resume-pending", { state: activatedAudioContext.state });
 
-      if (!isReconnect) await retryPendingRelease();
+      // A stale release must never prevent a new Android Voice start. The
+      // eligibility endpoint remains the authority for an active reservation.
+      if (!isReconnect) void retryPendingRelease();
       assertStartIsCurrent();
       if (!isReconnect && isNativePlatform() && !tokenRequestIdRef.current) {
-        tokenRequestIdRef.current = await nativeStorage
-          .get(PENDING_VOICE_TOKEN_REQUEST_KEY)
-          .catch(() => null);
+        const pendingTokenRequestId = await runNativeVoiceStorageOperation(
+          "pending-token-read-before-start",
+          () => nativeStorage.get(PENDING_VOICE_TOKEN_REQUEST_KEY),
+        );
+        tokenRequestIdRef.current = pendingTokenRequestId;
         assertStartIsCurrent();
       }
       let recoveredTokenData: LiveTokenResponse | null = null;
       if (!isReconnect && tokenRequestIdRef.current) {
-        const recoveryResponse = await apiFetch("/api/live/token", {
+        const recoveryResponse = await runVoiceStartupStep("token-recovery-request", () => apiFetch("/api/live/token", {
           method: "POST",
           signal: abortController.signal,
           headers: {
@@ -686,7 +824,7 @@ export function useGeminiLive({
             "X-Client-Request-Id": tokenRequestIdRef.current,
           },
           body: JSON.stringify({ action: "recover" }),
-        });
+        }));
         assertStartIsCurrent();
         const recoveryData = (await recoveryResponse.json().catch(() => ({}))) as LiveTokenResponse;
         assertStartIsCurrent();
@@ -725,24 +863,17 @@ export function useGeminiLive({
         onReservationChange(null);
       }
       const reservationHandle = reservationHandleRef.current;
-      if (!isReconnect && isNativePlatform()) {
-        void refreshNativeSubscriptionEntitlement().catch((syncError) => {
-          console.warn("Native subscription refresh did not complete", {
-            message: syncError instanceof Error ? syncError.message : "Unknown subscription refresh error.",
-          });
-        });
-      }
       let eligibility: VoiceEligibilityResponse;
       if (recoveredTokenData) {
         eligibility = { available: true, reason: "reservation_resume" };
       } else {
-        const eligibilityResponse = await apiFetch("/api/live/eligibility", {
+        const eligibilityResponse = await runVoiceStartupStep("eligibility-request", () => apiFetch("/api/live/eligibility", {
           method: "GET",
           signal: abortController.signal,
           headers: reservationHandle
             ? { "X-Voice-Reservation": reservationHandle }
             : undefined,
-        });
+        }));
         assertStartIsCurrent();
         eligibility = (await eligibilityResponse.json().catch(() => ({}))) as VoiceEligibilityResponse;
         assertStartIsCurrent();
@@ -785,6 +916,8 @@ export function useGeminiLive({
         });
         throw new Error("Voice is not supported on this device.");
       }
+      await requestNativeVoiceMicrophonePermission();
+      assertStartIsCurrent();
       isRequestingPermissionRef.current = true;
       let stream: MediaStream;
       try {
@@ -831,9 +964,11 @@ export function useGeminiLive({
         tokenRequestIdRef.current ||= crypto.randomUUID();
         await persistPendingTokenRequest(tokenRequestIdRef.current);
         assertStartIsCurrent();
-        const response = await apiFetch(
-          "/api/live/token",
-          renewingHandle
+        const response = await runVoiceStartupStep(
+          "token-request",
+          () => apiFetch(
+            "/api/live/token",
+            renewingHandle
             ? {
                 method: "POST",
                 signal: abortController.signal,
@@ -844,10 +979,11 @@ export function useGeminiLive({
                 body: JSON.stringify({ reservationHandle: renewingHandle }),
               }
             : {
-                method: "POST",
-                signal: abortController.signal,
-                headers: { "X-Client-Request-Id": tokenRequestIdRef.current },
-              },
+              method: "POST",
+              signal: abortController.signal,
+              headers: { "X-Client-Request-Id": tokenRequestIdRef.current },
+            },
+          ),
         );
         assertStartIsCurrent();
         data = (await response.json().catch(() => ({}))) as LiveTokenResponse;
@@ -890,7 +1026,7 @@ export function useGeminiLive({
       }
       if (tokenRequestIdRef.current) {
         const acknowledgedRequestId = tokenRequestIdRef.current;
-        const acknowledgement = await apiFetch("/api/live/token", {
+        const acknowledgement = await runVoiceStartupStep("token-acknowledgement", () => apiFetch("/api/live/token", {
           method: "POST",
           signal: abortController.signal,
           headers: {
@@ -898,7 +1034,7 @@ export function useGeminiLive({
             "X-Client-Request-Id": acknowledgedRequestId,
           },
           body: JSON.stringify({ action: "acknowledge" }),
-        });
+        }));
         assertStartIsCurrent();
         if (!acknowledgement.ok) {
           throw new VoiceStartError(
@@ -911,6 +1047,16 @@ export function useGeminiLive({
           await persistPendingTokenRequest(null);
         }
       }
+      await runVoiceStartupStep(
+        "audio-context-resume",
+        () => audioResumePromise,
+        VOICE_AUDIO_RESUME_TIMEOUT_MS,
+      );
+      assertStartIsCurrent();
+      if (activatedAudioContext.state !== "running") {
+        throw new Error("Voice audio could not be activated on this device.");
+      }
+      logVoiceDiagnostics("audio-context-ready", { state: activatedAudioContext.state });
       const { GoogleGenAI, Modality } = await import("@google/genai");
       assertStartIsCurrent();
       const client = new GoogleGenAI({
@@ -1080,7 +1226,15 @@ export function useGeminiLive({
 
       const audioContext = audioContextRef.current || getAudioContext();
       audioContextRef.current = audioContext;
-      if (audioContext.state !== "running") await audioContext.resume();
+      if (audioContext.state !== "running") {
+        const resumed = audioContext.resume();
+        audioResumePromiseRef.current = resumed;
+        await runVoiceStartupStep(
+          "audio-context-connect-resume",
+          () => resumed,
+          VOICE_AUDIO_RESUME_TIMEOUT_MS,
+        );
+      }
       assertStartIsCurrent();
       logVoiceDiagnostics("audio-context-connected", { state: audioContext.state });
       const source = audioContext.createMediaStreamSource(stream);
@@ -1205,6 +1359,7 @@ export function useGeminiLive({
       if (startError instanceof VoiceStartCancelledError || abortController.signal.aborted) {
         return;
       }
+      abortController.abort();
       stopRequestedRef.current = true;
       isRequestingPermissionRef.current = false;
       permissionPromptGraceUntilRef.current = 0;
@@ -1250,7 +1405,7 @@ export function useGeminiLive({
         startingRef.current = false;
       }
     }
-  }, [clearPendingTokenRequest, clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, logVoiceDiagnostics, onReservationChange, persistPendingTokenRequest, playAudioChunk, releaseAudio, releaseReservation, retryPendingRelease, stop, stopPlayback]);
+  }, [clearPendingTokenRequest, clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, logVoiceDiagnostics, onReservationChange, persistPendingTokenRequest, playAudioChunk, releaseAudio, releaseReservation, requestNativeVoiceMicrophonePermission, retryPendingRelease, runNativeVoiceStorageOperation, runVoiceStartupStep, stop, stopPlayback]);
 
   useEffect(() => {
     startRef.current = start;
@@ -1287,7 +1442,7 @@ export function useGeminiLive({
       }
       if (
         document.visibilityState === "hidden" &&
-        (startingRef.current || startAbortControllerRef.current || mediaStreamRef.current || sessionRef.current)
+        (mediaStreamRef.current || sessionRef.current)
       ) {
         void stop("ended");
       }
@@ -1340,7 +1495,7 @@ export function useGeminiLive({
           return;
         }
         if (
-          (startingRef.current || startAbortControllerRef.current || mediaStreamRef.current || sessionRef.current)
+          (mediaStreamRef.current || sessionRef.current)
         ) void stop("ended");
       }))
       .then((handle) => {
