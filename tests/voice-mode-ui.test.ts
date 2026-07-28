@@ -13,4 +13,9 @@ describe("Voice mode interface", () => {
     expect(voiceModeSource).not.toContain("voice-transcript");
     expect(voiceModeSource).not.toContain("latestTranscript");
   });
+
+  it("rechecks readiness and starts Live when readiness is recovered", () => {
+    expect(voiceModeSource).toContain("ready = await onRetryLiveReady();");
+    expect(voiceModeSource).toContain("if (ready) await live.start();");
+  });
 });
