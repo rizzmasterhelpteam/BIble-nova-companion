@@ -612,7 +612,9 @@ export function useGeminiLive({
               suppressPlaybackRef.current = false;
               finalizeUserTranscript();
               finalizeAssistantTranscript();
-              if (!playbackSourcesRef.current.length) setState("listening");
+              if (playbackSourcesRef.current.size === 0) {
+                setState("listening");
+              }
             }
           },
           onerror: (event) => {
