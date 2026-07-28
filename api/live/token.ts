@@ -5,10 +5,12 @@ import {
 } from "../../live-api.js";
 import {
   acquireVoiceSessionLease,
+  acknowledgeVoiceTokenIdempotency,
   attachVoiceTokenIdempotencyLease,
   cancelUnstartedVoiceSessionLease,
   claimVoiceSessionRenewal,
   createVoiceReservationHandle,
+  deleteVoiceTokenIdempotency,
   enforceRateLimits,
   getHttpErrorDetails,
   getServerShadowNotes,
@@ -45,8 +47,12 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
+  let activeUserId: string | null = null;
+  let activeRequestId: string | null = null;
+  let idempotencyStarted = false;
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
+    activeUserId = userId;
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
     if (body.action === "release") {
       const handleHash = hashVoiceReservationHandle(body.reservationHandle);
@@ -65,11 +71,37 @@ export default async function handler(req: any, res: any) {
       res.status(400).json({ error: "Voice request identifier is required.", reason: "connection_failed" });
       return;
     }
+    activeRequestId = requestId;
+    if (body.action === "acknowledge") {
+      await acknowledgeVoiceTokenIdempotency(userId, requestId);
+      res.status(204).end();
+      return;
+    }
     const previousResponse = await getVoiceTokenIdempotencyResponse(userId, requestId);
     if (previousResponse) {
       res.status(200).json(previousResponse);
       return;
     }
+    if (body.action === "recover") {
+      res.status(404).json({ error: "No recoverable Voice start was found.", reason: "connection_failed" });
+      return;
+    }
+
+    let renewalHandleHash: string | null = null;
+    if (body.reservationHandle !== undefined) {
+      renewalHandleHash = hashVoiceReservationHandle(body.reservationHandle);
+      if (!renewalHandleHash) {
+        res.status(400).json({
+          error: "This Voice reservation is invalid.",
+          reason: "reservation_invalid",
+        });
+        return;
+      }
+    }
+    await enforceRateLimits([
+      { key: `live-token:user:${userId}`, limit: 6 },
+      { key: `live-token:ip:${ip}`, limit: 12 },
+    ]);
     if (!await beginVoiceTokenIdempotency(userId, requestId)) {
       const completedResponse = await getVoiceTokenIdempotencyResponse(userId, requestId);
       if (completedResponse) {
@@ -79,22 +111,10 @@ export default async function handler(req: any, res: any) {
       res.status(409).json({ error: "Voice start is already in progress. Please retry shortly.", reason: "connection_failed" });
       return;
     }
-    await enforceRateLimits([
-      { key: `live-token:user:${userId}`, limit: 6 },
-      { key: `live-token:ip:${ip}`, limit: 12 },
-    ]);
+    idempotencyStarted = true;
 
     if (body.reservationHandle !== undefined) {
-      const handleHash = hashVoiceReservationHandle(body.reservationHandle);
-      if (!handleHash) {
-        res.status(400).json({
-          error: "This Voice reservation is invalid.",
-          reason: "reservation_invalid",
-        });
-        return;
-      }
-
-      const renewal = await claimVoiceSessionRenewal(userId, handleHash);
+      const renewal = await claimVoiceSessionRenewal(userId, renewalHandleHash!);
       try {
         const shadowNotes = await getServerShadowNotes(userId);
         const session = await createGeminiLiveEphemeralToken({
@@ -147,6 +167,9 @@ export default async function handler(req: any, res: any) {
       throw error;
     }
   } catch (error) {
+    if (idempotencyStarted && activeUserId && activeRequestId) {
+      await deleteVoiceTokenIdempotency(activeUserId, activeRequestId);
+    }
     const tokenTimingError = error instanceof VoiceTokenTimingError ? error : null;
     const details = tokenTimingError
       ? {

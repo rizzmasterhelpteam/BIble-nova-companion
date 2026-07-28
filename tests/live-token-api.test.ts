@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const security = vi.hoisted(() => ({
   acquire: vi.fn(),
   attachLease: vi.fn(),
+  acknowledge: vi.fn(),
   cancel: vi.fn(),
   limits: vi.fn(),
   notes: vi.fn(),
@@ -15,6 +16,7 @@ const security = vi.hoisted(() => ({
   getIdempotency: vi.fn(),
   beginIdempotency: vi.fn(),
   completeIdempotency: vi.fn(),
+  deleteIdempotency: vi.fn(),
   release: vi.fn(),
 }));
 const createToken = vi.hoisted(() => vi.fn());
@@ -22,6 +24,7 @@ const createToken = vi.hoisted(() => vi.fn());
 vi.mock("../server-security", () => ({
   acquireVoiceSessionLease: security.acquire,
   attachVoiceTokenIdempotencyLease: security.attachLease,
+  acknowledgeVoiceTokenIdempotency: security.acknowledge,
   cancelUnstartedVoiceSessionLease: security.cancel,
   enforceRateLimits: security.limits,
   claimVoiceSessionRenewal: security.claimRenewal,
@@ -29,6 +32,7 @@ vi.mock("../server-security", () => ({
   getVoiceTokenIdempotencyResponse: security.getIdempotency,
   beginVoiceTokenIdempotency: security.beginIdempotency,
   completeVoiceTokenIdempotency: security.completeIdempotency,
+  deleteVoiceTokenIdempotency: security.deleteIdempotency,
   releaseVoiceSessionLease: security.release,
   getHttpErrorDetails: (error: unknown) => ({
     statusCode: 500,
@@ -94,6 +98,7 @@ describe("Gemini Live token endpoint", () => {
       expiresAt: "2026-07-23T12:00:00.000Z",
     });
     security.attachLease.mockResolvedValue(undefined);
+    security.acknowledge.mockResolvedValue(undefined);
     security.createHandle.mockReturnValue({
       handle: "opaque-reservation-handle",
       handleHash: "a".repeat(64),
@@ -111,6 +116,7 @@ describe("Gemini Live token endpoint", () => {
     security.getIdempotency.mockResolvedValue(null);
     security.beginIdempotency.mockResolvedValue(true);
     security.completeIdempotency.mockResolvedValue(undefined);
+    security.deleteIdempotency.mockResolvedValue(undefined);
     security.release.mockResolvedValue(undefined);
     createToken.mockResolvedValue({
       token: "ephemeral",
@@ -159,6 +165,38 @@ describe("Gemini Live token endpoint", () => {
     expect(response.end).toHaveBeenCalled();
   });
 
+  it("recovers a completed token response before rate limiting", async () => {
+    security.getIdempotency.mockResolvedValueOnce({
+      token: "recovered-token",
+      model: "live",
+      reservationHandle: "recovered-handle",
+    });
+    const response = createResponse();
+    await tokenHandler({
+      method: "POST",
+      headers: { "x-client-request-id": "recover-id-00000001" },
+      body: { action: "recover" },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({ token: "recovered-token" });
+    expect(security.limits).not.toHaveBeenCalled();
+    expect(security.beginIdempotency).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges an accepted token response before rate limiting", async () => {
+    const response = createResponse();
+    await tokenHandler({
+      method: "POST",
+      headers: { "x-client-request-id": "acknowledge-id-0001" },
+      body: { action: "acknowledge" },
+    }, response);
+
+    expect(security.acknowledge).toHaveBeenCalledWith("user-1", "acknowledge-id-0001");
+    expect(response.statusCode).toBe(204);
+    expect(security.limits).not.toHaveBeenCalled();
+  });
+
   it("rolls back a renewal claim when Gemini token minting fails", async () => {
     createToken.mockRejectedValueOnce(new Error("Gemini token failure"));
     const response = createResponse();
@@ -202,7 +240,23 @@ describe("Gemini Live token endpoint", () => {
       "user-1",
       "11111111-1111-4111-8111-111111111111",
     );
+    expect(security.deleteIdempotency).toHaveBeenCalledWith("user-1", "request-id-0000004");
     expect(response.statusCode).toBe(500);
+  });
+
+  it("validates renewal handles before rate limiting or idempotency insertion", async () => {
+    security.hashHandle.mockReturnValueOnce(null);
+    const response = createResponse();
+
+    await tokenHandler({
+      method: "POST",
+      headers: { "x-client-request-id": "request-id-invalid01" },
+      body: { reservationHandle: "invalid-handle" },
+    }, response);
+
+    expect(response.statusCode).toBe(400);
+    expect(security.limits).not.toHaveBeenCalled();
+    expect(security.beginIdempotency).not.toHaveBeenCalled();
   });
 
   it("returns a stable 409 and rolls back when a renewal is nearly expired", async () => {

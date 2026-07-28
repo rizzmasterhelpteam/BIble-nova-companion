@@ -252,12 +252,12 @@ export const getVoiceTokenIdempotencyResponse = async (userId: string, requestId
   const { data, error } = await client
     .schema("private")
     .from("voice_token_idempotency")
-    .select("response, expires_at")
+    .select("response, expires_at, acknowledged_at")
     .eq("user_id", userId)
     .eq("request_id", requestId)
     .maybeSingle();
   if (error) throw new HttpError("Voice start is temporarily unavailable.", 503);
-  if (!data || Date.parse(data.expires_at) <= Date.now()) return null;
+  if (!data || data.acknowledged_at || Date.parse(data.expires_at) <= Date.now()) return null;
   return data.response && typeof data.response === "object" ? data.response : null;
 };
 
@@ -306,6 +306,37 @@ export const attachVoiceTokenIdempotencyLease = async (
     .eq("user_id", userId)
     .eq("request_id", requestId);
   if (error) throw new HttpError("Voice start is temporarily unavailable.", 503);
+};
+
+export const acknowledgeVoiceTokenIdempotency = async (userId: string, requestId: string) => {
+  if (!isValidVoiceRequestId(requestId)) {
+    throw new HttpError("Voice request identifier is invalid.", 400);
+  }
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .schema("private")
+    .from("voice_token_idempotency")
+    .update({ acknowledged_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("request_id", requestId)
+    .not("response", "is", null)
+    .select("request_id")
+    .maybeSingle();
+  if (error) throw new HttpError("Voice start acknowledgement failed.", 503);
+  if (!data) throw new HttpError("Voice start acknowledgement was not found.", 404);
+};
+
+export const deleteVoiceTokenIdempotency = async (userId: string, requestId: string) => {
+  if (!isValidVoiceRequestId(requestId)) return;
+  const client = getSupabaseAdminClient();
+  const { error } = await client
+    .schema("private")
+    .from("voice_token_idempotency")
+    .delete()
+    .eq("user_id", userId)
+    .eq("request_id", requestId)
+    .is("response", null);
+  if (error) console.error("Voice token idempotency cleanup failed:", error.message);
 };
 
 export const releaseVoiceSessionLease = async (userId: string, handleHash: string) => {

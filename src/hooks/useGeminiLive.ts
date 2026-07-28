@@ -41,7 +41,7 @@ type LiveTokenResponse = {
 };
 
 const PENDING_VOICE_RELEASE_KEY = "pending_voice_release_handle";
-const MAX_RESUMABLE_AUDIO_CHUNKS = 250;
+const PENDING_VOICE_TOKEN_REQUEST_KEY = "pending_voice_token_request_id";
 
 type VoiceErrorCode =
   | "subscription_required"
@@ -236,8 +236,6 @@ export function useGeminiLive({
   const endTimerRef = useRef<number | null>(null);
   const failureHandledRef = useRef(false);
   const sessionResumptionHandleRef = useRef<string | null>(null);
-  const nextClientMessageIndexRef = useRef(0);
-  const resumableAudioRef = useRef<Array<{ index: number; data: string }>>([]);
   const reservationHandleRef = useRef<string | null>(reservation?.handle ?? null);
   const reservationExpiresAtRef = useRef<string | null>(reservation?.expiresAt ?? null);
   const pendingReleaseHandleRef = useRef<string | null>(null);
@@ -268,6 +266,16 @@ export function useGeminiLive({
     }
   }, []);
 
+  const persistPendingTokenRequest = useCallback(async (requestId: string | null) => {
+    if (!isNativePlatform()) return;
+    try {
+      if (requestId) await nativeStorage.set(PENDING_VOICE_TOKEN_REQUEST_KEY, requestId);
+      else await nativeStorage.remove(PENDING_VOICE_TOKEN_REQUEST_KEY);
+    } catch {
+      // The in-memory request ID remains usable while this process is alive.
+    }
+  }, []);
+
   const retryPendingRelease = useCallback(async () => {
     const handle = pendingReleaseHandleRef.current;
     if (!handle || (typeof navigator !== "undefined" && !navigator.onLine)) return false;
@@ -292,11 +300,17 @@ export function useGeminiLive({
   useEffect(() => {
     if (!isNativePlatform()) return;
     let disposed = false;
-    void nativeStorage.get(PENDING_VOICE_RELEASE_KEY)
-      .then((handle) => {
-        if (disposed || !handle) return;
-        pendingReleaseHandleRef.current = handle;
-        void retryPendingRelease();
+    void Promise.all([
+      nativeStorage.get(PENDING_VOICE_RELEASE_KEY),
+      nativeStorage.get(PENDING_VOICE_TOKEN_REQUEST_KEY),
+    ])
+      .then(([handle, requestId]) => {
+        if (disposed) return;
+        if (requestId) tokenRequestIdRef.current = requestId;
+        if (handle) {
+          pendingReleaseHandleRef.current = handle;
+          void retryPendingRelease();
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -462,8 +476,6 @@ export function useGeminiLive({
       );
       suppressPlaybackRef.current = false;
       sessionResumptionHandleRef.current = null;
-      nextClientMessageIndexRef.current = 0;
-      resumableAudioRef.current = [];
       reservationHandleRef.current = null;
       reservationExpiresAtRef.current = null;
       onReservationChange(null);
@@ -568,8 +580,6 @@ export function useGeminiLive({
     setRetryUntil(null);
     setSessionNotice(null);
     if (!isReconnect) {
-      nextClientMessageIndexRef.current = 0;
-      resumableAudioRef.current = [];
       userTranscriptRef.current = "";
       assistantTranscriptRef.current = "";
       userTranscriptFinalizedRef.current = false;
@@ -586,6 +596,46 @@ export function useGeminiLive({
     try {
       if (!isReconnect) await retryPendingRelease();
       assertStartIsCurrent();
+      if (!isReconnect && isNativePlatform() && !tokenRequestIdRef.current) {
+        tokenRequestIdRef.current = await nativeStorage
+          .get(PENDING_VOICE_TOKEN_REQUEST_KEY)
+          .catch(() => null);
+        assertStartIsCurrent();
+      }
+      let recoveredTokenData: LiveTokenResponse | null = null;
+      if (!isReconnect && tokenRequestIdRef.current) {
+        const recoveryResponse = await apiFetch("/api/live/token", {
+          method: "POST",
+          signal: abortController.signal,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Client-Request-Id": tokenRequestIdRef.current,
+          },
+          body: JSON.stringify({ action: "recover" }),
+        });
+        assertStartIsCurrent();
+        const recoveryData = (await recoveryResponse.json().catch(() => ({}))) as LiveTokenResponse;
+        assertStartIsCurrent();
+        if (recoveryResponse.ok && recoveryData.token && recoveryData.model) {
+          recoveredTokenData = recoveryData;
+          if (recoveryData.reservationHandle && recoveryData.reservationExpiresAt) {
+            reservationHandleRef.current = recoveryData.reservationHandle;
+            reservationExpiresAtRef.current = recoveryData.reservationExpiresAt;
+            onReservationChange({
+              handle: recoveryData.reservationHandle,
+              expiresAt: recoveryData.reservationExpiresAt,
+            });
+          }
+        } else if (recoveryResponse.status === 404) {
+          tokenRequestIdRef.current = null;
+          await persistPendingTokenRequest(null);
+        } else {
+          throw new VoiceStartError(
+            recoveryData.reason || "connection_failed",
+            recoveryData.error || "Recovering your Voice session. Please try again shortly.",
+          );
+        }
+      }
       const activatedAudioContext = audioContextRef.current || getAudioContext();
       audioContextRef.current = activatedAudioContext;
       await activatedAudioContext.resume();
@@ -607,21 +657,26 @@ export function useGeminiLive({
           });
         });
       }
-      const eligibilityResponse = await apiFetch("/api/live/eligibility", {
-        method: "GET",
-        signal: abortController.signal,
-        headers: reservationHandle
-          ? { "X-Voice-Reservation": reservationHandle }
-          : undefined,
-      });
-      assertStartIsCurrent();
-      const eligibility = (await eligibilityResponse.json().catch(() => ({}))) as VoiceEligibilityResponse;
-      assertStartIsCurrent();
-      if (!eligibilityResponse.ok) {
-        throw new VoiceStartError(
-          "eligibility_failed",
-          eligibility.error || "Voice eligibility could not be checked.",
-        );
+      let eligibility: VoiceEligibilityResponse;
+      if (recoveredTokenData) {
+        eligibility = { available: true, reason: "reservation_resume" };
+      } else {
+        const eligibilityResponse = await apiFetch("/api/live/eligibility", {
+          method: "GET",
+          signal: abortController.signal,
+          headers: reservationHandle
+            ? { "X-Voice-Reservation": reservationHandle }
+            : undefined,
+        });
+        assertStartIsCurrent();
+        eligibility = (await eligibilityResponse.json().catch(() => ({}))) as VoiceEligibilityResponse;
+        assertStartIsCurrent();
+        if (!eligibilityResponse.ok) {
+          throw new VoiceStartError(
+            "eligibility_failed",
+            eligibility.error || "Voice eligibility could not be checked.",
+          );
+        }
       }
       if (!eligibility.available) {
         const reason = eligibility.reason === "subscription_required"
@@ -659,41 +714,52 @@ export function useGeminiLive({
       const renewingHandle = eligibility.reason === "reservation_resume"
         ? reservationHandleRef.current
         : null;
-      tokenRequestIdRef.current ||= crypto.randomUUID();
-      const response = await apiFetch(
-        "/api/live/token",
-        renewingHandle
-          ? {
-              method: "POST",
-              signal: abortController.signal,
-              headers: {
-                "Content-Type": "application/json",
-                "X-Client-Request-Id": tokenRequestIdRef.current,
+      let data = recoveredTokenData;
+      if (!data) {
+        tokenRequestIdRef.current ||= crypto.randomUUID();
+        await persistPendingTokenRequest(tokenRequestIdRef.current);
+        assertStartIsCurrent();
+        const response = await apiFetch(
+          "/api/live/token",
+          renewingHandle
+            ? {
+                method: "POST",
+                signal: abortController.signal,
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Client-Request-Id": tokenRequestIdRef.current,
+                },
+                body: JSON.stringify({ reservationHandle: renewingHandle }),
+              }
+            : {
+                method: "POST",
+                signal: abortController.signal,
+                headers: { "X-Client-Request-Id": tokenRequestIdRef.current },
               },
-              body: JSON.stringify({ reservationHandle: renewingHandle }),
-            }
-          : {
-              method: "POST",
-              signal: abortController.signal,
-              headers: { "X-Client-Request-Id": tokenRequestIdRef.current },
-            },
-      );
-      assertStartIsCurrent();
-      const data = (await response.json().catch(() => ({}))) as LiveTokenResponse;
-      assertStartIsCurrent();
-      if (!response.ok || !data.token || !data.model) {
-        if (data.reason === "reservation_invalid" || data.reason === "renewal_unavailable") {
-          reservationHandleRef.current = null;
-          reservationExpiresAtRef.current = null;
-          onReservationChange(null);
-        }
-        throw new VoiceStartError(
-          data.reason || "connection_failed",
-          data.error || "Voice is temporarily unavailable. You can continue in Chat.",
         );
+        assertStartIsCurrent();
+        data = (await response.json().catch(() => ({}))) as LiveTokenResponse;
+        assertStartIsCurrent();
+        if (!response.ok || !data.token || !data.model) {
+          if (data.reason === "reservation_invalid" || data.reason === "renewal_unavailable") {
+            reservationHandleRef.current = null;
+            reservationExpiresAtRef.current = null;
+            onReservationChange(null);
+          }
+          throw new VoiceStartError(
+            data.reason || "connection_failed",
+            data.error || "Voice is temporarily unavailable. You can continue in Chat.",
+          );
+        }
       }
-      tokenRequestIdRef.current = null;
       if (!guardLiveTokenTiming(data, releaseAudio)) {
+        if (data.reservationHandle) {
+          pendingReleaseHandleRef.current = data.reservationHandle;
+          await persistPendingRelease(data.reservationHandle);
+          void retryPendingRelease();
+        }
+        tokenRequestIdRef.current = null;
+        await persistPendingTokenRequest(null);
         reservationHandleRef.current = null;
         reservationExpiresAtRef.current = null;
         onReservationChange(null);
@@ -709,6 +775,29 @@ export function useGeminiLive({
           handle: data.reservationHandle,
           expiresAt: data.reservationExpiresAt,
         });
+      }
+      if (tokenRequestIdRef.current) {
+        const acknowledgedRequestId = tokenRequestIdRef.current;
+        const acknowledgement = await apiFetch("/api/live/token", {
+          method: "POST",
+          signal: abortController.signal,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Client-Request-Id": acknowledgedRequestId,
+          },
+          body: JSON.stringify({ action: "acknowledge" }),
+        });
+        assertStartIsCurrent();
+        if (!acknowledgement.ok) {
+          throw new VoiceStartError(
+            "connection_failed",
+            "Voice startup could not be confirmed. Please try again.",
+          );
+        }
+        if (tokenRequestIdRef.current === acknowledgedRequestId) {
+          tokenRequestIdRef.current = null;
+          await persistPendingTokenRequest(null);
+        }
       }
       const { GoogleGenAI, Modality } = await import("@google/genai");
       assertStartIsCurrent();
@@ -730,7 +819,6 @@ export function useGeminiLive({
         outputAudioTranscription: {},
         sessionResumption: {
           handle: sessionResumptionHandleRef.current || undefined,
-          transparent: true,
         },
         historyConfig: {
           initialHistoryInClientContent: true,
@@ -755,22 +843,12 @@ export function useGeminiLive({
           onmessage: (message) => {
             if (stopRequestedRef.current || startGenerationRef.current !== startGeneration) return;
             const providerMessage = message as {
-              sessionResumptionUpdate?: {
-                resumable?: boolean;
-                newHandle?: string;
-                lastConsumedClientMessageIndex?: string | number;
-              };
+              sessionResumptionUpdate?: { resumable?: boolean; newHandle?: string };
               goAway?: { timeLeft?: unknown };
             };
             const resumptionUpdate = providerMessage.sessionResumptionUpdate;
             if (resumptionUpdate?.resumable && resumptionUpdate.newHandle) {
               sessionResumptionHandleRef.current = resumptionUpdate.newHandle;
-            }
-            const lastConsumed = Number(resumptionUpdate?.lastConsumedClientMessageIndex);
-            if (Number.isFinite(lastConsumed)) {
-              resumableAudioRef.current = resumableAudioRef.current.filter(
-                ({ index }) => index > lastConsumed,
-              );
             }
             const goAwayDelay = getGoAwayTimeLeftMs(providerMessage.goAway?.timeLeft);
             if (goAwayDelay > 0 && reconnectTimerRef.current === null) {
@@ -876,13 +954,6 @@ export function useGeminiLive({
       suppressPlaybackRef.current = false;
       const initialHistory = createInitialHistoryPayload(history);
       if (initialHistory && !resumingProviderSession) session.sendClientContent(initialHistory);
-      if (resumingProviderSession) {
-        resumableAudioRef.current.forEach(({ data: bufferedData }) => {
-          session.sendRealtimeInput({
-            audio: { data: bufferedData, mimeType: `audio/pcm;rate=${INPUT_SAMPLE_RATE}` },
-          });
-        });
-      }
 
       const audioContext = audioContextRef.current || getAudioContext();
       audioContextRef.current = audioContext;
@@ -896,17 +967,6 @@ export function useGeminiLive({
         if (stopRequestedRef.current || isMutedRef.current) return;
         audioStreamEndedRef.current = false;
         const data = bytesToBase64(pcm);
-        resumableAudioRef.current.push({
-          index: nextClientMessageIndexRef.current,
-          data,
-        });
-        nextClientMessageIndexRef.current += 1;
-        if (resumableAudioRef.current.length > MAX_RESUMABLE_AUDIO_CHUNKS) {
-          resumableAudioRef.current.splice(
-            0,
-            resumableAudioRef.current.length - MAX_RESUMABLE_AUDIO_CHUNKS,
-          );
-        }
         session.sendRealtimeInput({
           audio: { data, mimeType: `audio/pcm;rate=${INPUT_SAMPLE_RATE}` },
         });
@@ -1038,7 +1098,7 @@ export function useGeminiLive({
         startingRef.current = false;
       }
     }
-  }, [finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, onReservationChange, playAudioChunk, releaseAudio, retryPendingRelease, stop, stopPlayback]);
+  }, [finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, onReservationChange, persistPendingRelease, persistPendingTokenRequest, playAudioChunk, releaseAudio, retryPendingRelease, stop, stopPlayback]);
 
   useEffect(() => {
     startRef.current = start;
