@@ -9,6 +9,10 @@
   animation: app-route-enter 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.native-android .app-route-enter {
+  animation: none !important;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme {
@@ -988,6 +992,24 @@
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-accent) 16%, transparent);
   }
 
+  .native-android .onboarding-screen::before {
+    background: none;
+  }
+
+  .native-android .onboarding-screen .onboarding-surface,
+  .native-android .onboarding-screen .onboarding-choice,
+  .native-android .onboarding-screen .onboarding-choice[aria-checked="true"],
+  .native-android .onboarding-screen .app-primary-button,
+  .native-android .onboarding-screen .app-secondary-button {
+    box-shadow: none !important;
+    transition-duration: 0ms !important;
+  }
+
+  .native-android .onboarding-screen .onboarding-choice,
+  .native-android .onboarding-screen .onboarding-choice * {
+    transform: none !important;
+  }
+
   .onboarding-progress-track {
     background: var(--app-divider);
   }
@@ -1279,6 +1301,18 @@
     .app-card-hover:active {
       transform: none !important;
     }
+  }
+
+  .native-android .onboarding-screen .app-orb,
+  .native-android .onboarding-screen [style*="blur"] {
+    display: none !important;
+    filter: none !important;
+  }
+
+  .native-android .onboarding-screen,
+  .native-android .onboarding-screen * {
+    animation-duration: 0ms !important;
+    transition-duration: 0ms !important;
   }
 
   @keyframes ash-rise {

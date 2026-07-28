@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   createGeminiLiveEphemeralToken,
   getVoiceSessionConfig,
@@ -35,6 +36,16 @@ const setCorsHeaders = (res: any) => {
 const getRemainingSeconds = (expiresAt: string) =>
   Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1_000));
 
+const hashUserId = (userId: string) =>
+  createHash("sha256").update(userId).digest("hex").slice(0, 16);
+
+const logTokenEvent = (event: string, details: Record<string, unknown>) => {
+  console.info("[live/token]", { event, ...details });
+};
+
+const getSafeErrorReason = (error: unknown) =>
+  (error instanceof Error ? error.message : String(error)).slice(0, 240);
+
 export default async function handler(req: any, res: any) {
   setCorsHeaders(res);
 
@@ -50,11 +61,25 @@ export default async function handler(req: any, res: any) {
 
   let activeUserId: string | null = null;
   let activeRequestId: string | null = null;
+  let activeAction = "unknown";
   let idempotencyStarted = false;
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
     activeUserId = userId;
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
+    const requestHeader = req.headers?.["x-client-request-id"];
+    const requestId = Array.isArray(requestHeader) ? requestHeader[0] : requestHeader;
+    activeAction = typeof body.action === "string"
+      ? body.action
+      : body.reservationHandle !== undefined
+        ? "renew"
+        : "start";
+    const userIdHash = hashUserId(userId);
+    logTokenEvent("request", {
+      action: activeAction,
+      userIdHash,
+      requestIdPresent: typeof requestId === "string",
+    });
     if (body.action === "release") {
       const handleHash = hashVoiceReservationHandle(body.reservationHandle);
       if (!handleHash) {
@@ -62,12 +87,11 @@ export default async function handler(req: any, res: any) {
         return;
       }
       await releaseVoiceSessionLease(userId, handleHash);
+      logTokenEvent("reservation-released", { action: activeAction, userIdHash });
       res.status(204).end();
       return;
     }
 
-    const requestHeader = req.headers?.["x-client-request-id"];
-    const requestId = Array.isArray(requestHeader) ? requestHeader[0] : requestHeader;
     if (typeof requestId !== "string") {
       res.status(400).json({ error: "Voice request identifier is required.", reason: "connection_failed" });
       return;
@@ -75,6 +99,7 @@ export default async function handler(req: any, res: any) {
     activeRequestId = requestId;
     if (body.action === "acknowledge") {
       await acknowledgeVoiceTokenIdempotency(userId, requestId);
+      logTokenEvent("acknowledged", { action: activeAction, userIdHash, requestIdPresent: true });
       res.status(204).end();
       return;
     }
@@ -82,9 +107,17 @@ export default async function handler(req: any, res: any) {
       await cleanupExpiredVoiceTokenIdempotency();
       const previousResponse = await getVoiceTokenIdempotencyResponse(userId, requestId);
       if (previousResponse) {
+        logTokenEvent("recovery", { action: activeAction, userIdHash, requestIdPresent: true, recoveryHit: true });
         res.status(200).json(previousResponse);
         return;
       }
+      logTokenEvent("recovery", {
+        action: activeAction,
+        userIdHash,
+        requestIdPresent: true,
+        recoveryHit: false,
+        recoveryReason: "no_row",
+      });
       res.status(404).json({ error: "No recoverable Voice start was found.", reason: "connection_failed" });
       return;
     }
@@ -112,9 +145,11 @@ export default async function handler(req: any, res: any) {
     if (!await beginVoiceTokenIdempotency(userId, requestId)) {
       const completedResponse = await getVoiceTokenIdempotencyResponse(userId, requestId);
       if (completedResponse) {
+        logTokenEvent("idempotency-hit", { action: activeAction, userIdHash, requestIdPresent: true });
         res.status(200).json(completedResponse);
         return;
       }
+      logTokenEvent("idempotency-in-progress", { action: activeAction, userIdHash, requestIdPresent: true });
       res.status(409).json({ error: "Voice start is already in progress. Please retry shortly.", reason: "connection_failed" });
       return;
     }
@@ -122,6 +157,7 @@ export default async function handler(req: any, res: any) {
 
     if (body.reservationHandle !== undefined) {
       const renewal = await claimVoiceSessionRenewal(userId, renewalHandleHash!);
+      logTokenEvent("eligibility", { action: activeAction, userIdHash, eligible: true, mode: "renewal" });
       try {
         const shadowNotes = await getServerShadowNotes(userId);
         const session = await createGeminiLiveEphemeralToken({
@@ -138,6 +174,12 @@ export default async function handler(req: any, res: any) {
         await completeVoiceTokenIdempotency(userId, requestId, responsePayload, renewal.leaseId);
         res.status(200).json(responsePayload);
       } catch (error) {
+        logTokenEvent("token-creation-failed", {
+          action: activeAction,
+          userIdHash,
+          reason: getSafeErrorReason(error),
+          renewal: true,
+        });
         await rollbackVoiceSessionRenewal(userId, renewal.claimHash);
         throw error;
       }
@@ -154,6 +196,7 @@ export default async function handler(req: any, res: any) {
       resetOffsetMinutes,
       handleHash,
     );
+    logTokenEvent("eligibility", { action: activeAction, userIdHash, eligible: true, mode: "new_reservation" });
     try {
       await attachVoiceTokenIdempotencyLease(userId, requestId, lease.leaseId);
       const shadowNotes = await getServerShadowNotes(userId);
@@ -170,6 +213,12 @@ export default async function handler(req: any, res: any) {
       await completeVoiceTokenIdempotency(userId, requestId, responsePayload, lease.leaseId);
       res.status(200).json(responsePayload);
     } catch (error) {
+      logTokenEvent("token-creation-failed", {
+        action: activeAction,
+        userIdHash,
+        reason: getSafeErrorReason(error),
+        renewal: false,
+      });
       await cancelUnstartedVoiceSessionLease(userId, lease.leaseId);
       throw error;
     }
@@ -186,8 +235,15 @@ export default async function handler(req: any, res: any) {
         }
       : getHttpErrorDetails(error);
     if (details.statusCode >= 500) {
-      console.error("Gemini Live token request failed:", error instanceof Error ? error.message : error);
+      console.error("Gemini Live token request failed:", getSafeErrorReason(error));
     }
+    logTokenEvent("failure", {
+      action: activeAction,
+      userIdHash: activeUserId ? hashUserId(activeUserId) : null,
+      requestIdPresent: Boolean(activeRequestId),
+      statusCode: details.statusCode,
+      reason: getSafeErrorReason(error),
+    });
     if (details.retryAfterSeconds) {
       res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
     }

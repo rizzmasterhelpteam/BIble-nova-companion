@@ -32,6 +32,8 @@ type VoiceModeProps = {
   onReservationChange: (reservation: { handle: string; expiresAt: string } | null) => void;
   liveReady: boolean;
   isCheckingLiveReady: boolean;
+  apiStatusConnectionError?: string;
+  onRetryLiveReady: () => Promise<boolean>;
 };
 
 const STATE_HEADLINES: Record<VoiceState, string> = {
@@ -100,6 +102,8 @@ export default function VoiceMode({
   onReservationChange,
   liveReady,
   isCheckingLiveReady,
+  apiStatusConnectionError,
+  onRetryLiveReady,
 }: VoiceModeProps) {
   const { isCompactPhone, isShortPhone } = useMobileViewport();
   const navigate = useNavigate();
@@ -137,6 +141,8 @@ export default function VoiceMode({
     onAssistantTranscript: handleAssistantTranscript,
     reservation,
     onReservationChange,
+    liveReady,
+    apiStatusConnectionError,
   });
   const stopLive = live.stop;
   const premiumRequired = live.errorCode === "subscription_required";
@@ -243,6 +249,19 @@ export default function VoiceMode({
     void persistVoiceNotes(true);
   }, [persistVoiceNotes, stopLive]);
 
+  const handleStart = useCallback(async () => {
+    if (premiumRequired) {
+      navigate("/paywall");
+      return;
+    }
+
+    let ready = liveReady;
+    if (!ready || live.state === "error" || live.state === "permission-denied" || live.state === "offline") {
+      ready = await onRetryLiveReady();
+    }
+    if (ready) await live.start();
+  }, [live.start, liveReady, navigate, onRetryLiveReady, premiumRequired]);
+
   const handleExitVoice = useCallback(() => {
     if (exitPromiseRef.current) return exitPromiseRef.current;
 
@@ -284,8 +303,8 @@ export default function VoiceMode({
     ? "Unlock Voice"
     : isCheckingLiveReady
       ? "Checking Voice"
-    : !liveReady
-      ? "Voice unavailable"
+      : !liveReady || live.state === "error" || live.state === "permission-denied" || live.state === "offline"
+      ? "Check connection and retry"
     : cooldownActive
       ? `Available in ${cooldownMinutes} min`
     : live.state === "ended"
@@ -295,7 +314,7 @@ export default function VoiceMode({
   const sessionNotice = premiumRequired
     ? "Unlock private, voice-led reflections with your premium plan."
     : !isCheckingLiveReady && !liveReady
-      ? "Voice mode is not configured on the server yet. You can continue in Chat."
+      ? apiStatusConnectionError || "Voice mode is temporarily unavailable. You can retry the connection or continue in Chat."
     : live.error || live.sessionNotice;
   const sessionNoticeIsError = (Boolean(live.error) || (!isCheckingLiveReady && !liveReady)) && !premiumRequired;
 
@@ -393,8 +412,8 @@ export default function VoiceMode({
             {showStartButton ? (
               <button
                 type="button"
-                onClick={() => premiumRequired ? navigate("/paywall") : void live.start()}
-                disabled={isTyping || cooldownActive || isCheckingLiveReady || !liveReady}
+                onClick={() => void handleStart()}
+                disabled={isTyping || cooldownActive || isCheckingLiveReady}
                 className="voice-primary-action touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 text-[15px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {premiumRequired ? <LockKeyhole className="h-5 w-5" /> : live.state === "error" || live.state === "permission-denied" || live.state === "offline" ? <RotateCcw className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}

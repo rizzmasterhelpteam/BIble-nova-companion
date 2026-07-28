@@ -4,7 +4,7 @@ import type {
   LiveConnectConfig,
 } from "@google/genai";
 import { apiFetch } from "../lib/apiClient";
-import { isNativePlatform } from "../lib/native/platform";
+import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
 import { refreshNativeSubscriptionEntitlement } from "../lib/native/subscriptionSync";
 import {
@@ -86,6 +86,8 @@ type UseGeminiLiveOptions = {
   onAssistantTranscript: (text: string) => void;
   reservation: { handle: string; expiresAt: string } | null;
   onReservationChange: (reservation: { handle: string; expiresAt: string } | null) => void;
+  liveReady: boolean;
+  apiStatusConnectionError?: string;
 };
 
 type GeminiLiveSession = Awaited<ReturnType<GoogleGenAIType["live"]["connect"]>>;
@@ -196,6 +198,8 @@ export function useGeminiLive({
   onAssistantTranscript,
   reservation,
   onReservationChange,
+  liveReady,
+  apiStatusConnectionError,
 }: UseGeminiLiveOptions) {
   const [state, setState] = useState<VoiceState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -228,6 +232,8 @@ export function useGeminiLive({
   const mountedRef = useRef(true);
   const startGenerationRef = useRef(0);
   const startAbortControllerRef = useRef<AbortController | null>(null);
+  const isRequestingPermissionRef = useRef(false);
+  const permissionPromptGraceUntilRef = useRef(0);
   const startingRef = useRef(false);
   const startRef = useRef<((isReconnect?: boolean) => Promise<void>) | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -242,6 +248,18 @@ export function useGeminiLive({
   const tokenRequestIdRef = useRef<string | null>(null);
   const stopActionRef = useRef<ReturnType<typeof createIdempotentAsyncAction> | null>(null);
   if (!stopActionRef.current) stopActionRef.current = createIdempotentAsyncAction();
+
+  const logVoiceDiagnostics = useCallback((event: string, details: Record<string, unknown> = {}) => {
+    console.info("[Bible Nova voice diagnostics]", {
+      event,
+      platform: isNativePlatform() ? getNativePlatform() : "web",
+      liveReady,
+      apiStatusConnectionError: apiStatusConnectionError || null,
+      online: typeof navigator === "undefined" ? null : navigator.onLine,
+      getUserMediaAvailable: Boolean(typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia),
+      ...details,
+    });
+  }, [apiStatusConnectionError, liveReady]);
 
   useEffect(() => () => {
     mountedRef.current = false;
@@ -296,6 +314,21 @@ export function useGeminiLive({
       return false;
     }
   }, [persistPendingRelease]);
+
+  const clearPendingTokenRequest = useCallback(async () => {
+    tokenRequestIdRef.current = null;
+    await persistPendingTokenRequest(null);
+  }, [persistPendingTokenRequest]);
+
+  const releaseReservation = useCallback(async (handle = reservationHandleRef.current) => {
+    reservationHandleRef.current = null;
+    reservationExpiresAtRef.current = null;
+    onReservationChange(null);
+    if (!handle) return;
+    pendingReleaseHandleRef.current = handle;
+    await persistPendingRelease(handle);
+    void retryPendingRelease();
+  }, [onReservationChange, persistPendingRelease, retryPendingRelease]);
 
   useEffect(() => {
     if (!isNativePlatform()) return;
@@ -465,7 +498,6 @@ export function useGeminiLive({
   const stop = useCallback((nextState: VoiceState = "ended") => {
     return stopActionRef.current!(async () => {
       stopRequestedRef.current = true;
-      const reservationHandle = reservationHandleRef.current;
       startGenerationRef.current += 1;
       startAbortControllerRef.current?.abort();
       startAbortControllerRef.current = null;
@@ -476,15 +508,10 @@ export function useGeminiLive({
       );
       suppressPlaybackRef.current = false;
       sessionResumptionHandleRef.current = null;
-      reservationHandleRef.current = null;
-      reservationExpiresAtRef.current = null;
-      onReservationChange(null);
-      if (reservationHandle) {
-        pendingReleaseHandleRef.current = reservationHandle;
-        void persistPendingRelease(reservationHandle).then(retryPendingRelease);
-      }
       if (mountedRef.current) setState("ending");
       clearTimers();
+      await releaseReservation();
+      await clearPendingTokenRequest();
       finalizeUserTranscript();
       finalizeAssistantTranscript();
       releaseAudio();
@@ -503,10 +530,9 @@ export function useGeminiLive({
     clearTimers,
     finalizeAssistantTranscript,
     finalizeUserTranscript,
-    onReservationChange,
-    persistPendingRelease,
+    clearPendingTokenRequest,
     releaseAudio,
-    retryPendingRelease,
+    releaseReservation,
   ]);
 
   const handleConnectionFailure = useCallback((
@@ -514,6 +540,8 @@ export function useGeminiLive({
     message: string,
   ) => {
     if (stopRequestedRef.current || failureHandledRef.current || sessionRef.current !== failedSession) return;
+
+    logVoiceDiagnostics("gemini-live-connection-failure", { message });
 
     failureHandledRef.current = true;
     audioStreamEndedRef.current = signalAudioStreamEnd(failedSession, audioStreamEndedRef.current);
@@ -543,11 +571,14 @@ export function useGeminiLive({
       return;
     }
     sessionResumptionHandleRef.current = null;
+    clearTimers();
+    void releaseReservation();
+    void clearPendingTokenRequest();
     finalizeUserTranscript();
     finalizeAssistantTranscript();
     setState("error");
     setError(message);
-  }, [finalizeAssistantTranscript, finalizeUserTranscript, releaseAudio]);
+  }, [clearPendingTokenRequest, clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, logVoiceDiagnostics, releaseAudio, releaseReservation]);
 
   const start = useCallback(async (isReconnect = false) => {
     if (startingRef.current || sessionRef.current) return;
@@ -579,6 +610,12 @@ export function useGeminiLive({
     setRetryAfterSeconds(null);
     setRetryUntil(null);
     setSessionNotice(null);
+    logVoiceDiagnostics("start-requested", {
+      isReconnect,
+      audioContextState: audioContextRef.current?.state || null,
+      hasReservation: Boolean(reservationHandleRef.current),
+      hasPendingTokenRequest: Boolean(tokenRequestIdRef.current),
+    });
     if (!isReconnect) {
       userTranscriptRef.current = "";
       assistantTranscriptRef.current = "";
@@ -587,8 +624,13 @@ export function useGeminiLive({
     }
 
     if (typeof navigator === "undefined" || !navigator.onLine) {
+      clearTimers();
+      releaseAudio();
+      await releaseReservation();
+      await clearPendingTokenRequest();
       setState("offline");
       setError("Reconnect to the internet to start Voice mode.");
+      startAbortControllerRef.current = null;
       startingRef.current = false;
       return;
     }
@@ -616,6 +658,12 @@ export function useGeminiLive({
         assertStartIsCurrent();
         const recoveryData = (await recoveryResponse.json().catch(() => ({}))) as LiveTokenResponse;
         assertStartIsCurrent();
+        logVoiceDiagnostics("token-recovery-response", {
+          status: recoveryResponse.status,
+          ok: recoveryResponse.ok,
+          recoveryHit: Boolean(recoveryResponse.ok && recoveryData.token && recoveryData.model),
+          reason: recoveryData.reason || null,
+        });
         if (recoveryResponse.ok && recoveryData.token && recoveryData.model) {
           recoveredTokenData = recoveryData;
           if (recoveryData.reservationHandle && recoveryData.reservationExpiresAt) {
@@ -626,9 +674,8 @@ export function useGeminiLive({
               expiresAt: recoveryData.reservationExpiresAt,
             });
           }
-        } else if (recoveryResponse.status === 404) {
-          tokenRequestIdRef.current = null;
-          await persistPendingTokenRequest(null);
+        } else if (recoveryResponse.status === 404 || recoveryResponse.status === 406) {
+          await clearPendingTokenRequest();
         } else {
           throw new VoiceStartError(
             recoveryData.reason || "connection_failed",
@@ -638,8 +685,10 @@ export function useGeminiLive({
       }
       const activatedAudioContext = audioContextRef.current || getAudioContext();
       audioContextRef.current = activatedAudioContext;
+      logVoiceDiagnostics("audio-context-created", { state: activatedAudioContext.state });
       await activatedAudioContext.resume();
       assertStartIsCurrent();
+      logVoiceDiagnostics("audio-context-ready", { state: activatedAudioContext.state });
       setState("requesting-permission");
       const knownExpiry = reservationExpiresAtRef.current
         ? Date.parse(reservationExpiresAtRef.current)
@@ -671,6 +720,13 @@ export function useGeminiLive({
         assertStartIsCurrent();
         eligibility = (await eligibilityResponse.json().catch(() => ({}))) as VoiceEligibilityResponse;
         assertStartIsCurrent();
+        logVoiceDiagnostics("eligibility-response", {
+          status: eligibilityResponse.status,
+          ok: eligibilityResponse.ok,
+          available: eligibility.available === true,
+          reason: eligibility.reason || null,
+          retryAfterSeconds: eligibility.retryAfterSeconds ?? null,
+        });
         if (!eligibilityResponse.ok) {
           throw new VoiceStartError(
             "eligibility_failed",
@@ -697,11 +753,41 @@ export function useGeminiLive({
         onReservationChange(null);
       }
       if (!navigator.mediaDevices?.getUserMedia) {
+        logVoiceDiagnostics("media-unavailable", {
+          permissionDenied: false,
+          missingMediaDevices: true,
+        });
         throw new Error("Voice is not supported on this device.");
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
+      isRequestingPermissionRef.current = true;
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+      } catch (mediaError) {
+        const mediaName = mediaError instanceof DOMException
+          ? mediaError.name
+          : mediaError instanceof Error
+            ? mediaError.name
+            : "UnknownError";
+        const mediaMessage = mediaError instanceof Error ? mediaError.message : "Microphone access failed.";
+        const permissionDenied = /notallowed|permission|denied/i.test(`${mediaName} ${mediaMessage}`);
+        logVoiceDiagnostics("microphone-permission-failure", {
+          permissionDenied,
+          missingMediaDevices: false,
+          errorName: mediaName,
+          error: mediaMessage,
+        });
+        throw new Error(
+          permissionDenied
+            ? "Microphone access is needed for Voice mode. You can continue in Chat."
+            : `Microphone could not start: ${mediaMessage}`,
+        );
+      } finally {
+        isRequestingPermissionRef.current = false;
+        permissionPromptGraceUntilRef.current = Date.now() + 1_000;
+      }
       try {
         assertStartIsCurrent();
       } catch (error) {
@@ -740,6 +826,14 @@ export function useGeminiLive({
         assertStartIsCurrent();
         data = (await response.json().catch(() => ({}))) as LiveTokenResponse;
         assertStartIsCurrent();
+        logVoiceDiagnostics("token-response", {
+          status: response.status,
+          ok: response.ok,
+          hasToken: Boolean(data.token),
+          model: data.model || null,
+          reason: data.reason || null,
+          reservationReturned: Boolean(data.reservationHandle),
+        });
         if (!response.ok || !data.token || !data.model) {
           if (data.reason === "reservation_invalid" || data.reason === "renewal_unavailable") {
             reservationHandleRef.current = null;
@@ -753,16 +847,8 @@ export function useGeminiLive({
         }
       }
       if (!guardLiveTokenTiming(data, releaseAudio)) {
-        if (data.reservationHandle) {
-          pendingReleaseHandleRef.current = data.reservationHandle;
-          await persistPendingRelease(data.reservationHandle);
-          void retryPendingRelease();
-        }
-        tokenRequestIdRef.current = null;
-        await persistPendingTokenRequest(null);
-        reservationHandleRef.current = null;
-        reservationExpiresAtRef.current = null;
-        onReservationChange(null);
+        await releaseReservation(data.reservationHandle || undefined);
+        await clearPendingTokenRequest();
         throw new VoiceStartError(
           "renewal_unavailable",
           "This Voice reservation is no longer available.",
@@ -836,6 +922,7 @@ export function useGeminiLive({
         config: liveConfig,
         callbacks: {
           onopen: () => {
+            logVoiceDiagnostics("gemini-live-onopen", { model: data.model });
             if (startGenerationRef.current === startGeneration && !stopRequestedRef.current) {
               setState("ready");
             }
@@ -910,6 +997,11 @@ export function useGeminiLive({
           },
           onerror: (event) => {
             const details = event as { name?: string; message?: string };
+            logVoiceDiagnostics("gemini-live-onerror", {
+              name: details?.name || "LiveConnectionError",
+              error: details?.message || "No provider message was supplied.",
+              model: data.model,
+            });
             console.warn("Gemini Live connection error", {
               name: details?.name || "LiveConnectionError",
               message: details?.message || "No provider message was supplied.",
@@ -925,6 +1017,11 @@ export function useGeminiLive({
           },
           onclose: (event) => {
             const details = event as { code?: number; reason?: string };
+            logVoiceDiagnostics("gemini-live-onclose", {
+              code: details?.code ?? null,
+              reason: details?.reason || "No close reason was supplied.",
+              model: data.model,
+            });
             console.warn("Gemini Live connection closed", {
               code: details?.code ?? null,
               reason: details?.reason || "No close reason was supplied.",
@@ -959,6 +1056,7 @@ export function useGeminiLive({
       audioContextRef.current = audioContext;
       if (audioContext.state !== "running") await audioContext.resume();
       assertStartIsCurrent();
+      logVoiceDiagnostics("audio-context-connected", { state: audioContext.state });
       const source = audioContext.createMediaStreamSource(stream);
       const muteGain = audioContext.createGain();
       muteGain.gain.value = 0;
@@ -973,13 +1071,17 @@ export function useGeminiLive({
       };
 
       let processor: ScriptProcessorNode | AudioWorkletNode | null = null;
-      if (audioContext.audioWorklet && typeof AudioWorkletNode !== "undefined") {
+      let processorMode: "audio-worklet" | "script-processor" = "script-processor";
+      const audioWorkletAvailable = Boolean(audioContext.audioWorklet && typeof AudioWorkletNode !== "undefined");
+      let audioWorkletLoaded = false;
+      if (audioWorkletAvailable) {
         try {
           const workletUrl = new URL(
             "audio/gemini-mic-processor.js",
             document.baseURI,
           ).toString();
           await audioContext.audioWorklet.addModule(workletUrl);
+          audioWorkletLoaded = true;
           assertStartIsCurrent();
           const worklet = new AudioWorkletNode(audioContext, "gemini-mic-processor", {
             numberOfInputs: 1,
@@ -1000,8 +1102,12 @@ export function useGeminiLive({
             sendPcmAudio(new Uint8Array(event.data));
           };
           processor = worklet;
+          processorMode = "audio-worklet";
         } catch (workletError) {
           console.warn("AudioWorklet unavailable; using legacy microphone processing.", workletError);
+          logVoiceDiagnostics("audio-worklet-fallback", {
+            error: workletError instanceof Error ? workletError.message : String(workletError),
+          });
         }
       }
 
@@ -1017,6 +1123,12 @@ export function useGeminiLive({
         };
         processor = fallbackProcessor;
       }
+      logVoiceDiagnostics("audio-input-processor", {
+        mode: processorMode,
+        audioWorkletAvailable,
+        audioWorkletLoaded,
+        scriptProcessorFallback: processorMode === "script-processor",
+      });
 
       source.connect(processor);
       processor.connect(muteGain);
@@ -1068,10 +1180,24 @@ export function useGeminiLive({
         return;
       }
       stopRequestedRef.current = true;
+      isRequestingPermissionRef.current = false;
+      permissionPromptGraceUntilRef.current = 0;
+      clearTimers();
       releaseAudio();
-      sessionRef.current?.close();
+      const failedSession = sessionRef.current;
       sessionRef.current = null;
+      sessionResumptionHandleRef.current = null;
+      failedSession?.close();
+      await releaseReservation();
+      await clearPendingTokenRequest();
       const message = startError instanceof Error ? startError.message : "Voice could not start.";
+      logVoiceDiagnostics("start-failed", {
+        error: message,
+        errorType: startError instanceof VoiceStartError ? startError.code : "runtime",
+        audioContextState: audioContextRef.current?.state || null,
+        hasMediaStream: Boolean(mediaStreamRef.current),
+        hasSession: Boolean(failedSession),
+      });
       if (startError instanceof VoiceStartError) {
         setState("error");
         setErrorCode(startError.code);
@@ -1082,7 +1208,7 @@ export function useGeminiLive({
             : null,
         );
         setError(startError.message);
-      } else if (message.toLowerCase().includes("permission") || message.toLowerCase().includes("notallowed")) {
+      } else if (message.toLowerCase().includes("permission") || message.toLowerCase().includes("notallowed") || message.toLowerCase().includes("microphone access is needed")) {
         setState("permission-denied");
         setError("Microphone access is needed for Voice mode. You can continue in Chat.");
       } else if (!navigator.onLine) {
@@ -1098,7 +1224,7 @@ export function useGeminiLive({
         startingRef.current = false;
       }
     }
-  }, [finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, onReservationChange, persistPendingRelease, persistPendingTokenRequest, playAudioChunk, releaseAudio, retryPendingRelease, stop, stopPlayback]);
+  }, [clearPendingTokenRequest, clearTimers, finalizeAssistantTranscript, finalizeUserTranscript, handleConnectionFailure, history, logVoiceDiagnostics, onReservationChange, persistPendingTokenRequest, playAudioChunk, releaseAudio, releaseReservation, retryPendingRelease, stop, stopPlayback]);
 
   useEffect(() => {
     startRef.current = start;
@@ -1129,6 +1255,10 @@ export function useGeminiLive({
 
   useEffect(() => {
     const handleVisibilityChange = () => {
+      if (isRequestingPermissionRef.current || Date.now() < permissionPromptGraceUntilRef.current) {
+        logVoiceDiagnostics("visibility-ignored-during-permission");
+        return;
+      }
       if (
         document.visibilityState === "hidden" &&
         (startingRef.current || startAbortControllerRef.current || mediaStreamRef.current || sessionRef.current)
@@ -1138,7 +1268,7 @@ export function useGeminiLive({
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [stop]);
+  }, [logVoiceDiagnostics, stop]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -1179,6 +1309,10 @@ export function useGeminiLive({
           void retryPendingRelease();
           return;
         }
+        if (isRequestingPermissionRef.current || Date.now() < permissionPromptGraceUntilRef.current) {
+          logVoiceDiagnostics("app-state-ignored-during-permission");
+          return;
+        }
         if (
           (startingRef.current || startAbortControllerRef.current || mediaStreamRef.current || sessionRef.current)
         ) void stop("ended");
@@ -1193,7 +1327,7 @@ export function useGeminiLive({
       disposed = true;
       if (listener) void listener.remove();
     };
-  }, [retryPendingRelease, stop]);
+  }, [logVoiceDiagnostics, retryPendingRelease, stop]);
 
   useEffect(() => () => {
     void stop("ended");
