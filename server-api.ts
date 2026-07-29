@@ -294,12 +294,19 @@ const normalizeOptionalString = (value: string | undefined) => {
 };
 
 const parseBase64Audio = (audio: string) => {
-  const match = audio.match(/^data:([^;]+);base64,(.+)$/);
+  // MediaRecorder commonly includes codec parameters in the MIME metadata,
+  // for example: data:audio/webm;codecs=opus;base64,...
+  const match = audio.match(/^data:([^,]+);base64,([\s\S]+)$/i);
   if (!match) {
     throw new Error("Audio must be provided as a base64 data URL.");
   }
 
-  const [, mimeType, base64] = match;
+  const [, metadata, base64] = match;
+  const mimeType = metadata.split(";", 1)[0]?.trim();
+  if (!mimeType) {
+    throw new Error("Audio must be provided as a base64 data URL.");
+  }
+
   return {
     mimeType,
     buffer: Buffer.from(base64, "base64"),
