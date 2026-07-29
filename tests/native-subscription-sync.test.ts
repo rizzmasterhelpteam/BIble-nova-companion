@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/lib/apiClient", () => ({
   apiFetch: vi.fn(),
@@ -17,9 +17,19 @@ vi.mock("../src/lib/native/platform", () => ({
   isNativePlatform: () => true,
 }));
 
-import { selectNewestConfiguredNativePurchase } from "../src/lib/native/subscriptionSync";
+import { apiFetch } from "../src/lib/apiClient";
+import { restorePurchases } from "../src/lib/native/purchases";
+import {
+  refreshNativeSubscriptionEntitlement,
+  selectNewestConfiguredNativePurchase,
+} from "../src/lib/native/subscriptionSync";
 
 describe("native subscription entitlement sync", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("window", globalThis);
+  });
+
   it("selects the newest configured Play purchase for server verification", () => {
     const purchase = selectNewestConfiguredNativePurchase([
       {
@@ -44,5 +54,44 @@ describe("native subscription entitlement sync", () => {
     ]);
 
     expect(purchase).toBeUndefined();
+  });
+
+  it("refreshes an active Play entitlement on app startup", async () => {
+    vi.mocked(restorePurchases).mockResolvedValue([
+      {
+        productIdentifier: "biblenova",
+        purchaseToken: "renewed-purchase-token",
+        purchaseDate: "2026-07-29T16:44:00Z",
+      },
+    ] as never);
+    vi.mocked(apiFetch).mockResolvedValue(
+      new Response(JSON.stringify({ subscription: { status: "active" } }), { status: 200 }),
+    );
+
+    await expect(refreshNativeSubscriptionEntitlement()).resolves.toBe(true);
+    expect(apiFetch).toHaveBeenCalledWith(
+      "/api/subscription/native-sync",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          productId: "biblenova",
+          planId: "monthly",
+          orderId: undefined,
+          purchaseToken: "renewed-purchase-token",
+          platform: "android",
+        }),
+      }),
+    );
+  });
+
+  it("does not unlock premium when Play has no active purchase", async () => {
+    vi.mocked(restorePurchases).mockRejectedValue(
+      new Error("No active subscriptions were found to restore."),
+    );
+
+    await expect(refreshNativeSubscriptionEntitlement()).rejects.toThrow(
+      "No active subscriptions were found to restore.",
+    );
+    expect(apiFetch).not.toHaveBeenCalled();
   });
 });

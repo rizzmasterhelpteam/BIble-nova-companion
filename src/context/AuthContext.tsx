@@ -292,6 +292,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.warn("Could not verify authoritative subscription access:", error);
       }
 
+      if (!hasEntitlement && isNativePlatform()) {
+        try {
+          const { refreshNativeSubscriptionEntitlement } = await import(
+            "../lib/native/subscriptionSync"
+          );
+          hasEntitlement = await refreshNativeSubscriptionEntitlement();
+          console.info("[Bible Nova subscription]", {
+            event: "startup-native-entitlement-refresh",
+            restored: hasEntitlement,
+          });
+        } catch (error) {
+          console.warn("Could not refresh the Google Play entitlement during startup:", error);
+        }
+      }
+
       if (isDisposed || activeSessionToken !== requestSessionToken) return;
 
       setStoredSubscriptionState(id, hasEntitlement);

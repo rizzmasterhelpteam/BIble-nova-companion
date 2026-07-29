@@ -57,6 +57,9 @@ describe("fast Voice response path", () => {
     expect(body.max_tokens).toBe(140);
     expect(body.messages[0].content).toContain("Stay below 45 words");
     expect(body.messages[0].content).toContain("no Markdown");
+    expect(body.messages[0].content).toContain("Practical-first response policy");
+    expect(body.messages[0].content).toContain("Do not redirect ordinary questions");
+    expect(body.messages[0].content).toContain("Do not replace mental-health support with spiritual language");
   });
 
   it("keeps the Voice prompt concise and spoken-language focused", () => {
