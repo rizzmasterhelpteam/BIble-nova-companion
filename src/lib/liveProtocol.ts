@@ -173,6 +173,95 @@ export const getPcm16PeakAmplitude = (pcm: Uint8Array) => {
   return Math.min(1, peak);
 };
 
+export const getPcm16RmsAmplitude = (pcm: Uint8Array) => {
+  const sampleCount = Math.floor(pcm.byteLength / 2);
+  if (!sampleCount) return 0;
+  const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+  let sumOfSquares = 0;
+  for (let index = 0; index < sampleCount; index += 1) {
+    const normalized = view.getInt16(index * 2, true) / 0x8000;
+    sumOfSquares += normalized * normalized;
+  }
+  return Math.min(1, Math.sqrt(sumOfSquares / sampleCount));
+};
+
+export type VoiceTurnDetectionState = {
+  active: boolean;
+  voicedDurationMs: number;
+  lastVoiceAtMs: number | null;
+};
+
+export const createVoiceTurnDetectionState = (): VoiceTurnDetectionState => ({
+  active: false,
+  voicedDurationMs: 0,
+  lastVoiceAtMs: null,
+});
+
+export const updateVoiceTurnDetection = ({
+  state,
+  rms,
+  frameDurationMs,
+  nowMs,
+  speechStartRms,
+  speechContinuationRms,
+  minimumVoicedDurationMs,
+  silenceDurationMs,
+}: {
+  state: VoiceTurnDetectionState;
+  rms: number;
+  frameDurationMs: number;
+  nowMs: number;
+  speechStartRms: number;
+  speechContinuationRms: number;
+  minimumVoicedDurationMs: number;
+  silenceDurationMs: number;
+}) => {
+  const normalizedRms = Number.isFinite(rms) ? Math.max(0, Math.min(1, rms)) : 0;
+  const normalizedFrameDuration = Number.isFinite(frameDurationMs)
+    ? Math.max(0, frameDurationMs)
+    : 0;
+  const voiceThreshold = state.active ? speechContinuationRms : speechStartRms;
+
+  if (normalizedRms >= voiceThreshold) {
+    return {
+      state: {
+        active: true,
+        voicedDurationMs: state.voicedDurationMs + normalizedFrameDuration,
+        lastVoiceAtMs: nowMs,
+      },
+      speechStarted: !state.active,
+      shouldFlush: false,
+      silenceMs: 0,
+    };
+  }
+
+  if (!state.active || state.lastVoiceAtMs === null) {
+    return {
+      state,
+      speechStarted: false,
+      shouldFlush: false,
+      silenceMs: 0,
+    };
+  }
+
+  const silenceMs = Math.max(0, nowMs - state.lastVoiceAtMs);
+  if (silenceMs < silenceDurationMs) {
+    return {
+      state,
+      speechStarted: false,
+      shouldFlush: false,
+      silenceMs,
+    };
+  }
+
+  return {
+    state: createVoiceTurnDetectionState(),
+    speechStarted: false,
+    shouldFlush: state.voicedDurationMs >= minimumVoicedDurationMs,
+    silenceMs,
+  };
+};
+
 export const createIdempotentAsyncAction = () => {
   let inFlight: Promise<void> | null = null;
 

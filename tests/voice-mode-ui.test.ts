@@ -106,13 +106,15 @@ describe("Voice mode interface", () => {
     expect(voiceModeSource).toContain("ready = refreshedReady || ready;");
   });
 
-  it("uses Android-safe microphone capture and falls back when a worklet is silent", () => {
-    expect(liveHookSource).toContain("echoCancellation: false");
-    expect(liveHookSource).toContain("noiseSuppression: false");
-    expect(liveHookSource).toContain("autoGainControl: false");
+  it("uses Android speech processing, silence flushing, and a silent-worklet fallback", () => {
+    expect(liveHookSource).toContain("echoCancellation: true");
+    expect(liveHookSource).toContain("noiseSuppression: true");
+    expect(liveHookSource).toContain("autoGainControl: true");
     expect(liveHookSource).toContain('"switching-to-script-processor"');
     expect(liveHookSource).toContain("audio-input-first-frame");
     expect(liveHookSource).toContain("audio-input-activity-detected");
+    expect(liveHookSource).toContain("audio-input-turn-flushed");
+    expect(liveHookSource).toContain("updateVoiceTurnDetection");
     expect(liveHookSource).toContain("toPcmByteView(event.data)");
   });
 
