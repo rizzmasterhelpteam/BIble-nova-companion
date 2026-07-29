@@ -605,13 +605,14 @@ export function useTurnBasedVoice({
         },
         respond: async () => {
           markTiming(diagnostics, "llm_started_at");
-          const response = await apiFetch("/api/voice/respond", {
+          const response = await apiFetch("/api/chat", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               "X-Client-Request-Id": diagnostics.turnId,
             },
             body: JSON.stringify({
+              mode: "voice",
               messages: normalizeMessages(historyRef.current),
               shadowNotes: shadowNotesRef.current,
             }),

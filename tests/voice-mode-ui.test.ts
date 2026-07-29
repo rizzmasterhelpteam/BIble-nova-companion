@@ -113,7 +113,8 @@ describe("Voice mode interface", () => {
     expect(voiceHookSource).toContain("noiseSuppression: true");
     expect(voiceHookSource).toContain("autoGainControl: true");
     expect(voiceHookSource).toContain('apiFetch("/api/transcribe"');
-    expect(voiceHookSource).toContain('apiFetch("/api/voice/respond"');
+    expect(voiceHookSource).toContain('apiFetch("/api/chat"');
+    expect(voiceHookSource).toContain('mode: "voice"');
     expect(voiceHookSource).toContain('apiFetch("/api/tts"');
     expect(voiceHookSource).toContain("getAdaptiveSilenceMs");
     expect(voiceModeSource).toContain("Done speaking");

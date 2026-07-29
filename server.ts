@@ -4,6 +4,7 @@ import path from "path";
 import dotenv from "dotenv";
 import {
   createReflectionResponse,
+  createVoiceReflectionResponse,
   deleteSupabaseAccount,
   fetchAvailableModels,
   generatePrayer,
@@ -14,7 +15,6 @@ import {
   transcribeAudio,
 } from "./server-api";
 import voiceSessionHandler from "./api/voice/session";
-import voiceRespondHandler from "./api/voice/respond";
 import textToSpeechHandler from "./api/tts";
 import { createShadowNotes, type ChatMessage } from "./chat-api";
 import {
@@ -38,8 +38,6 @@ app.get("/api/status", (_req, res) => {
 
 app.post("/api/voice/session", voiceSessionHandler);
 app.options("/api/voice/session", voiceSessionHandler);
-app.post("/api/voice/respond", voiceRespondHandler);
-app.options("/api/voice/respond", voiceRespondHandler);
 app.post("/api/tts", textToSpeechHandler);
 app.options("/api/tts", textToSpeechHandler);
 
@@ -90,15 +88,18 @@ app.post("/api/voice/shadow-notes", async (req, res) => {
 app.post("/api/chat", async (req, res) => {
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { messages, shadowNotes, mode } = req.body;
+    const rateLimitScope = mode === "voice" ? "voice-respond" : "chat";
     await enforceRateLimits([
-      { key: `chat:user:${userId}`, limit: 30 },
-      { key: `chat:ip:${ip}`, limit: 60 },
+      { key: `${rateLimitScope}:user:${userId}`, limit: 30 },
+      { key: `${rateLimitScope}:ip:${ip}`, limit: 60 },
     ]);
-    const { messages, shadowNotes } = req.body;
     if (shadowNotes !== undefined && shadowNotes !== null) {
       assertStringLength(shadowNotes, 2_000, "Shadow notes");
     }
-    const result = await createReflectionResponse(userId, messages, shadowNotes);
+    const result = mode === "voice"
+      ? await createVoiceReflectionResponse(userId, messages, shadowNotes)
+      : await createReflectionResponse(userId, messages, shadowNotes);
     res.json(result);
   } catch (error: any) {
     console.error("LLM API Error:", error);

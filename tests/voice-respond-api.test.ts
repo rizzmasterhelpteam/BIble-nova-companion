@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const createVoiceReflectionResponse = vi.hoisted(() => vi.fn());
+const createReflectionResponse = vi.hoisted(() => vi.fn());
 const enforceRateLimits = vi.hoisted(() => vi.fn());
 const requireAuthenticatedRequest = vi.hoisted(() => vi.fn());
 
-vi.mock("../server-api", () => ({ createVoiceReflectionResponse }));
+vi.mock("../chat-api", () => ({
+  getClientErrorMessage: (error: Error) => error.message,
+}));
+vi.mock("../server-api", () => ({
+  createReflectionResponse,
+  createVoiceReflectionResponse,
+}));
 vi.mock("../server-security", () => ({
   assertStringLength: vi.fn(),
   enforceRateLimits,
@@ -15,7 +22,7 @@ vi.mock("../server-security", () => ({
   requireAuthenticatedRequest,
 }));
 
-import voiceRespondHandler from "../api/voice/respond";
+import chatHandler from "../api/chat";
 
 const createResponse = () => {
   const response = {
@@ -51,10 +58,11 @@ describe("Voice response API", () => {
   it("returns the user-facing response without a shadow-note result", async () => {
     const response = createResponse();
 
-    await voiceRespondHandler({
+    await chatHandler({
       method: "POST",
       headers: { "x-client-request-id": "turn-1234567890123456" },
       body: {
+        mode: "voice",
         messages: [{ role: "user", content: "I feel anxious." }],
         shadowNotes: "User appreciates short prayers.",
       },
@@ -71,10 +79,13 @@ describe("Voice response API", () => {
   it("keeps authentication and Voice-specific rate limits", async () => {
     const response = createResponse();
 
-    await voiceRespondHandler({
+    await chatHandler({
       method: "POST",
       headers: {},
-      body: { messages: [{ role: "user", content: "Help me pray." }] },
+      body: {
+        mode: "voice",
+        messages: [{ role: "user", content: "Help me pray." }],
+      },
     }, response);
 
     expect(requireAuthenticatedRequest).toHaveBeenCalledOnce();
