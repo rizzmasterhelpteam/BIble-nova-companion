@@ -12,13 +12,13 @@ import { MobileViewportProvider } from "./context/MobileViewportContext";
 import { VoiceSessionProvider } from "./context/VoiceSessionContext";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { getNativePlatform, isNativePlatform } from "./lib/native/platform";
+import { isNativePlatform } from "./lib/native/platform";
 import { initializeNativeApp } from "./lib/native/app";
 import { startup } from "./lib/startup";
 import { isNativeAndroidDevice } from "./hooks/usePerformanceMode";
 import {
-  shouldRedirectAndroidToPaywall,
-  shouldWaitForAndroidSubscriptionResolution,
+  shouldRedirectToPaywall,
+  shouldWaitForSubscriptionResolution,
 } from "./lib/subscriptionAccess";
 
 const Layout = lazy(() => import("./components/Layout"));
@@ -86,7 +86,6 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   } = useAuth();
   const location = useLocation();
   const hasActiveIdentity = Boolean(user);
-  const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
   
   if (isLoading) {
     return <FullScreenLoader />;
@@ -101,8 +100,7 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (
-    shouldWaitForAndroidSubscriptionResolution({
-      isAndroidNative,
+    shouldWaitForSubscriptionResolution({
       hasCompletedOnboarding,
       isSubscriptionResolved,
     })
@@ -110,11 +108,9 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
     return <FullScreenLoader />;
   }
 
-  // The native Android app must have an active entitlement before entering
-  // the main experience. The web app remains accessible because its current
-  // billing flow is Android-only.
-  if (shouldRedirectAndroidToPaywall({
-    isAndroidNative,
+  // Every completed-onboarding account must have a verified server entitlement
+  // before entering the main experience. Billing is still completed on Android.
+  if (shouldRedirectToPaywall({
     hasCompletedOnboarding,
     isSubscribed,
     pathname: location.pathname,

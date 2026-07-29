@@ -12,6 +12,7 @@ import {
   syncNativeSubscription,
 } from "./server-api";
 import chatHandler from "./api/chat";
+import subscriptionStatusHandler from "./api/subscription/status";
 import transcriptionHandler from "./api/transcribe";
 import voiceSessionHandler from "./api/voice/session";
 import textToSpeechHandler from "./api/tts";
@@ -108,6 +109,9 @@ app.post("/api/shadow-notes", async (req, res) => {
     res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
   }
 });
+
+app.get("/api/subscription/status", subscriptionStatusHandler);
+app.options("/api/subscription/status", subscriptionStatusHandler);
 
 app.delete("/api/account", async (req, res) => {
   try {

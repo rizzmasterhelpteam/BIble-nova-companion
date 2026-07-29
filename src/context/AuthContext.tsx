@@ -1,7 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
-import { hasActiveSubscription } from "../lib/native/purchases";
 import { apiFetch, setApiAccessToken } from "../lib/apiClient";
 import { isNativePlatform } from "../lib/native/platform";
 import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
@@ -259,10 +258,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const syncSubscriptionState = async (
-      currentUser: User | null,
-      options?: { allowStoredNativeFallback?: boolean },
-    ) => {
+    const syncSubscriptionState = async (currentUser: User | null) => {
       const id = currentUser?.id || null;
       if (!id) {
         if (!isDisposed) {
@@ -272,59 +268,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
 
-      const storedSubscription = storageGet(`isSubscribed_${id}`) === "true";
-      const storedSubscriptionSource = getStoredSubscriptionSource(id);
-      const serverSubscription = hasActiveServerSubscription(currentUser);
-      let nativeSubscriptionActive = false;
-      let nativeCheckCompleted = false;
-      const allowStoredNativeFallback = options?.allowStoredNativeFallback !== false;
+      const requestSessionToken = activeSessionToken;
+      setIsSubscriptionResolved(false);
+      let hasEntitlement = false;
 
-      if (
-        !serverSubscription &&
-        storedSubscription &&
-        isNativeSubscriptionSource(storedSubscriptionSource) &&
-        isNativePlatform()
-      ) {
-        try {
-          nativeSubscriptionActive = await new Promise<boolean>((resolve, reject) => {
-            let settled = false;
-            const timeoutId = window.setTimeout(() => {
-              if (settled) return;
-              settled = true;
-              console.warn("Native subscription check timed out. Preserving cached premium state for now.");
-              resolve(false);
-            }, 2500);
-
-            hasActiveSubscription().then(
-              (value) => {
-                if (settled) return;
-                settled = true;
-                nativeCheckCompleted = true;
-                window.clearTimeout(timeoutId);
-                resolve(value);
-              },
-              (error) => {
-                if (settled) return;
-                settled = true;
-                window.clearTimeout(timeoutId);
-                reject(error);
-              },
-            );
-          });
-        } catch (error) {
-          console.warn("Could not verify native subscription state:", error);
+      try {
+        const response = await apiFetch("/api/subscription/status", {
+          method: "GET",
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache" },
+        });
+        const data = (await response.json().catch(() => ({}))) as {
+          active?: boolean;
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(data.error || "Premium verification failed.");
         }
+        hasEntitlement = data.active === true;
+      } catch (error) {
+        // Access is intentionally fail-closed. Cached auth metadata and local
+        // storage can be stale after cancellation, expiry, or an account switch.
+        console.warn("Could not verify authoritative subscription access:", error);
       }
 
-      const hasEntitlement =
-        serverSubscription ||
-        nativeSubscriptionActive ||
-        (!nativeCheckCompleted &&
-          allowStoredNativeFallback &&
-          storedSubscription &&
-          isNativeSubscriptionSource(storedSubscriptionSource));
-
-      if (isDisposed) return;
+      if (isDisposed || activeSessionToken !== requestSessionToken) return;
 
       setStoredSubscriptionState(id, hasEntitlement);
       if (!hasEntitlement) clearStoredSubscriptionSource(id);
@@ -339,13 +307,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const hasServerEntitlement = hasActiveServerSubscription(currentUser);
       const hasCachedNativeEntitlement =
         storedSubscription && isNativeSubscriptionSource(storedSubscriptionSource);
-      const needsNativeVerification =
-        isNativePlatform() &&
-        hasCachedNativeEntitlement &&
-        !hasServerEntitlement;
 
       setIsSubscribed(hasServerEntitlement || hasCachedNativeEntitlement);
-      setIsSubscriptionResolved(!needsNativeVerification);
+      // Cached state is display-only. It must never unlock the main routes
+      // until the server confirms the entitlement row is still active.
+      setIsSubscriptionResolved(false);
     };
 
     const clearActiveSession = async () => {
@@ -405,7 +371,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         setUser(refreshedUser);
         syncProfileState(refreshedUser);
-        await syncSubscriptionState(refreshedUser, { allowStoredNativeFallback: false });
       } catch (error) {
         console.warn("Could not refresh the signed-in user in the background:", error);
       }
@@ -426,6 +391,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // paywall. Do not hold the first interactive frame on a second network
         // request; refresh profile/subscription metadata in the background.
         await applyAuthenticatedUser(currentUser);
+        void syncSubscriptionState(currentUser);
         if (currentSession.access_token) {
           void refreshAuthenticatedUser(currentSession, currentUser);
         }

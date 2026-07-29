@@ -82,6 +82,42 @@ export const requireAuthenticatedRequest = async (req: RequestLike) => {
   };
 };
 
+export type SubscriptionAccessStatus = {
+  active: boolean;
+  expiresAt: string | null;
+};
+
+export const getSubscriptionAccessStatus = async (
+  userId: string,
+): Promise<SubscriptionAccessStatus> => {
+  const client = getSupabaseAdminClient();
+  const { data, error } = await client
+    .from("subscription_entitlements")
+    .select("status, expiry_time, verified_at")
+    .eq("user_id", userId)
+    .in("status", ["active", "grace_period"])
+    .order("verified_at", { ascending: false })
+    .limit(10);
+
+  if (error) {
+    console.error("Subscription access check failed:", error.message);
+    throw new HttpError("Premium verification is temporarily unavailable.", 503);
+  }
+
+  const now = Date.now();
+  const entitlement = (data || []).find((row) => {
+    if (row.status !== "active" && row.status !== "grace_period") return false;
+    if (!row.expiry_time) return true;
+    const expiry = Date.parse(row.expiry_time);
+    return Number.isFinite(expiry) && expiry > now;
+  });
+
+  return {
+    active: Boolean(entitlement),
+    expiresAt: entitlement?.expiry_time || null,
+  };
+};
+
 export const acquireVoiceSessionLease = async (
   userId: string,
   maxMinutes: number,

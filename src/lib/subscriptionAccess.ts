@@ -1,25 +1,20 @@
-export const shouldWaitForAndroidSubscriptionResolution = ({
-  isAndroidNative,
+export const shouldWaitForSubscriptionResolution = ({
   hasCompletedOnboarding,
   isSubscriptionResolved,
 }: {
-  isAndroidNative: boolean;
   hasCompletedOnboarding: boolean;
   isSubscriptionResolved: boolean;
-}) => isAndroidNative && hasCompletedOnboarding && !isSubscriptionResolved;
+}) => hasCompletedOnboarding && !isSubscriptionResolved;
 
-export const shouldRedirectAndroidToPaywall = ({
-  isAndroidNative,
+export const shouldRedirectToPaywall = ({
   hasCompletedOnboarding,
   isSubscribed,
   pathname,
 }: {
-  isAndroidNative: boolean;
   hasCompletedOnboarding: boolean;
   isSubscribed: boolean;
   pathname: string;
 }) =>
-  isAndroidNative &&
   hasCompletedOnboarding &&
   !isSubscribed &&
   pathname !== "/paywall";

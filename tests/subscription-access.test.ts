@@ -1,43 +1,32 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  shouldRedirectAndroidToPaywall,
-  shouldWaitForAndroidSubscriptionResolution,
+  shouldRedirectToPaywall,
+  shouldWaitForSubscriptionResolution,
 } from "../src/lib/subscriptionAccess";
 
-describe("Android subscription access gating", () => {
-  it("holds the app behind a loader while cached Android premium is being verified", () => {
+describe("subscription access gating", () => {
+  it("holds the app behind a loader while premium is being verified", () => {
     expect(
-      shouldWaitForAndroidSubscriptionResolution({
-        isAndroidNative: true,
+      shouldWaitForSubscriptionResolution({
         hasCompletedOnboarding: true,
         isSubscriptionResolved: false,
       }),
     ).toBe(true);
   });
 
-  it("does not hold onboarding or web users on the subscription verifier", () => {
+  it("does not hold onboarding on the subscription verifier", () => {
     expect(
-      shouldWaitForAndroidSubscriptionResolution({
-        isAndroidNative: true,
+      shouldWaitForSubscriptionResolution({
         hasCompletedOnboarding: false,
-        isSubscriptionResolved: false,
-      }),
-    ).toBe(false);
-
-    expect(
-      shouldWaitForAndroidSubscriptionResolution({
-        isAndroidNative: false,
-        hasCompletedOnboarding: true,
         isSubscriptionResolved: false,
       }),
     ).toBe(false);
   });
 
-  it("redirects resolved non-premium Android users to the paywall", () => {
+  it("redirects resolved non-premium users to the paywall", () => {
     expect(
-      shouldRedirectAndroidToPaywall({
-        isAndroidNative: true,
+      shouldRedirectToPaywall({
         hasCompletedOnboarding: true,
         isSubscribed: false,
         pathname: "/",
@@ -45,10 +34,9 @@ describe("Android subscription access gating", () => {
     ).toBe(true);
   });
 
-  it("keeps premium Android users and paywall visitors on their current route", () => {
+  it("keeps premium users and paywall visitors on their current route", () => {
     expect(
-      shouldRedirectAndroidToPaywall({
-        isAndroidNative: true,
+      shouldRedirectToPaywall({
         hasCompletedOnboarding: true,
         isSubscribed: true,
         pathname: "/",
@@ -56,8 +44,7 @@ describe("Android subscription access gating", () => {
     ).toBe(false);
 
     expect(
-      shouldRedirectAndroidToPaywall({
-        isAndroidNative: true,
+      shouldRedirectToPaywall({
         hasCompletedOnboarding: true,
         isSubscribed: false,
         pathname: "/paywall",
