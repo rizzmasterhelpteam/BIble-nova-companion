@@ -273,7 +273,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       let hasEntitlement = false;
 
       try {
-        const response = await apiFetch("/api/subscription/status", {
+        const response = await apiFetch("/api/subscription/native-sync", {
           method: "GET",
           cache: "no-store",
           headers: { "Cache-Control": "no-cache" },

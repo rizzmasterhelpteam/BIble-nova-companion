@@ -14,7 +14,7 @@ vi.mock("../server-security", () => ({
   requireAuthenticatedRequest,
 }));
 
-import subscriptionStatusHandler from "../api/subscription/status";
+import subscriptionStatusHandler from "../api/subscription/native-sync";
 
 const createResponse = () => {
   const headers = new Map<string, string>();

@@ -12,7 +12,6 @@ import {
   syncNativeSubscription,
 } from "./server-api";
 import chatHandler from "./api/chat";
-import subscriptionStatusHandler from "./api/subscription/status";
 import transcriptionHandler from "./api/transcribe";
 import voiceSessionHandler from "./api/voice/session";
 import textToSpeechHandler from "./api/tts";
@@ -21,6 +20,7 @@ import {
   assertStringLength,
   enforceRateLimits,
   getHttpErrorDetails,
+  getSubscriptionAccessStatus,
   requireAuthenticatedRequest,
 } from "./server-security";
 
@@ -110,9 +110,6 @@ app.post("/api/shadow-notes", async (req, res) => {
   }
 });
 
-app.get("/api/subscription/status", subscriptionStatusHandler);
-app.options("/api/subscription/status", subscriptionStatusHandler);
-
 app.delete("/api/account", async (req, res) => {
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
@@ -125,6 +122,26 @@ app.delete("/api/account", async (req, res) => {
   } catch (error) {
     console.error("Account deletion error:", error);
     res.status(500).json({ error: getClientErrorMessage(error) });
+  }
+});
+
+app.get("/api/subscription/native-sync", async (req, res) => {
+  try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    await enforceRateLimits([
+      { key: `subscription-status:user:${userId}`, limit: 60 },
+      { key: `subscription-status:ip:${ip}`, limit: 120 },
+    ]);
+    const status = await getSubscriptionAccessStatus(userId);
+    res.setHeader("Cache-Control", "private, no-store, no-cache, max-age=0");
+    res.json({
+      active: status.active,
+      expiresAt: status.expiresAt,
+      checkedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    const details = getHttpErrorDetails(error);
+    res.status(details.statusCode).json({ error: details.message });
   }
 });
 
