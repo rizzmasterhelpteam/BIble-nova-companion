@@ -8,6 +8,15 @@ export type VoiceSessionReleaseReason =
   | "fatal_error"
   | "stale_recovery";
 
+export type VoiceSessionInteractionReason =
+  | "user_pause"
+  | "manual_interrupt"
+  | "barge_in_interrupt";
+
+export type VoiceLifecycleReason =
+  | VoiceSessionReleaseReason
+  | VoiceSessionInteractionReason;
+
 type TimerHandle = ReturnType<typeof setTimeout>;
 
 export class VoiceSessionLifecycle {

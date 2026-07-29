@@ -127,6 +127,34 @@ describe("Voice turn pipeline", () => {
     expect(dependencies.restartListening).not.toHaveBeenCalled();
   });
 
+  it("does not commit a stale assistant response over a newer turn", async () => {
+    const { dependencies } = createDependencies();
+    let current = true;
+    dependencies.isCurrent.mockImplementation(() => current);
+    dependencies.respond.mockImplementation(async () => {
+      current = false;
+      return "This response belongs to the old turn.";
+    });
+
+    await expect(runVoiceTurn(createCheckpoint(), dependencies)).resolves.toBe("stale");
+    expect(dependencies.commitUser).toHaveBeenCalledOnce();
+    expect(dependencies.commitAssistant).not.toHaveBeenCalled();
+    expect(dependencies.synthesize).not.toHaveBeenCalled();
+  });
+
+  it("cannot restart old playback after an interruption starts a newer turn", async () => {
+    const { dependencies } = createDependencies();
+    let current = true;
+    dependencies.isCurrent.mockImplementation(() => current);
+    dependencies.play.mockImplementation(async () => {
+      current = false;
+    });
+
+    await expect(runVoiceTurn(createCheckpoint(), dependencies)).resolves.toBe("stale");
+    expect(dependencies.play).toHaveBeenCalledOnce();
+    expect(dependencies.restartListening).not.toHaveBeenCalled();
+  });
+
   it("uses conservative adaptive Android silence thresholds", () => {
     expect(getAdaptiveSilenceMs(900)).toBe(1_000);
     expect(getAdaptiveSilenceMs(3_000)).toBe(800);

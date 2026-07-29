@@ -66,7 +66,7 @@ describe("Voice mode interface", () => {
   it("requests Android microphone access before WebView capture", () => {
     const nativePermissionIndex = voiceHookSource.indexOf("SpeechRecognition.checkPermissions()");
     const requestPermissionIndex = voiceHookSource.indexOf("SpeechRecognition.requestPermissions()");
-    const captureIndex = voiceHookSource.indexOf("stream = await navigator.mediaDevices.getUserMedia");
+    const captureIndex = voiceHookSource.indexOf("navigator.mediaDevices.getUserMedia({");
 
     expect(nativePermissionIndex).toBeGreaterThan(-1);
     expect(requestPermissionIndex).toBeGreaterThan(nativePermissionIndex);
@@ -113,9 +113,12 @@ describe("Voice mode interface", () => {
     expect(voiceHookSource).toContain("noiseSuppression: true");
     expect(voiceHookSource).toContain("autoGainControl: true");
     expect(voiceHookSource).toContain('apiFetch("/api/transcribe"');
-    expect(voiceHookSource).toContain('apiFetch("/api/chat"');
+    expect(voiceHookSource).toContain("createVoiceTranscriptionFormData");
+    expect(voiceHookSource).toContain('apiFetch("/api/voice/respond"');
     expect(voiceHookSource).toContain('mode: "voice"');
     expect(voiceHookSource).toContain('apiFetch("/api/tts"');
+    expect(voiceHookSource).toContain("decodeAudioData");
+    expect(voiceHookSource).toContain("source.start()");
     expect(voiceHookSource).toContain("getAdaptiveSilenceMs");
     expect(voiceModeSource).toContain("Done speaking");
   });
@@ -123,7 +126,7 @@ describe("Voice mode interface", () => {
   it("releases recording, playback, requests, and the premium lease on stop", () => {
     expect(voiceHookSource).toContain("requestControllerRef.current?.abort()");
     expect(voiceHookSource).toContain("releaseStream()");
-    expect(voiceHookSource).toContain("stopPlayback()");
+    expect(voiceHookSource).toContain('stopPlayback("cleanup")');
     expect(voiceHookSource).toContain("await releaseReservation(");
     expect(voiceHookSource).toContain("releaseReason");
     expect(voiceHookSource).toContain("await targetContext.close()");
@@ -134,6 +137,32 @@ describe("Voice mode interface", () => {
     expect(voiceModeSource).toContain("Continue in Chat");
     expect(voiceModeSource).toContain("live.retryLabel");
     expect(voiceModeSource).toContain("live.isSessionActive");
+  });
+
+  it("keeps one microphone stream warm and supports spoken barge-in", () => {
+    expect(voiceHookSource).toContain("VoiceMicrophoneSession");
+    expect(voiceHookSource).toContain('"mic_stream_reused"');
+    expect(voiceHookSource).toContain("AdaptiveBargeInDetector");
+    expect(voiceHookSource).toContain("interruptFromUserSpeech");
+    expect(voiceHookSource).toContain('stopPlayback("barge_in_interrupt")');
+    expect(voiceHookSource).not.toContain("blobToDataUrl");
+    const normalStopStart = voiceHookSource.indexOf("recorder.onstop = () =>");
+    const normalStopBlock = voiceHookSource.slice(
+      normalStopStart,
+      voiceHookSource.indexOf("const analyser = analyserRef.current", normalStopStart),
+    );
+    const bargeInBlock = voiceHookSource.slice(
+      voiceHookSource.indexOf("const interruptFromUserSpeech ="),
+      voiceHookSource.indexOf("const start = useCallback"),
+    );
+    expect(normalStopBlock).not.toContain("releaseStream(");
+    expect(normalStopBlock).toContain(
+      "recordingOperation !== recordingOperationRef.current",
+    );
+    expect(normalStopBlock.indexOf("if (!discard)")).toBeLessThan(
+      normalStopBlock.indexOf("stopVad();"),
+    );
+    expect(bargeInBlock).not.toContain("releaseReservation(");
   });
 
   it("keeps Voice actions scrollable and outside Android safe-area obstructions", () => {

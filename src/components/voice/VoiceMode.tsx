@@ -50,9 +50,15 @@ const STATE_HEADLINES: Record<VoiceState, string> = {
   ready: "Ready when you are",
   listening: "I'm listening",
   "user-speaking": "Keep going",
+  "finishing-user-turn": "I'm with you",
+  transcribing: "I heard you",
   thinking: "Reflecting",
+  "preparing-voice": "Giving this a voice",
   "assistant-speaking": "Bible Nova is responding",
+  "barge-in-listening": "I'm listening",
   interrupted: "Stopped",
+  "restarting-listener": "Listening again",
+  paused: "Microphone paused",
   reconnecting: "Restoring the conversation",
   ending: "Saving your reflection",
   ended: "Reflection complete",
@@ -68,9 +74,15 @@ const STATE_DESCRIPTIONS: Record<VoiceState, string> = {
   ready: "You can begin speaking.",
   listening: "Take your time. Tap Done speaking if the pause is not detected.",
   "user-speaking": "Pause when finished, or tap Done speaking.",
+  "finishing-user-turn": "Holding your words with care.",
+  transcribing: "Understanding what you shared.",
   thinking: "Considering what you shared.",
+  "preparing-voice": "Your response is ready in Chat while its voice is prepared.",
   "assistant-speaking": "You can interrupt at any time.",
+  "barge-in-listening": "The response stopped. Keep speaking naturally.",
   interrupted: "I'm listening again.",
+  "restarting-listener": "Ready for your next thought.",
+  paused: "Unmute whenever you are ready to continue.",
   reconnecting: "Your reflection is still here.",
   ending: "Just a moment.",
   ended: "Continue in Chat or begin again.",
@@ -243,7 +255,10 @@ export default function VoiceMode({
   useEffect(() => () => onSessionActiveChange(false), [onSessionActiveChange]);
 
   const presenceShouldMove = !isPerformanceMode && active && live.state !== "ending";
-  const isSpeaking = live.state === "user-speaking" || live.state === "assistant-speaking";
+  const isSpeaking =
+    live.state === "user-speaking" ||
+    live.state === "assistant-speaking" ||
+    live.state === "barge-in-listening";
 
   const handleEnd = useCallback(async () => {
     await stopLive("ended", "user_end");
@@ -336,9 +351,15 @@ export default function VoiceMode({
     "ready",
     "listening",
     "user-speaking",
+    "finishing-user-turn",
+    "transcribing",
     "thinking",
+    "preparing-voice",
     "assistant-speaking",
+    "barge-in-listening",
     "interrupted",
+    "restarting-listener",
+    "paused",
   ].includes(live.state);
   const showRetryableSessionError =
     active &&
