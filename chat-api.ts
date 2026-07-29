@@ -15,15 +15,20 @@ const MAX_MESSAGE_CHARS = 2_000;
 export const MAX_SHADOW_NOTES_CHARS = 2_000;
 const CHAT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_TOKENS = 420;
-const VOICE_MAX_OUTPUT_TOKENS = 180;
+const VOICE_MAX_OUTPUT_TOKENS = 140;
+const DEFAULT_VOICE_MAX_WORDS = 45;
+const DETAILED_VOICE_MAX_WORDS = 90;
 
 export const VOICE_RESPONSE_INSTRUCTIONS = `
 Voice Mode response style:
 - Answer in one or two short sentences by default.
+- Target 20 to 40 words.
 - Stay below 45 words unless the user explicitly asks for detail.
 - Begin with the direct emotional or spiritual response.
 - Use natural spoken language with no Markdown, headings, or lists.
 - Avoid long introductions and repetition.
+- Keep Bible quotations brief and only use them when they directly help.
+- Sound emotionally present, calm, Christian, and conversational rather than like a lecture.
 - Ask at most one short follow-up question.
 `.trim();
 
@@ -285,8 +290,51 @@ export async function createVoiceResponse(
     shadowNotes || undefined,
     { mode: "voice" },
   );
-  return response.trim();
+  return normalizeVoiceResponse(
+    response,
+    explicitlyRequestsVoiceDetail(messages),
+  );
 }
+
+const explicitlyRequestsVoiceDetail = (messages: ChatMessage[]) => {
+  const lastUserMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === "user");
+  return Boolean(
+    lastUserMessage &&
+    /\b(in detail|more detail|tell me more|go deeper|explain more|longer answer)\b/i
+      .test(lastUserMessage.content),
+  );
+};
+
+export const normalizeVoiceResponse = (
+  response: string,
+  allowDetail = false,
+) => {
+  const spokenText = response
+    .replace(/```/g, "")
+    .replace(/^[ \t]*(?:#{1,6}|[-*•]|\d+[.)])[ \t]+/gm, "")
+    .replace(/[*_`>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!spokenText) return "";
+
+  const sentenceLimit = allowDetail ? 4 : 2;
+  const sentences =
+    spokenText.match(/[^.!?]+(?:[.!?]+|$)/g)?.map((sentence) => sentence.trim()) ||
+    [spokenText];
+  const sentenceLimited = sentences.slice(0, sentenceLimit).join(" ").trim();
+  const words = sentenceLimited.split(/\s+/);
+  const wordLimit = allowDetail
+    ? DETAILED_VOICE_MAX_WORDS
+    : DEFAULT_VOICE_MAX_WORDS;
+  if (words.length <= wordLimit) return sentenceLimited;
+
+  return `${words
+    .slice(0, wordLimit)
+    .join(" ")
+    .replace(/[,:;–—-]+$/, "")}.`;
+};
 
 export async function createShadowNotes(messages: ChatMessage[], shadowNotes?: string | null) {
   const existingShadowNotes = normalizeShadowNotes(shadowNotes);

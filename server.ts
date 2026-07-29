@@ -3,8 +3,6 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
 import {
-  createReflectionResponse,
-  createVoiceReflectionResponse,
   deleteSupabaseAccount,
   fetchAvailableModels,
   generatePrayer,
@@ -12,8 +10,9 @@ import {
   getClientErrorMessage,
   saveShadowNotes,
   syncNativeSubscription,
-  transcribeAudio,
 } from "./server-api";
+import chatHandler from "./api/chat";
+import transcriptionHandler from "./api/transcribe";
 import voiceSessionHandler from "./api/voice/session";
 import textToSpeechHandler from "./api/tts";
 import { createShadowNotes, type ChatMessage } from "./chat-api";
@@ -38,8 +37,14 @@ app.get("/api/status", (_req, res) => {
 
 app.post("/api/voice/session", voiceSessionHandler);
 app.options("/api/voice/session", voiceSessionHandler);
+app.post("/api/voice/respond", chatHandler);
+app.options("/api/voice/respond", chatHandler);
+app.post("/api/chat", chatHandler);
+app.options("/api/chat", chatHandler);
 app.post("/api/tts", textToSpeechHandler);
 app.options("/api/tts", textToSpeechHandler);
+app.post("/api/transcribe", transcriptionHandler);
+app.options("/api/transcribe", transcriptionHandler);
 
 app.post("/api/voice/shadow-notes", async (req, res) => {
   try {
@@ -82,30 +87,6 @@ app.post("/api/voice/shadow-notes", async (req, res) => {
         ? "Voice notes could not be updated. Your conversation is still safe."
         : details.message,
     });
-  }
-});
-
-app.post("/api/chat", async (req, res) => {
-  try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
-    const { messages, shadowNotes, mode } = req.body;
-    const rateLimitScope = mode === "voice" ? "voice-respond" : "chat";
-    await enforceRateLimits([
-      { key: `${rateLimitScope}:user:${userId}`, limit: 30 },
-      { key: `${rateLimitScope}:ip:${ip}`, limit: 60 },
-    ]);
-    if (shadowNotes !== undefined && shadowNotes !== null) {
-      assertStringLength(shadowNotes, 2_000, "Shadow notes");
-    }
-    const result = mode === "voice"
-      ? await createVoiceReflectionResponse(userId, messages, shadowNotes)
-      : await createReflectionResponse(userId, messages, shadowNotes);
-    res.json(result);
-  } catch (error: any) {
-    console.error("LLM API Error:", error);
-    const details = getHttpErrorDetails(error);
-    if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
-    res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
   }
 });
 
@@ -191,29 +172,6 @@ app.post("/api/generate", async (req, res) => {
     }
   }
 });
-
-app.post("/api/transcribe", async (req, res) => {
-  try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
-    await enforceRateLimits([
-      { key: `transcribe:user:${userId}`, limit: 10 },
-      { key: `transcribe:ip:${ip}`, limit: 20 },
-    ]);
-    const { audio, language } = req.body;
-    assertStringLength(audio, 8 * 1024 * 1024, "Audio");
-    if (language !== undefined && language !== null) {
-      assertStringLength(language, 32, "Language");
-    }
-    const text = await transcribeAudio(audio, language);
-    res.json({ text });
-  } catch (error) {
-    console.error("Speech transcription error:", error);
-    const details = getHttpErrorDetails(error);
-    if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
-    res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
-  }
-});
-
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

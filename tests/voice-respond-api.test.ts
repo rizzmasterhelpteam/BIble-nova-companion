@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 const createVoiceReflectionResponse = vi.hoisted(() => vi.fn());
 const createReflectionResponse = vi.hoisted(() => vi.fn());
@@ -23,6 +24,10 @@ vi.mock("../server-security", () => ({
 }));
 
 import chatHandler from "../api/chat";
+
+const vercelConfig = JSON.parse(
+  readFileSync(new URL("../vercel.json", import.meta.url), "utf8"),
+);
 
 const createResponse = () => {
   const response = {
@@ -93,5 +98,26 @@ describe("Voice response API", () => {
       { key: "voice-respond:user:user-1", limit: 30 },
       { key: "voice-respond:ip:127.0.0.1", limit: 60 },
     ]);
+  });
+
+  it("formalizes /api/voice/respond without adding another Vercel function", async () => {
+    const response = createResponse();
+
+    await chatHandler({
+      method: "POST",
+      url: "/api/chat?mode=voice",
+      query: { mode: "voice" },
+      headers: {},
+      body: {
+        messages: [{ role: "user", content: "Stay with me." }],
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(createVoiceReflectionResponse).toHaveBeenCalledOnce();
+    expect(vercelConfig.rewrites[0]).toEqual({
+      source: "/api/voice/respond",
+      destination: "/api/chat?mode=voice",
+    });
   });
 });

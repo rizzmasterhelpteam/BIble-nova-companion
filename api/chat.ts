@@ -12,7 +12,7 @@ import {
   requireAuthenticatedRequest,
 } from "../server-security.js";
 
-const API_BUILD_ID = "2026-07-29-turn-voice";
+const API_BUILD_ID = "2026-07-29-fast-voice-respond";
 
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
@@ -86,7 +86,11 @@ export default async function handler(req: any, res: any) {
     const { userId, ip } = await requireAuthenticatedRequest(req);
     userHash = hashUserId(userId);
     const body = getBody(req);
-    voiceMode = body.mode === "voice";
+    const requestPath = String(req.url || "").split("?", 1)[0];
+    voiceMode =
+      body.mode === "voice" ||
+      req.query?.mode === "voice" ||
+      requestPath === "/api/voice/respond";
     await enforceRateLimits([
       {
         key: `${voiceMode ? "voice-respond" : "chat"}:user:${userId}`,

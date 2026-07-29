@@ -3,6 +3,10 @@
   "buildCommand": "npm run verify:production",
   "rewrites": [
     {
+      "source": "/api/voice/respond",
+      "destination": "/api/chat?mode=voice"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

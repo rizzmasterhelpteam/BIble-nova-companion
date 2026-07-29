@@ -8,6 +8,12 @@ import {
   createVoiceResponse,
   hasChatApiKey,
 } from "./chat-api.js";
+import {
+  getVoiceAudioFilename,
+  isSupportedVoiceAudioMimeType,
+  MAX_VOICE_AUDIO_BYTES,
+  normalizeVoiceAudioMimeType,
+} from "./src/lib/voiceTranscription.js";
 export {
   createReflection,
   getClientErrorMessage,
@@ -340,14 +346,19 @@ const parseBase64Audio = (audio: string) => {
   }
 
   const [, metadata, base64] = match;
-  const mimeType = metadata.split(";", 1)[0]?.trim();
-  if (!mimeType) {
+  const mimeType = normalizeVoiceAudioMimeType(metadata);
+  if (!mimeType || !isSupportedVoiceAudioMimeType(mimeType)) {
     throw new Error("Audio must be provided as a base64 data URL.");
+  }
+  const buffer = Buffer.from(base64, "base64");
+  if (!buffer.byteLength) throw new Error("The audio recording is empty.");
+  if (buffer.byteLength > MAX_VOICE_AUDIO_BYTES) {
+    throw new Error("The audio recording is too large.");
   }
 
   return {
     mimeType,
-    buffer: Buffer.from(base64, "base64"),
+    blob: new Blob([new Uint8Array(buffer)], { type: mimeType }),
   };
 };
 
@@ -415,27 +426,43 @@ export async function createReflectionResponse(
 }
 
 export async function createVoiceReflectionResponse(
-  userId: string,
+  _userId: string,
   messages: Array<{ role: "user" | "assistant" | "ai" | "model" | "system"; content: string }>,
   shadowNotes?: string | null,
 ) {
-  const persistedShadowNotes = await loadStoredShadowNotes(userId);
-  const effectiveShadowNotes = persistedShadowNotes || shadowNotes || null;
+  const effectiveShadowNotes =
+    shadowNotes?.trim().slice(0, MAX_SHADOW_NOTES_CHARS) || null;
   return {
     message: await createVoiceResponse(messages, effectiveShadowNotes),
   };
 }
 
-export async function transcribeAudio(audio: string, language?: string) {
+export async function transcribeAudio(audio: string | Blob, language?: string) {
   const apiKey = process.env.GROQ_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("Speech transcription requires GROQ_API_KEY on the server.");
   }
 
-  const { mimeType, buffer } = parseBase64Audio(audio);
-  const extension = mimeType.split("/")[1]?.split(";")[0] || "webm";
+  const parsedAudio =
+    typeof audio === "string"
+      ? parseBase64Audio(audio)
+      : {
+          mimeType: normalizeVoiceAudioMimeType(audio.type),
+          blob: audio,
+        };
+  if (!isSupportedVoiceAudioMimeType(parsedAudio.mimeType)) {
+    throw new Error("This audio format is not supported.");
+  }
+  if (!parsedAudio.blob.size) throw new Error("The audio recording is empty.");
+  if (parsedAudio.blob.size > MAX_VOICE_AUDIO_BYTES) {
+    throw new Error("The audio recording is too large.");
+  }
   const formData = new FormData();
-  formData.append("file", new Blob([buffer], { type: mimeType }), `speech.${extension}`);
+  formData.append(
+    "file",
+    parsedAudio.blob,
+    getVoiceAudioFilename(parsedAudio.mimeType),
+  );
   formData.append("model", process.env.GROQ_TRANSCRIBE_MODEL?.trim() || "whisper-large-v3-turbo");
   formData.append("response_format", "json");
   formData.append("temperature", "0");
@@ -444,27 +471,34 @@ export async function transcribeAudio(audio: string, language?: string) {
     formData.append("language", language);
   }
 
-  const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: formData,
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: formData,
+      signal: controller.signal,
+    });
 
-  const data = (await response.json().catch(() => ({}))) as {
-    text?: string;
-    error?: { message?: string };
-  };
-  if (!response.ok) {
-    throw new Error(data.error?.message || "Speech transcription failed.");
+    const data = (await response.json().catch(() => ({}))) as {
+      text?: string;
+      error?: { message?: string };
+    };
+    if (!response.ok) {
+      throw new Error(data.error?.message || "Speech transcription failed.");
+    }
+
+    if (!data.text?.trim()) {
+      throw new Error("Speech transcription returned no text.");
+    }
+
+    return data.text.trim();
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  if (!data.text?.trim()) {
-    throw new Error("Speech transcription returned no text.");
-  }
-
-  return data.text.trim();
 }
 
 export const DEFAULT_GOOGLE_TTS_VOICE = "en-AU-Chirp3-HD-Algenib";
