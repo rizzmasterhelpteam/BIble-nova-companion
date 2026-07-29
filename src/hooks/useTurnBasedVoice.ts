@@ -1,31 +1,74 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/apiClient";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
+import {
+  createVoiceReservation,
+  isVoiceReservationRecoverable,
+  markVoiceReservationEnding,
+  type VoiceReservation,
+} from "../lib/voiceReservation";
+import {
+  createReleaseOnce,
+  VoiceSessionLifecycle,
+  type VoiceSessionReleaseReason,
+} from "../lib/voiceSessionLifecycle";
+import {
+  getAdaptiveSilenceMs,
+  runVoiceTurn,
+  VoiceTurnPipelineError,
+  type VoiceTurnCheckpoint,
+  type VoiceTurnPhase,
+} from "../lib/voiceTurnPipeline";
 import type { ConversationMessage, VoiceState } from "../types/live";
 
-type VoiceReservation = { handle: string; expiresAt: string };
+export type VoiceStartMode = "fresh_start" | "recovery_resume";
+
 type VoiceErrorCode =
   | "subscription_required"
   | "session_active"
   | "daily_limit"
+  | "recovery_unavailable"
   | "permission_denied"
   | "connection_failed"
   | null;
 
 type TurnBasedVoiceOptions = {
+  userId: string;
   history: ConversationMessage[];
   shadowNotes: string | null;
   onUserTranscript: (text: string) => void;
   onAssistantTranscript: (text: string) => void;
-  onAcceptShadowNotes: (notes: string | null) => void;
   reservation: VoiceReservation | null;
   onReservationChange: (reservation: VoiceReservation | null) => void;
+  liveReady: boolean;
+  apiStatusConnectionError?: string;
 };
 
 type ApiErrorBody = {
   error?: string;
   reason?: Exclude<VoiceErrorCode, null>;
   retryAfterSeconds?: number | null;
+  httpStatus?: number;
+};
+
+type VoiceTimingKey =
+  | "recording_finished_at"
+  | "transcription_started_at"
+  | "transcription_finished_at"
+  | "llm_started_at"
+  | "llm_finished_at"
+  | "tts_started_at"
+  | "tts_finished_at"
+  | "playback_started_at"
+  | "playback_finished_at"
+  | "recording_restarted_at";
+
+type VoiceTurnDiagnostics = {
+  turnId: string;
+  sessionGeneration: number;
+  startMode: VoiceStartMode;
+  timestamps: Partial<Record<VoiceTimingKey, string>>;
+  marks: Partial<Record<VoiceTimingKey, number>>;
 };
 
 const RECORDING_MIME_TYPES = [
@@ -36,7 +79,6 @@ const RECORDING_MIME_TYPES = [
 ];
 const MAX_RECORDING_MS = 45_000;
 const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
-const SILENCE_AFTER_SPEECH_MS = 1_100;
 const MIN_SPEECH_MS = 450;
 const SPEECH_RMS_THRESHOLD = 0.022;
 
@@ -69,7 +111,7 @@ const base64ToArrayBuffer = (value: string) => {
   return bytes.buffer;
 };
 
-const createClientReservationHandle = () => {
+export const createClientReservationHandle = () => {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   let binary = "";
@@ -82,9 +124,12 @@ const createClientReservationHandle = () => {
 const parseApiResponse = async <T,>(response: Response): Promise<T> => {
   const data = (await response.json().catch(() => ({}))) as T & ApiErrorBody;
   if (!response.ok) {
-    const error = new Error(data.error || `Voice request failed (${response.status}).`) as Error & ApiErrorBody;
+    const error = new Error(
+      data.error || `Voice request failed (${response.status}).`,
+    ) as Error & ApiErrorBody;
     error.reason = data.reason;
     error.retryAfterSeconds = data.retryAfterSeconds;
+    error.httpStatus = response.status;
     throw error;
   }
   return data;
@@ -99,43 +144,116 @@ const normalizeMessages = (messages: ConversationMessage[]) =>
       content: message.content.trim(),
     }));
 
+const markTiming = (diagnostics: VoiceTurnDiagnostics, key: VoiceTimingKey) => {
+  diagnostics.timestamps[key] = new Date().toISOString();
+  diagnostics.marks[key] = performance.now();
+};
+
+const durationBetween = (
+  diagnostics: VoiceTurnDiagnostics,
+  start: VoiceTimingKey,
+  end: VoiceTimingKey,
+) => {
+  const startMark = diagnostics.marks[start];
+  const endMark = diagnostics.marks[end];
+  return typeof startMark === "number" && typeof endMark === "number"
+    ? Math.max(0, Math.round(endMark - startMark))
+    : null;
+};
+
+const logVoiceEvent = (event: string, details: Record<string, unknown> = {}) => {
+  console.info("[Bible Nova voice]", { event, ...details });
+};
+
+const logTurnMetrics = (diagnostics: VoiceTurnDiagnostics) => {
+  logVoiceEvent("turn_metrics", {
+    turnId: diagnostics.turnId,
+    sessionGeneration: diagnostics.sessionGeneration,
+    startMode: diagnostics.startMode,
+    ...diagnostics.timestamps,
+    silenceToUploadMs: durationBetween(
+      diagnostics,
+      "recording_finished_at",
+      "transcription_started_at",
+    ),
+    transcriptionDurationMs: durationBetween(
+      diagnostics,
+      "transcription_started_at",
+      "transcription_finished_at",
+    ),
+    llmDurationMs: durationBetween(
+      diagnostics,
+      "llm_started_at",
+      "llm_finished_at",
+    ),
+    ttsDurationMs: durationBetween(
+      diagnostics,
+      "tts_started_at",
+      "tts_finished_at",
+    ),
+    pauseToFirstAudioMs: durationBetween(
+      diagnostics,
+      "recording_finished_at",
+      "playback_started_at",
+    ),
+    playbackToListeningRestartMs: durationBetween(
+      diagnostics,
+      "playback_finished_at",
+      "recording_restarted_at",
+    ),
+  });
+};
+
 export function useTurnBasedVoice({
+  userId,
   history,
   shadowNotes,
   onUserTranscript,
   onAssistantTranscript,
-  onAcceptShadowNotes,
   reservation,
   onReservationChange,
+  liveReady,
+  apiStatusConnectionError,
 }: TurnBasedVoiceOptions) {
   const [state, setState] = useState<VoiceState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<VoiceErrorCode>(null);
   const [sessionNotice, setSessionNotice] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [isSessionActive, setIsSessionActive] = useState(false);
   const [retryUntil, setRetryUntil] = useState<number | null>(null);
+  const [retryPhase, setRetryPhase] = useState<VoiceTurnPhase | null>(null);
 
+  const stateRef = useRef<VoiceState>("idle");
   const historyRef = useRef(history);
   const shadowNotesRef = useRef(shadowNotes);
   const reservationRef = useRef(reservation);
   const activeRef = useRef(false);
   const mutedRef = useRef(false);
   const operationRef = useRef(0);
+  const currentSessionGenerationRef = useRef(0);
+  const currentStartModeRef = useRef<VoiceStartMode>("fresh_start");
+  const lifecycleRef = useRef<VoiceSessionLifecycle | null>(null);
+  if (!lifecycleRef.current) lifecycleRef.current = new VoiceSessionLifecycle();
+  const releaseOnceRef = useRef(createReleaseOnce());
+  const stopPromisesRef = useRef(new Map<number, Promise<void>>());
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const discardRecordingRef = useRef(false);
+  const discardedRecordersRef = useRef(new WeakSet<MediaRecorder>());
   const recordingStartedAtRef = useRef(0);
   const speechStartedAtRef = useRef<number | null>(null);
   const lastSpeechAtRef = useRef<number | null>(null);
   const vadFrameRef = useRef<number | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
-  const sessionTimerRef = useRef<number | null>(null);
+  const recordingTimerOperationRef = useRef<number | null>(null);
   const requestControllerRef = useRef<AbortController | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const playbackSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const playbackResolveRef = useRef<(() => void) | null>(null);
+  const retryCheckpointRef = useRef<VoiceTurnCheckpoint | null>(null);
+  const retryDiagnosticsRef = useRef<VoiceTurnDiagnostics | null>(null);
+  const microphonePermissionKnownRef = useRef(false);
 
   useEffect(() => {
     historyRef.current = history;
@@ -147,14 +265,44 @@ export function useTurnBasedVoice({
     reservationRef.current = reservation;
   }, [reservation]);
 
-  const clearRecordingTimer = useCallback(() => {
+  const transition = useCallback((next: VoiceState, details: Record<string, unknown> = {}) => {
+    const previous = stateRef.current;
+    stateRef.current = next;
+    setState(next);
+    if (previous !== next) {
+      logVoiceEvent("state_transition", {
+        from: previous,
+        to: next,
+        sessionGeneration: currentSessionGenerationRef.current || null,
+        ...details,
+      });
+    }
+  }, []);
+
+  const clearRecordingTimer = useCallback((operation?: number) => {
+    if (
+      operation !== undefined &&
+      recordingTimerOperationRef.current !== null &&
+      recordingTimerOperationRef.current !== operation
+    ) {
+      return;
+    }
     if (recordingTimerRef.current !== null) {
       window.clearTimeout(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
+    recordingTimerOperationRef.current = null;
   }, []);
 
-  const stopVad = useCallback(() => {
+  const stopVad = useCallback((expectedSource?: MediaStreamAudioSourceNode | null) => {
+    if (
+      expectedSource &&
+      mediaSourceRef.current &&
+      mediaSourceRef.current !== expectedSource
+    ) {
+      expectedSource.disconnect();
+      return;
+    }
     if (vadFrameRef.current !== null) {
       window.cancelAnimationFrame(vadFrameRef.current);
       vadFrameRef.current = null;
@@ -163,8 +311,16 @@ export function useTurnBasedVoice({
     mediaSourceRef.current = null;
   }, []);
 
-  const releaseStream = useCallback(() => {
-    stopVad();
+  const releaseStream = useCallback((
+    expectedStream?: MediaStream | null,
+    expectedSource?: MediaStreamAudioSourceNode | null,
+  ) => {
+    if (expectedStream && streamRef.current && streamRef.current !== expectedStream) {
+      expectedSource?.disconnect();
+      expectedStream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    stopVad(expectedSource);
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
   }, [stopVad]);
@@ -189,7 +345,8 @@ export function useTurnBasedVoice({
   const primeAudioForUserGesture = useCallback(() => {
     const AudioContextConstructor =
       window.AudioContext ||
-      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
     if (!AudioContextConstructor) return;
     if (!audioContextRef.current || audioContextRef.current.state === "closed") {
       audioContextRef.current = new AudioContextConstructor();
@@ -197,69 +354,165 @@ export function useTurnBasedVoice({
     void audioContextRef.current.resume().catch(() => undefined);
   }, []);
 
-  const releaseReservation = useCallback(async () => {
-    const current = reservationRef.current;
-    reservationRef.current = null;
-    onReservationChange(null);
-    if (!current?.handle) return;
-    await apiFetch("/api/voice/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "release", reservationHandle: current.handle }),
-    }).catch(() => undefined);
+  const releaseReservation = useCallback(async (
+    target: VoiceReservation | null,
+    releaseReason: VoiceSessionReleaseReason,
+    sessionGeneration: number,
+  ) => {
+    if (!target?.handle) return;
+
+    if (reservationRef.current?.handle === target.handle) {
+      const endingReservation = markVoiceReservationEnding(target);
+      reservationRef.current = endingReservation;
+      onReservationChange(endingReservation);
+    }
+
+    await releaseOnceRef.current(target.handle, async () => {
+      const response = await apiFetch("/api/voice/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "release",
+          reservationHandle: target.handle,
+          releaseReason,
+        }),
+      });
+      logVoiceEvent("reservation_release", {
+        sessionGeneration,
+        releaseReason,
+        providerHttpStatus: response.status,
+      });
+    }).catch((caught) => {
+      logVoiceEvent("reservation_release_failed", {
+        sessionGeneration,
+        releaseReason,
+        reason: caught instanceof Error ? caught.message : String(caught),
+      });
+    });
+
+    if (reservationRef.current?.handle === target.handle) {
+      reservationRef.current = null;
+      onReservationChange(null);
+    }
   }, [onReservationChange]);
 
-  const stop = useCallback(async (finalState: VoiceState = "ended") => {
-    activeRef.current = false;
-    operationRef.current += 1;
-    requestControllerRef.current?.abort();
-    requestControllerRef.current = null;
-    clearRecordingTimer();
-    if (sessionTimerRef.current !== null) {
-      window.clearTimeout(sessionTimerRef.current);
-      sessionTimerRef.current = null;
+  const stop = useCallback((
+    finalState: VoiceState = "ended",
+    releaseReason: VoiceSessionReleaseReason = "user_end",
+  ) => {
+    const sessionGeneration = currentSessionGenerationRef.current;
+    if (!sessionGeneration) {
+      activeRef.current = false;
+      setIsSessionActive(false);
+      transition(finalState);
+      return Promise.resolve();
     }
-    discardRecordingRef.current = true;
-    const recorder = recorderRef.current;
-    recorderRef.current = null;
-    if (recorder?.state !== "inactive") {
-      try {
-        recorder.stop();
-      } catch {
-        // Continue cleanup if the recorder stopped concurrently.
+
+    const existing = stopPromisesRef.current.get(sessionGeneration);
+    if (existing) return existing;
+
+    const targetReservation = reservationRef.current;
+    const targetContext = audioContextRef.current;
+    const cleanup = (async () => {
+      const ownsCurrentSession =
+        currentSessionGenerationRef.current === sessionGeneration;
+      if (ownsCurrentSession) {
+        activeRef.current = false;
+        lifecycleRef.current!.invalidate(sessionGeneration);
+        operationRef.current += 1;
+        requestControllerRef.current?.abort();
+        requestControllerRef.current = null;
+        clearRecordingTimer();
+        const recorder = recorderRef.current;
+        if (recorder) discardedRecordersRef.current.add(recorder);
+        recorderRef.current = null;
+        if (recorder?.state !== "inactive") {
+          try {
+            recorder.stop();
+          } catch {
+            // Continue cleanup if the recorder stopped concurrently.
+          }
+        }
+        releaseStream();
+        stopPlayback();
+        transition(finalState === "ended" ? "ending" : finalState, {
+          releaseReason,
+        });
       }
-    }
-    chunksRef.current = [];
-    releaseStream();
-    stopPlayback();
-    setState(finalState === "ended" ? "ending" : finalState);
-    await releaseReservation();
-    const context = audioContextRef.current;
-    audioContextRef.current = null;
-    if (context && context.state !== "closed") {
-      await context.close().catch(() => undefined);
-    }
-    setIsMuted(false);
-    mutedRef.current = false;
-    setState(finalState);
-  }, [clearRecordingTimer, releaseReservation, releaseStream, stopPlayback]);
 
-  const beginRecordingRef = useRef<() => Promise<void>>(async () => undefined);
+      await releaseReservation(targetReservation, releaseReason, sessionGeneration);
 
-  const playResponse = useCallback(async (audioContent: string, operation: number) => {
+      if (audioContextRef.current === targetContext) {
+        audioContextRef.current = null;
+        if (targetContext && targetContext.state !== "closed") {
+          await targetContext.close().catch(() => undefined);
+        }
+      }
+
+      if (currentSessionGenerationRef.current === sessionGeneration) {
+        currentSessionGenerationRef.current = 0;
+        setIsSessionActive(false);
+        retryCheckpointRef.current = null;
+        retryDiagnosticsRef.current = null;
+        setRetryPhase(null);
+        setIsMuted(false);
+        mutedRef.current = false;
+        transition(finalState, { releaseReason });
+      }
+    })();
+
+    stopPromisesRef.current.set(sessionGeneration, cleanup);
+    void cleanup.finally(() => {
+      if (stopPromisesRef.current.get(sessionGeneration) === cleanup) {
+        stopPromisesRef.current.delete(sessionGeneration);
+      }
+    });
+    return cleanup;
+  }, [
+    clearRecordingTimer,
+    releaseReservation,
+    releaseStream,
+    stopPlayback,
+    transition,
+  ]);
+
+  const stopRef = useRef(stop);
+  useEffect(() => {
+    stopRef.current = stop;
+  }, [stop]);
+
+  const beginRecordingRef = useRef<
+    (restartDiagnostics?: VoiceTurnDiagnostics) => Promise<boolean>
+  >(async () => false);
+
+  const playResponse = useCallback(async (
+    audio: ArrayBuffer,
+    operation: number,
+    diagnostics: VoiceTurnDiagnostics,
+  ) => {
     const context = audioContextRef.current;
     if (!context || context.state === "closed") {
       throw new Error("Audio playback is unavailable. The reply is saved in Chat.");
     }
+    const audioContextStateBeforeResume = context.state;
     await context.resume();
-    const audioBuffer = await context.decodeAudioData(base64ToArrayBuffer(audioContent));
+    const decodeStartedAt = performance.now();
+    const audioBuffer = await context.decodeAudioData(audio.slice(0));
+    const audioDecodeDurationMs = Math.round(performance.now() - decodeStartedAt);
     if (!activeRef.current || operation !== operationRef.current) return;
+
     stopPlayback();
     const source = context.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(context.destination);
     playbackSourceRef.current = source;
-    setState("assistant-speaking");
+    transition("assistant-speaking", {
+      turnId: diagnostics.turnId,
+      audioContextStateBeforeResume,
+      audioContextState: context.state,
+      audioDecodeDurationMs,
+    });
+
     await new Promise<void>((resolve) => {
       playbackResolveRef.current = resolve;
       source.onended = () => {
@@ -268,9 +521,229 @@ export function useTurnBasedVoice({
         source.disconnect();
         resolve();
       };
+      markTiming(diagnostics, "playback_started_at");
       source.start();
     });
-  }, [stopPlayback]);
+    markTiming(diagnostics, "playback_finished_at");
+  }, [stopPlayback, transition]);
+
+  const processCheckpoint = useCallback(async (
+    checkpoint: VoiceTurnCheckpoint,
+    operation: number,
+    diagnostics: VoiceTurnDiagnostics,
+  ) => {
+    if (
+      !activeRef.current ||
+      operation !== operationRef.current ||
+      !lifecycleRef.current!.isCurrent(diagnostics.sessionGeneration)
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = controller;
+    retryCheckpointRef.current = checkpoint;
+    retryDiagnosticsRef.current = diagnostics;
+    setError(null);
+    setErrorCode(null);
+    setRetryPhase(null);
+
+    try {
+      const result = await runVoiceTurn(checkpoint, {
+        isCurrent: () =>
+          activeRef.current &&
+          operation === operationRef.current &&
+          lifecycleRef.current!.isCurrent(diagnostics.sessionGeneration) &&
+          !lifecycleRef.current!.isExpired(diagnostics.sessionGeneration),
+        isMuted: () => mutedRef.current,
+        onPhase: (phase) => {
+          setRetryPhase(null);
+          if (phase === "transcription") {
+            transition("thinking", { turnId: diagnostics.turnId, phase });
+            setSessionNotice("Transcribing your reflection…");
+          } else if (phase === "response") {
+            setSessionNotice("Preparing a response…");
+          } else if (phase === "tts") {
+            setSessionNotice("Preparing the voice response…");
+          } else if (phase === "restart") {
+            setSessionNotice("Listening for your next reflection…");
+          }
+        },
+        transcribe: async (blob) => {
+          markTiming(diagnostics, "transcription_started_at");
+          const audio = await blobToDataUrl(blob);
+          const response = await apiFetch("/api/transcribe", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Client-Request-Id": diagnostics.turnId,
+            },
+            body: JSON.stringify({ audio, language: "en" }),
+            signal: controller.signal,
+          });
+          logVoiceEvent("provider_response", {
+            turnId: diagnostics.turnId,
+            phase: "transcription",
+            providerHttpStatus: response.status,
+          });
+          const transcription = await parseApiResponse<{ text?: string }>(response);
+          markTiming(diagnostics, "transcription_finished_at");
+          return transcription.text?.trim() || "";
+        },
+        commitUser: (text) => {
+          onUserTranscript(text);
+          historyRef.current = [
+            ...historyRef.current,
+            {
+              id: crypto.randomUUID(),
+              role: "user",
+              content: text,
+              source: "voice",
+            },
+          ];
+        },
+        respond: async () => {
+          markTiming(diagnostics, "llm_started_at");
+          const response = await apiFetch("/api/voice/respond", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Client-Request-Id": diagnostics.turnId,
+            },
+            body: JSON.stringify({
+              messages: normalizeMessages(historyRef.current),
+              shadowNotes: shadowNotesRef.current,
+            }),
+            signal: controller.signal,
+          });
+          logVoiceEvent("provider_response", {
+            turnId: diagnostics.turnId,
+            phase: "response",
+            providerHttpStatus: response.status,
+          });
+          const result = await parseApiResponse<{ message?: string }>(response);
+          markTiming(diagnostics, "llm_finished_at");
+          return result.message?.trim() || "";
+        },
+        commitAssistant: (text) => {
+          onAssistantTranscript(text);
+          historyRef.current = [
+            ...historyRef.current,
+            {
+              id: crypto.randomUUID(),
+              role: "ai",
+              content: text,
+              source: "voice",
+            },
+          ];
+        },
+        synthesize: async (text) => {
+          markTiming(diagnostics, "tts_started_at");
+          const response = await apiFetch("/api/tts", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "audio/mpeg",
+              "X-Client-Request-Id": diagnostics.turnId,
+            },
+            body: JSON.stringify({ text }),
+            signal: controller.signal,
+          });
+          logVoiceEvent("provider_response", {
+            turnId: diagnostics.turnId,
+            phase: "tts",
+            providerHttpStatus: response.status,
+          });
+          if (!response.ok) {
+            await parseApiResponse(response);
+          }
+
+          const contentType = response.headers.get("Content-Type")?.toLowerCase() || "";
+          let audio: ArrayBuffer;
+          if (contentType.includes("audio/")) {
+            audio = await response.arrayBuffer();
+          } else {
+            const compatibility = await response.json().catch(() => ({})) as {
+              audioContent?: string;
+            };
+            if (!compatibility.audioContent) {
+              throw new Error(
+                "The voice response could not be generated. The reply is saved in Chat.",
+              );
+            }
+            audio = base64ToArrayBuffer(compatibility.audioContent);
+          }
+          markTiming(diagnostics, "tts_finished_at");
+          return audio;
+        },
+        play: (audio) => playResponse(audio, operation, diagnostics),
+        restartListening: () => beginRecordingRef.current(diagnostics),
+        setReady: () => {
+          setSessionNotice("Microphone paused.");
+          transition("ready", { turnId: diagnostics.turnId });
+        },
+      });
+
+      if (result === "stale") return;
+      retryCheckpointRef.current = null;
+      retryDiagnosticsRef.current = null;
+      setRetryPhase(null);
+      setError(null);
+      setErrorCode(null);
+      if (result === "completed") setSessionNotice(null);
+      logTurnMetrics(diagnostics);
+    } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
+      if (
+        !activeRef.current ||
+        operation !== operationRef.current ||
+        !lifecycleRef.current!.isCurrent(diagnostics.sessionGeneration)
+      ) {
+        return;
+      }
+
+      const pipelineError =
+        caught instanceof VoiceTurnPipelineError
+          ? caught
+          : new VoiceTurnPipelineError("response", checkpoint, caught);
+      retryCheckpointRef.current = pipelineError.checkpoint;
+      retryDiagnosticsRef.current = diagnostics;
+      setRetryPhase(pipelineError.phase);
+      setErrorCode("connection_failed");
+
+      const fallbackMessage =
+        pipelineError.phase === "transcription"
+          ? "I couldn't transcribe that recording. Please try it again."
+          : pipelineError.phase === "response"
+            ? "I saved what you said, but couldn't prepare a response. Please try again."
+            : pipelineError.phase === "restart"
+              ? "The response is complete, but the microphone could not restart."
+              : "Voice unavailable, response saved in Chat.";
+      setError(pipelineError.message || fallbackMessage);
+      setSessionNotice(
+        pipelineError.phase === "restart"
+          ? "Try listening again or continue in Chat."
+          : pipelineError.phase === "tts" || pipelineError.phase === "playback"
+            ? "The written response is safe in Chat. You can retry its audio."
+            : "Retry this turn or continue in Chat.",
+      );
+      transition("error", {
+        turnId: diagnostics.turnId,
+        phase: pipelineError.phase,
+      });
+      logTurnMetrics(diagnostics);
+    } finally {
+      if (requestControllerRef.current === controller) {
+        requestControllerRef.current = null;
+      }
+    }
+  }, [
+    onAssistantTranscript,
+    onUserTranscript,
+    playResponse,
+    transition,
+  ]);
 
   const processRecording = useCallback(async (blob: Blob, operation: number) => {
     if (!activeRef.current || operation !== operationRef.current) return;
@@ -285,101 +758,25 @@ export function useTurnBasedVoice({
       return;
     }
 
-    setState("thinking");
-    setSessionNotice("Transcribing your reflection…");
-    const controller = new AbortController();
-    requestControllerRef.current = controller;
-    try {
-      const audio = await blobToDataUrl(blob);
-      const transcriptionResponse = await apiFetch("/api/transcribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ audio, language: "en" }),
-        signal: controller.signal,
-      });
-      const transcription = await parseApiResponse<{ text?: string }>(transcriptionResponse);
-      const text = transcription.text?.trim();
-      if (!text) throw new Error("No speech was captured. Please try again.");
-      if (!activeRef.current || operation !== operationRef.current) return;
-
-      onUserTranscript(text);
-      const nextHistory = [
-        ...normalizeMessages(historyRef.current),
-        { role: "user" as const, content: text },
-      ];
-      historyRef.current = [
-        ...historyRef.current,
-        { id: crypto.randomUUID(), role: "user", content: text, source: "voice" },
-      ];
-      setSessionNotice("Preparing a response…");
-
-      const chatResponse = await apiFetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: nextHistory,
-          shadowNotes: shadowNotesRef.current,
-        }),
-        signal: controller.signal,
-      });
-      const chat = await parseApiResponse<{
-        message?: string;
-        shadowNotes?: string | null;
-      }>(chatResponse);
-      const assistantText = chat.message?.trim();
-      if (!assistantText) throw new Error("The reflection response was empty.");
-      if (typeof chat.shadowNotes === "string" && chat.shadowNotes.trim()) {
-        shadowNotesRef.current = chat.shadowNotes;
-        onAcceptShadowNotes(chat.shadowNotes);
-      }
-      onAssistantTranscript(assistantText);
-      historyRef.current = [
-        ...historyRef.current,
-        { id: crypto.randomUUID(), role: "ai", content: assistantText, source: "voice" },
-      ];
-      if (!activeRef.current || operation !== operationRef.current) return;
-
-      setSessionNotice("Preparing the voice response…");
-      const speechResponse = await apiFetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: assistantText }),
-        signal: controller.signal,
-      });
-      const speech = await parseApiResponse<{ audioContent?: string }>(speechResponse);
-      if (!speech.audioContent) {
-        throw new Error("The voice response could not be generated. The reply is saved in Chat.");
-      }
-      setSessionNotice(null);
-      await playResponse(speech.audioContent, operation);
-      if (activeRef.current && operation === operationRef.current && !mutedRef.current) {
-        await beginRecordingRef.current();
-      } else if (activeRef.current) {
-        setState("ready");
-      }
-    } catch (caught) {
-      if (caught instanceof DOMException && caught.name === "AbortError") return;
-      const message = caught instanceof Error ? caught.message : "Voice processing failed.";
-      setError(message);
-      setErrorCode("connection_failed");
-      setSessionNotice("You can retry this turn or continue in Chat.");
-      setState("error");
-    } finally {
-      if (requestControllerRef.current === controller) requestControllerRef.current = null;
-    }
-  }, [
-    onAcceptShadowNotes,
-    onAssistantTranscript,
-    onUserTranscript,
-    playResponse,
-  ]);
+    const diagnostics: VoiceTurnDiagnostics = {
+      turnId: crypto.randomUUID(),
+      sessionGeneration: currentSessionGenerationRef.current,
+      startMode: currentStartModeRef.current,
+      timestamps: {},
+      marks: {},
+    };
+    markTiming(diagnostics, "recording_finished_at");
+    const checkpoint: VoiceTurnCheckpoint = { blob };
+    await processCheckpoint(checkpoint, operation, diagnostics);
+  }, [processCheckpoint]);
 
   const finishTurn = useCallback(() => {
     const recorder = recorderRef.current;
     if (!recorder || recorder.state === "inactive") return;
-    clearRecordingTimer();
+    const operation = operationRef.current;
+    clearRecordingTimer(operation);
     stopVad();
-    setState("thinking");
+    transition("thinking");
     setSessionNotice("Finishing your thought…");
     try {
       recorder.requestData();
@@ -389,37 +786,84 @@ export function useTurnBasedVoice({
       releaseStream();
       setError("The microphone stopped unexpectedly. Please try again.");
       setErrorCode("connection_failed");
-      setState("error");
+      setRetryPhase("restart");
+      transition("error");
     }
-  }, [clearRecordingTimer, releaseStream, stopVad]);
+  }, [clearRecordingTimer, releaseStream, stopVad, transition]);
 
-  const beginRecording = useCallback(async () => {
+  const beginRecording = useCallback(async (
+    restartDiagnostics?: VoiceTurnDiagnostics,
+  ): Promise<boolean> => {
     if (!activeRef.current || mutedRef.current) {
-      if (activeRef.current) setState("ready");
-      return;
+      if (activeRef.current) transition("ready");
+      return false;
     }
+
+    const sessionGeneration = currentSessionGenerationRef.current;
+    if (
+      !lifecycleRef.current!.isCurrent(sessionGeneration) ||
+      lifecycleRef.current!.isExpired(sessionGeneration)
+    ) {
+      setSessionNotice("This Voice reflection has reached its session limit.");
+      void stopRef.current("ended", "session_expired");
+      return false;
+    }
+
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setError("Microphone recording is unavailable on this device.");
       setErrorCode("connection_failed");
-      setState("error");
-      return;
+      setRetryPhase("restart");
+      transition("error");
+      return false;
     }
 
     const operation = operationRef.current;
-    setState("requesting-permission");
+    if (!microphonePermissionKnownRef.current) transition("requesting-permission");
     setError(null);
     setErrorCode(null);
     setSessionNotice(null);
     let stream: MediaStream;
     try {
-      if (isNativePlatform() && getNativePlatform() === "android") {
-        const { SpeechRecognition } = await import("@capgo/capacitor-speech-recognition");
-        const current = await SpeechRecognition.checkPermissions();
-        if (current.speechRecognition !== "granted") {
-          const requested = await SpeechRecognition.requestPermissions();
-          if (requested.speechRecognition !== "granted") {
-            throw new DOMException("Microphone permission denied.", "NotAllowedError");
+      if (
+        !microphonePermissionKnownRef.current &&
+        isNativePlatform() &&
+        getNativePlatform() === "android"
+      ) {
+        try {
+          const { SpeechRecognition } = await import(
+            "@capgo/capacitor-speech-recognition"
+          );
+          const current = await SpeechRecognition.checkPermissions();
+          logVoiceEvent("android_microphone_permission", {
+            sessionGeneration,
+            result: current.speechRecognition,
+          });
+          if (current.speechRecognition !== "granted") {
+            const requested = await SpeechRecognition.requestPermissions();
+            logVoiceEvent("android_microphone_permission_request", {
+              sessionGeneration,
+              result: requested.speechRecognition,
+            });
+            if (requested.speechRecognition !== "granted") {
+              throw new DOMException("Microphone permission denied.", "NotAllowedError");
+            }
           }
+        } catch (permissionBridgeError) {
+          if (
+            permissionBridgeError instanceof DOMException &&
+            permissionBridgeError.name === "NotAllowedError"
+          ) {
+            throw permissionBridgeError;
+          }
+          // WebView getUserMedia remains a valid Android fallback when the
+          // optional native permission bridge is unavailable or not synced.
+          logVoiceEvent("android_microphone_permission_bridge_failed", {
+            sessionGeneration,
+            reason:
+              permissionBridgeError instanceof Error
+                ? permissionBridgeError.message
+                : String(permissionBridgeError),
+          });
         }
       }
       stream = await navigator.mediaDevices.getUserMedia({
@@ -430,19 +874,29 @@ export function useTurnBasedVoice({
           channelCount: 1,
         },
       });
+      microphonePermissionKnownRef.current = true;
     } catch (caught) {
+      microphonePermissionKnownRef.current = false;
       const name = caught instanceof Error ? caught.name.toLowerCase() : "";
       const denied = name.includes("notallowed") || name.includes("permission");
-      setError(denied
-        ? "Microphone access was denied. Allow it in Android settings and try again."
-        : "The microphone could not start. Please try again.");
+      setError(
+        denied
+          ? "Microphone access was denied. Allow it in Android settings and try again."
+          : "The microphone could not start. Please try again.",
+      );
       setErrorCode(denied ? "permission_denied" : "connection_failed");
-      setState(denied ? "permission-denied" : "error");
-      return;
+      setRetryPhase("restart");
+      transition(denied ? "permission-denied" : "error");
+      return false;
     }
-    if (!activeRef.current || operation !== operationRef.current) {
+
+    if (
+      !activeRef.current ||
+      operation !== operationRef.current ||
+      !lifecycleRef.current!.isCurrent(sessionGeneration)
+    ) {
       stream.getTracks().forEach((track) => track.stop());
-      return;
+      return false;
     }
 
     streamRef.current = stream;
@@ -451,44 +905,45 @@ export function useTurnBasedVoice({
     try {
       recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
     } catch {
-      releaseStream();
+      releaseStream(stream);
       setError("Audio recording could not start on this device.");
       setErrorCode("connection_failed");
-      setState("error");
-      return;
+      setRetryPhase("restart");
+      transition("error");
+      return false;
     }
 
     recorderRef.current = recorder;
-    chunksRef.current = [];
-    discardRecordingRef.current = false;
+    const recorderChunks: Blob[] = [];
     recordingStartedAtRef.current = performance.now();
     speechStartedAtRef.current = null;
     lastSpeechAtRef.current = null;
+    let recorderSource: MediaStreamAudioSourceNode | null = null;
+
     recorder.ondataavailable = (event) => {
-      if (event.data.size) chunksRef.current.push(event.data);
+      if (event.data.size) recorderChunks.push(event.data);
     };
     recorder.onerror = () => {
-      discardRecordingRef.current = true;
-      recorderRef.current = null;
-      releaseStream();
+      discardedRecordersRef.current.add(recorder);
+      if (recorderRef.current === recorder) recorderRef.current = null;
+      releaseStream(stream, recorderSource);
       setError("Microphone recording failed. Please try again.");
       setErrorCode("connection_failed");
-      setState("error");
+      setRetryPhase("restart");
+      transition("error");
     };
     recorder.onstop = () => {
       recorder.ondataavailable = null;
       recorder.onerror = null;
       recorder.onstop = null;
       if (recorderRef.current === recorder) recorderRef.current = null;
-      clearRecordingTimer();
-      stopVad();
-      releaseStream();
-      const discard = discardRecordingRef.current;
-      discardRecordingRef.current = false;
-      const blob = new Blob(chunksRef.current, {
-        type: chunksRef.current[0]?.type || recorder.mimeType || "audio/webm",
+      clearRecordingTimer(operation);
+      releaseStream(stream, recorderSource);
+      const discard = discardedRecordersRef.current.has(recorder);
+      discardedRecordersRef.current.delete(recorder);
+      const blob = new Blob(recorderChunks, {
+        type: recorderChunks[0]?.type || recorder.mimeType || "audio/webm",
       });
-      chunksRef.current = [];
       if (!discard) void processRecording(blob, operation);
     };
 
@@ -497,9 +952,9 @@ export function useTurnBasedVoice({
       await context.resume().catch(() => undefined);
       const analyser = context.createAnalyser();
       analyser.fftSize = 1024;
-      const source = context.createMediaStreamSource(stream);
-      source.connect(analyser);
-      mediaSourceRef.current = source;
+      recorderSource = context.createMediaStreamSource(stream);
+      recorderSource.connect(analyser);
+      mediaSourceRef.current = recorderSource;
       const samples = new Uint8Array(analyser.fftSize);
       const monitor = () => {
         if (recorderRef.current !== recorder || recorder.state === "inactive") return;
@@ -514,13 +969,14 @@ export function useTurnBasedVoice({
         if (rms >= SPEECH_RMS_THRESHOLD) {
           if (speechStartedAtRef.current === null) {
             speechStartedAtRef.current = now;
-            setState("user-speaking");
+            transition("user-speaking");
           }
           lastSpeechAtRef.current = now;
         } else if (speechStartedAtRef.current !== null) {
           const speechDuration = now - speechStartedAtRef.current;
           const silenceDuration = now - (lastSpeechAtRef.current || now);
-          if (speechDuration >= MIN_SPEECH_MS && silenceDuration >= SILENCE_AFTER_SPEECH_MS) {
+          const requiredSilence = getAdaptiveSilenceMs(speechDuration);
+          if (speechDuration >= MIN_SPEECH_MS && silenceDuration >= requiredSilence) {
             finishTurn();
             return;
           }
@@ -532,19 +988,40 @@ export function useTurnBasedVoice({
 
     try {
       recorder.start(250);
-      setState("listening");
-      recordingTimerRef.current = window.setTimeout(() => finishTurn(), MAX_RECORDING_MS);
+      transition("listening", {
+        audioContextState: audioContextRef.current?.state || "missing",
+        mediaRecorderMimeType: recorder.mimeType || mimeType || "browser-default",
+      });
+      if (restartDiagnostics) {
+        markTiming(restartDiagnostics, "recording_restarted_at");
+      }
+      recordingTimerOperationRef.current = operation;
+      recordingTimerRef.current = window.setTimeout(
+        () => finishTurn(),
+        MAX_RECORDING_MS,
+      );
+      return true;
     } catch {
-      recorderRef.current = null;
-      releaseStream();
+      if (recorderRef.current === recorder) recorderRef.current = null;
+      releaseStream(stream, recorderSource);
       setError("Audio recording could not start. Please try again.");
       setErrorCode("connection_failed");
-      setState("error");
+      setRetryPhase("restart");
+      transition("error");
+      return false;
     }
-  }, [clearRecordingTimer, finishTurn, processRecording, releaseStream, stopVad]);
+  }, [
+    clearRecordingTimer,
+    finishTurn,
+    processRecording,
+    releaseStream,
+    transition,
+  ]);
   beginRecordingRef.current = beginRecording;
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (
+    requestedMode: VoiceStartMode = "fresh_start",
+  ) => {
     if (activeRef.current) {
       primeAudioForUserGesture();
       await beginRecording();
@@ -553,82 +1030,223 @@ export function useTurnBasedVoice({
     if (!navigator.onLine) {
       setError("Reconnect to the internet and try Voice again.");
       setErrorCode("connection_failed");
-      setState("offline");
+      transition("offline");
       return;
     }
+
+    let mode = requestedMode;
+    const savedReservation = reservationRef.current;
+    if (
+      mode === "recovery_resume" &&
+      !isVoiceReservationRecoverable(savedReservation, userId)
+    ) {
+      reservationRef.current = null;
+      onReservationChange(null);
+      mode = "fresh_start";
+    }
+
     primeAudioForUserGesture();
+    const sessionGeneration = lifecycleRef.current!.begin();
+    currentSessionGenerationRef.current = sessionGeneration;
+    currentStartModeRef.current = mode;
     activeRef.current = true;
+    setIsSessionActive(true);
     operationRef.current += 1;
     const operation = operationRef.current;
-    setState("connecting");
+    transition(mode === "recovery_resume" ? "reconnecting" : "connecting", {
+      mode,
+    });
     setError(null);
     setErrorCode(null);
     setRetryUntil(null);
-    setSessionNotice("Confirming premium access…");
+    setRetryPhase(null);
+    setSessionNotice(
+      mode === "recovery_resume"
+        ? "Restoring your interrupted reflection…"
+        : "Confirming premium access…",
+    );
+
+    const previousReservation = mode === "fresh_start" ? savedReservation : null;
+    if (previousReservation) {
+      reservationRef.current = null;
+      onReservationChange(null);
+    }
+    const requestedHandle =
+      mode === "recovery_resume" && savedReservation
+        ? savedReservation.handle
+        : createClientReservationHandle();
+
+    logVoiceEvent("startup_diagnostics", {
+      sessionGeneration,
+      mode,
+      platform: isNativePlatform() ? getNativePlatform() : "web",
+      liveReady,
+      apiStatusConnectionError: apiStatusConnectionError || null,
+      online: navigator.onLine,
+      getUserMediaAvailable: Boolean(navigator.mediaDevices?.getUserMedia),
+      mediaDevicesAvailable: Boolean(navigator.mediaDevices),
+      audioContextState: audioContextRef.current?.state || "missing",
+      recoveryReservationPresent: Boolean(savedReservation),
+    });
+
     try {
-      const requestedHandle = reservationRef.current?.handle || createClientReservationHandle();
-      const requestSession = () => apiFetch("/api/voice/session", {
+      const requestSession = () =>
+        apiFetch("/api/voice/session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "start",
+            mode,
             reservationHandle: requestedHandle,
+            previousReservationHandle: previousReservation?.handle || null,
           }),
         });
+
       let response = await requestSession();
-      if (response.status === 403 && isNativePlatform() && getNativePlatform() === "android") {
+      if (
+        response.status === 403 &&
+        isNativePlatform() &&
+        getNativePlatform() === "android"
+      ) {
         setSessionNotice("Rechecking your Google Play premium access…");
-        const { refreshNativeSubscriptionEntitlement } = await import("../lib/native/subscriptionSync");
+        const { refreshNativeSubscriptionEntitlement } = await import(
+          "../lib/native/subscriptionSync"
+        );
         if (await refreshNativeSubscriptionEntitlement().catch(() => false)) {
           response = await requestSession();
         }
       }
+
       const session = await parseApiResponse<{
         reservationHandle: string;
         reservationExpiresAt: string;
-        remainingSeconds?: number;
+        remainingSeconds: number;
+        resumed: boolean;
       }>(response);
-      if (!activeRef.current || operation !== operationRef.current) {
-        await apiFetch("/api/voice/session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "release",
-            reservationHandle: session.reservationHandle,
-          }),
-        }).catch(() => undefined);
+      logVoiceEvent("session_response", {
+        sessionGeneration,
+        mode,
+        providerHttpStatus: response.status,
+        resumed: session.resumed,
+        remainingSeconds: session.remainingSeconds,
+        reservationExpiresAt: session.reservationExpiresAt,
+      });
+
+      if (
+        !activeRef.current ||
+        operation !== operationRef.current ||
+        !lifecycleRef.current!.isCurrent(sessionGeneration)
+      ) {
+        const transientReservation = createVoiceReservation({
+          handle: session.reservationHandle,
+          expiresAt: session.reservationExpiresAt,
+          userId,
+        });
+        await releaseReservation(
+          transientReservation,
+          "component_unmount",
+          sessionGeneration,
+        );
         return;
       }
-      const nextReservation = {
+      if (mode === "fresh_start" && session.resumed) {
+        throw new Error("A stale Voice reservation was returned for a fresh reflection.");
+      }
+      if (mode === "recovery_resume" && !session.resumed) {
+        throw new Error("The interrupted Voice reflection could not be resumed safely.");
+      }
+      if (
+        !Number.isFinite(session.remainingSeconds) ||
+        session.remainingSeconds <= 0
+      ) {
+        throw new Error("The Voice session has already expired.");
+      }
+
+      const nextReservation = createVoiceReservation({
         handle: session.reservationHandle,
         expiresAt: session.reservationExpiresAt,
-      };
+        userId,
+      });
       reservationRef.current = nextReservation;
       onReservationChange(nextReservation);
-      const remainingMs = Math.max(1_000, Date.parse(nextReservation.expiresAt) - Date.now());
-      sessionTimerRef.current = window.setTimeout(() => {
-        setSessionNotice("This Voice reflection has reached its session limit.");
-        void stop("ended");
-      }, remainingMs);
+      const timerInstalled = lifecycleRef.current!.scheduleExpiry(
+        sessionGeneration,
+        session.remainingSeconds,
+        (expiredGeneration) => {
+          if (currentSessionGenerationRef.current !== expiredGeneration) return;
+          setSessionNotice("This Voice reflection has reached its session limit.");
+          void stopRef.current("ended", "session_expired");
+        },
+      );
+      if (!timerInstalled) {
+        throw new Error("The Voice session timer could not be started.");
+      }
+
       setSessionNotice(null);
       await beginRecording();
     } catch (caught) {
-      if (!activeRef.current || operation !== operationRef.current) return;
-      activeRef.current = false;
+      if (
+        currentSessionGenerationRef.current !== sessionGeneration ||
+        operation !== operationRef.current
+      ) {
+        return;
+      }
+
       const apiError = caught as Error & ApiErrorBody;
-      const message = apiError.message || "Voice could not start.";
-      setError(message);
-      setErrorCode(apiError.reason || "connection_failed");
+      activeRef.current = false;
+      setIsSessionActive(false);
+      lifecycleRef.current!.invalidate(sessionGeneration);
+      currentSessionGenerationRef.current = 0;
+      const nextErrorCode = apiError.reason || "connection_failed";
+      setErrorCode(nextErrorCode);
+      setError(apiError.message || "Voice could not start.");
       if (apiError.retryAfterSeconds) {
         setRetryUntil(Date.now() + apiError.retryAfterSeconds * 1_000);
       }
-      setState(apiError.reason === "subscription_required" ? "error" : "error");
+      if (nextErrorCode === "recovery_unavailable") {
+        reservationRef.current = null;
+        onReservationChange(null);
+        setSessionNotice("Begin a fresh reflection to continue.");
+      }
+      transition(navigator.onLine ? "error" : "offline", {
+        mode,
+        providerHttpStatus: apiError.httpStatus || null,
+        reason: nextErrorCode,
+      });
+
+      // Detach the failed session's context before yielding to lease cleanup.
+      // A fast retry can then create its own context without this catch block
+      // later closing audio that belongs to the newer session.
+      const failedSessionContext = audioContextRef.current;
+      audioContextRef.current = null;
+      const closeFailedContext = failedSessionContext?.state !== "closed"
+        ? failedSessionContext.close().catch(() => undefined)
+        : Promise.resolve();
+
+      if (mode === "fresh_start" || nextErrorCode === "recovery_unavailable") {
+        const uncertainReservation = createVoiceReservation({
+          handle: requestedHandle,
+          expiresAt: new Date(Date.now() + 10 * 60 * 1_000).toISOString(),
+          userId,
+        });
+        await releaseReservation(
+          uncertainReservation,
+          nextErrorCode === "recovery_unavailable" ? "stale_recovery" : "fatal_error",
+          sessionGeneration,
+        );
+      }
+
+      await closeFailedContext;
     }
   }, [
+    apiStatusConnectionError,
     beginRecording,
+    liveReady,
     onReservationChange,
     primeAudioForUserGesture,
-    stop,
+    releaseReservation,
+    transition,
+    userId,
   ]);
 
   const toggleMute = useCallback(() => {
@@ -636,41 +1254,135 @@ export function useTurnBasedVoice({
     mutedRef.current = nextMuted;
     setIsMuted(nextMuted);
     if (nextMuted) {
-      discardRecordingRef.current = true;
       const recorder = recorderRef.current;
-      if (recorder?.state !== "inactive") recorder.stop();
-      releaseStream();
-      setState("ready");
+      if (recorder && recorder.state !== "inactive") {
+        discardedRecordersRef.current.add(recorder);
+        try {
+          recorder.stop();
+        } catch {
+          // Recorder cleanup continues below.
+        }
+        releaseStream();
+        transition("ready");
+      }
       setSessionNotice("Microphone paused.");
     } else if (activeRef.current) {
       setSessionNotice(null);
       void beginRecording();
     }
-  }, [beginRecording, releaseStream]);
+  }, [beginRecording, releaseStream, transition]);
 
   const interrupt = useCallback(() => {
     if (!activeRef.current) return;
     const hadPlayback = Boolean(playbackSourceRef.current);
     stopPlayback();
-    setState("interrupted");
-    setSessionNotice("Response stopped. I’m listening again.");
+    transition("interrupted");
+    setSessionNotice("Response stopped. I'm listening again.");
+    logVoiceEvent("playback_interrupted", {
+      sessionGeneration: currentSessionGenerationRef.current,
+    });
     if (!hadPlayback && !mutedRef.current) void beginRecording();
-  }, [beginRecording, stopPlayback]);
+  }, [beginRecording, stopPlayback, transition]);
 
   const retry = useCallback(async () => {
+    if (!navigator.onLine) {
+      setError("Reconnect to the internet and try again.");
+      transition("offline");
+      return;
+    }
     if (activeRef.current) {
       setError(null);
       setErrorCode(null);
       setSessionNotice(null);
-      await beginRecording();
+      const checkpoint = retryCheckpointRef.current;
+      const diagnostics = retryDiagnosticsRef.current;
+      if (checkpoint && diagnostics) {
+        await processCheckpoint(checkpoint, operationRef.current, diagnostics);
+      } else {
+        await beginRecording();
+      }
       return;
     }
-    await start();
-  }, [beginRecording, start]);
+    await start(
+      isVoiceReservationRecoverable(reservationRef.current, userId)
+        ? "recovery_resume"
+        : "fresh_start",
+    );
+  }, [beginRecording, processCheckpoint, start, transition, userId]);
+
+  useEffect(() => {
+    const handleOffline = () => {
+      if (!activeRef.current) return;
+      requestControllerRef.current?.abort();
+      const recorder = recorderRef.current;
+      if (recorder) discardedRecordersRef.current.add(recorder);
+      if (recorder?.state !== "inactive") {
+        try {
+          recorder.stop();
+        } catch {
+          // Keep the session recoverable while offline.
+        }
+      }
+      releaseStream();
+      setError("You're offline. Your reflection is still here.");
+      setErrorCode("connection_failed");
+      setSessionNotice("Reconnect, then try this turn again.");
+      transition("offline");
+    };
+    const handleOnline = () => {
+      if (!activeRef.current || stateRef.current !== "offline") return;
+      setError(null);
+      setSessionNotice("Connection restored. Tap retry when you're ready.");
+      transition("reconnecting");
+    };
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [releaseStream, transition]);
+
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    let disposed = false;
+    let listener: { remove: () => Promise<void> } | null = null;
+    void import("@capacitor/app")
+      .then(({ App }) =>
+        App.addListener("appStateChange", ({ isActive }) => {
+          logVoiceEvent("android_app_state", {
+            isActive,
+            sessionGeneration: currentSessionGenerationRef.current || null,
+            state: stateRef.current,
+          });
+          // Android permission dialogs temporarily background the WebView.
+          // The active Voice session deliberately remains intact.
+        }),
+      )
+      .then((handle) => {
+        if (disposed) void handle.remove();
+        else listener = handle;
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      if (listener) void listener.remove();
+    };
+  }, []);
 
   useEffect(() => () => {
-    void stop("ended");
-  }, [stop]);
+    void stopRef.current("ended", "component_unmount");
+  }, []);
+
+  const canRecover = isVoiceReservationRecoverable(reservation, userId);
+  const retryLabel =
+    retryPhase === "tts" || retryPhase === "playback"
+      ? "Retry voice response"
+      : retryPhase === "response"
+        ? "Retry response"
+        : retryPhase === "transcription"
+          ? "Retry recording"
+          : "Try listening again";
 
   return {
     state,
@@ -678,7 +1390,10 @@ export function useTurnBasedVoice({
     errorCode,
     sessionNotice,
     isMuted,
+    isSessionActive,
+    canRecover,
     retryUntil,
+    retryLabel,
     start,
     retry,
     stop,

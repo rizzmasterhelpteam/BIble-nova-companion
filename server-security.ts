@@ -188,11 +188,12 @@ export const getVoiceSessionAvailability = async (
 
 export const releaseVoiceSessionLease = async (userId: string, handleHash: string) => {
   const client = getSupabaseAdminClient();
-  const { error } = await client.rpc("release_voice_session_lease", {
+  const { data, error } = await client.rpc("release_voice_session_lease", {
     p_user_id: userId,
     p_handle_hash: handleHash,
   });
   if (error) throw new HttpError("Voice session release failed.", 503);
+  return data === true || (Array.isArray(data) && data[0] === true);
 };
 
 export const getServerShadowNotes = async (userId: string) => {

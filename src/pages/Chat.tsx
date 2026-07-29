@@ -401,7 +401,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   }, [identityKey]);
 
   const updateVoiceReservation = useCallback(
-    (reservation: { handle: string; expiresAt: string } | null) => {
+    (reservation: VoiceReservation | null) => {
       if (!identityKey) return;
       if (!reservation) {
         clearVoiceReservation(identityKey);
@@ -1009,6 +1009,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       {isVoiceMode ? (
         <React.Suspense fallback={<div className="min-h-0 flex-1" aria-busy="true" />}>
           <VoiceMode
+            userId={identityKey || ""}
             messages={messages}
             shadowNotes={shadowNotes}
             isTyping={isTyping}

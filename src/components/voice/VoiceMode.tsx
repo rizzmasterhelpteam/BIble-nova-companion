@@ -17,11 +17,16 @@ import { apiFetch } from "../../lib/apiClient";
 import { isNativePlatform } from "../../lib/native/platform";
 import { cn } from "../../lib/utils";
 import { useMobileViewport } from "../../context/MobileViewportContext";
-import { useTurnBasedVoice } from "../../hooks/useTurnBasedVoice";
+import {
+  useTurnBasedVoice,
+  type VoiceStartMode,
+} from "../../hooks/useTurnBasedVoice";
 import { usePerformanceMode } from "../../hooks/usePerformanceMode";
+import type { VoiceReservation } from "../../lib/voiceReservation";
 import type { ConversationMessage, VoiceState } from "../../types/live";
 
 type VoiceModeProps = {
+  userId: string;
   messages: ConversationMessage[];
   shadowNotes: string | null;
   isTyping: boolean;
@@ -30,8 +35,8 @@ type VoiceModeProps = {
   onAcceptShadowNotes: (notes: string | null) => void;
   onExitVoice: () => void;
   onSessionActiveChange: (active: boolean) => void;
-  reservation: { handle: string; expiresAt: string } | null;
-  onReservationChange: (reservation: { handle: string; expiresAt: string } | null) => void;
+  reservation: VoiceReservation | null;
+  onReservationChange: (reservation: VoiceReservation | null) => void;
   voiceReady: boolean;
   isCheckingVoiceReady: boolean;
   apiStatusConnectionError?: string;
@@ -71,27 +76,15 @@ const STATE_DESCRIPTIONS: Record<VoiceState, string> = {
   ended: "Continue in Chat or begin again.",
   "permission-denied": "Allow microphone access or continue in Chat.",
   offline: "Reconnect to begin a Voice reflection.",
-  error: "Chat remains available.",
+  error: "Retry here or continue with the saved response in Chat.",
 };
-
-const ACTIVE_STATES: VoiceState[] = [
-  "requesting-permission",
-  "connecting",
-  "ready",
-  "listening",
-  "user-speaking",
-  "thinking",
-  "assistant-speaking",
-  "interrupted",
-  "reconnecting",
-  "ending",
-];
 
 const isVoiceMessage = (message: ConversationMessage) => message.source === "voice";
 const SHADOW_NOTE_PERSIST_INTERVAL_MS = 70_000;
 const SHADOW_NOTE_TIMEOUT_MS = 2_500;
 
 export default function VoiceMode({
+  userId,
   messages,
   shadowNotes,
   isTyping,
@@ -138,13 +131,15 @@ export default function VoiceMode({
   }, [onAppendAssistantMessage]);
 
   const live = useTurnBasedVoice({
+    userId,
     history: messages,
     shadowNotes,
     onUserTranscript: handleUserTranscript,
     onAssistantTranscript: handleAssistantTranscript,
-    onAcceptShadowNotes,
     reservation,
     onReservationChange,
+    liveReady: voiceReady,
+    apiStatusConnectionError,
   });
   const stopLive = live.stop;
   const premiumRequired = live.errorCode === "subscription_required";
@@ -241,7 +236,7 @@ export default function VoiceMode({
     void latestPersistVoiceNotesRef.current(true);
   }, []);
 
-  const active = ACTIVE_STATES.includes(live.state);
+  const active = live.isSessionActive;
   useEffect(() => {
     onSessionActiveChange(active);
   }, [active, onSessionActiveChange]);
@@ -251,11 +246,11 @@ export default function VoiceMode({
   const isSpeaking = live.state === "user-speaking" || live.state === "assistant-speaking";
 
   const handleEnd = useCallback(async () => {
-    await stopLive("ended");
+    await stopLive("ended", "user_end");
     void persistVoiceNotes(true);
   }, [persistVoiceNotes, stopLive]);
 
-  const handleStart = useCallback(async () => {
+  const handleStart = useCallback(async (requestedMode?: VoiceStartMode) => {
     // Android requires audio to be activated directly from the tap. Do this
     // before a status retry yields to the network or the Capacitor bridge.
     live.primeAudioForUserGesture();
@@ -269,14 +264,24 @@ export default function VoiceMode({
       const refreshedReady = await onRetryVoiceReady();
       ready = refreshedReady || ready;
     }
-    if (ready) await live.start();
-  }, [live.primeAudioForUserGesture, live.start, onRetryVoiceReady, voiceReady]);
+    if (ready) {
+      await live.start(
+        requestedMode || (live.canRecover ? "recovery_resume" : "fresh_start"),
+      );
+    }
+  }, [
+    live.canRecover,
+    live.primeAudioForUserGesture,
+    live.start,
+    onRetryVoiceReady,
+    voiceReady,
+  ]);
 
   const handleExitVoice = useCallback(() => {
     if (exitPromiseRef.current) return exitPromiseRef.current;
 
     const exitPromise = (async () => {
-      await stopLive("ended");
+      await stopLive("ended", "user_exit");
       onExitVoice();
       void persistVoiceNotes(true);
     })();
@@ -321,7 +326,9 @@ export default function VoiceMode({
             ? "Reconnect and retry"
             : !voiceReady || live.state === "error"
               ? "Try Voice again"
-              : live.state === "ended"
+              : live.canRecover
+                ? "Resume interrupted reflection"
+                : live.state === "ended"
                 ? "Begin another reflection"
                 : "Start voice reflection";
   const showStartButton = !active;
@@ -333,6 +340,9 @@ export default function VoiceMode({
     "assistant-speaking",
     "interrupted",
   ].includes(live.state);
+  const showRetryableSessionError =
+    active &&
+    ["error", "permission-denied", "offline", "reconnecting"].includes(live.state);
   const sessionNotice = premiumRequired
     ? live.error || "We could not confirm your premium plan yet. Restore it with Google Play and try Voice again."
     : !isCheckingVoiceReady && !voiceReady
@@ -435,16 +445,57 @@ export default function VoiceMode({
 
           <div className={cn("voice-actions mt-4 w-full pb-safe", isShortPhone ? "pt-1" : "pt-2")}>
             {showStartButton ? (
-              <button
-                type="button"
-                onClick={() => void handleStart()}
-                disabled={isTyping || cooldownActive}
-                aria-busy={isCheckingVoiceReady}
-                className="voice-primary-action touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 text-[15px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {premiumRequired ? <RotateCcw className="h-5 w-5" /> : live.state === "error" || live.state === "permission-denied" || live.state === "offline" ? <RotateCcw className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
-                {startLabel}
-              </button>
+              <div className="flex w-full flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleStart()}
+                  disabled={isTyping || cooldownActive}
+                  aria-busy={isCheckingVoiceReady}
+                  className="voice-primary-action touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 text-[15px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {premiumRequired ? <RotateCcw className="h-5 w-5" /> : live.state === "error" || live.state === "permission-denied" || live.state === "offline" ? <RotateCcw className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
+                  {startLabel}
+                </button>
+                {live.canRecover && (
+                  <button
+                    type="button"
+                    onClick={() => void handleStart("fresh_start")}
+                    disabled={isTyping || cooldownActive}
+                    className="voice-control-button touch-target app-secondary-button inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-pill px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Start a fresh reflection
+                  </button>
+                )}
+              </div>
+            ) : showRetryableSessionError ? (
+              <div className="grid w-full grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => void live.retry()}
+                  className="voice-control-button touch-target app-secondary-button flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] px-2 text-[12px] font-medium"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  <span>{live.retryLabel}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleExitVoice()}
+                  className="voice-control-button touch-target app-secondary-button flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] px-2 text-[12px] font-medium"
+                >
+                  <Send className="h-4 w-4" />
+                  <span>Continue in Chat</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleEnd()}
+                  className="voice-control-button voice-end-button touch-target flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] border px-2 text-[12px] font-medium"
+                  style={{ color: "var(--app-danger)", borderColor: "color-mix(in srgb, var(--app-danger) 30%, transparent)", background: "var(--app-danger-soft)" }}
+                >
+                  <CircleStop className="h-4 w-4" />
+                  <span>End</span>
+                </button>
+              </div>
             ) : canControlMicrophone ? (
               <div className={cn(
                 "grid w-full gap-2",

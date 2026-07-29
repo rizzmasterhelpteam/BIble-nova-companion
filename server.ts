@@ -14,6 +14,7 @@ import {
   transcribeAudio,
 } from "./server-api";
 import voiceSessionHandler from "./api/voice/session";
+import voiceRespondHandler from "./api/voice/respond";
 import textToSpeechHandler from "./api/tts";
 import { createShadowNotes, type ChatMessage } from "./chat-api";
 import {
@@ -37,6 +38,8 @@ app.get("/api/status", (_req, res) => {
 
 app.post("/api/voice/session", voiceSessionHandler);
 app.options("/api/voice/session", voiceSessionHandler);
+app.post("/api/voice/respond", voiceRespondHandler);
+app.options("/api/voice/respond", voiceRespondHandler);
 app.post("/api/tts", textToSpeechHandler);
 app.options("/api/tts", textToSpeechHandler);
 

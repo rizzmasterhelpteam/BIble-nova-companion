@@ -42,7 +42,8 @@ describe("Voice mode interface", () => {
     expect(voiceModeSource).toContain("const refreshedReady = await onRetryVoiceReady();");
     expect(voiceModeSource).toContain("ready = refreshedReady || ready;");
     expect(voiceModeSource).toContain("live.primeAudioForUserGesture();");
-    expect(voiceModeSource).toContain("if (ready) await live.start();");
+    expect(voiceModeSource).toContain("if (ready) {");
+    expect(voiceModeSource).toContain("await live.start(");
     expect(voiceModeSource).toContain("useTurnBasedVoice");
   });
 
@@ -51,10 +52,14 @@ describe("Voice mode interface", () => {
     expect(chatSource).not.toContain('await refreshSpeechSupport("api-status-retry");');
   });
 
-  it("recovers a repeated Voice start using the same reservation handle", () => {
+  it("distinguishes fresh starts from safe interrupted-session recovery", () => {
     expect(voiceHookSource).toContain("createClientReservationHandle");
     expect(voiceHookSource).toContain("reservationHandle: requestedHandle");
+    expect(voiceHookSource).toContain("previousReservationHandle");
+    expect(voiceHookSource).toContain('"fresh_start"');
+    expect(voiceHookSource).toContain('"recovery_resume"');
     expect(voiceSessionSource).toContain('availability.reason === "reservation_resume"');
+    expect(voiceSessionSource).toContain("MIN_RECOVERY_REMAINING_SECONDS");
     expect(voiceSessionSource).toContain("resumed: true");
   });
 
@@ -108,9 +113,9 @@ describe("Voice mode interface", () => {
     expect(voiceHookSource).toContain("noiseSuppression: true");
     expect(voiceHookSource).toContain("autoGainControl: true");
     expect(voiceHookSource).toContain('apiFetch("/api/transcribe"');
-    expect(voiceHookSource).toContain('apiFetch("/api/chat"');
+    expect(voiceHookSource).toContain('apiFetch("/api/voice/respond"');
     expect(voiceHookSource).toContain('apiFetch("/api/tts"');
-    expect(voiceHookSource).toContain("SILENCE_AFTER_SPEECH_MS");
+    expect(voiceHookSource).toContain("getAdaptiveSilenceMs");
     expect(voiceModeSource).toContain("Done speaking");
   });
 
@@ -118,8 +123,16 @@ describe("Voice mode interface", () => {
     expect(voiceHookSource).toContain("requestControllerRef.current?.abort()");
     expect(voiceHookSource).toContain("releaseStream()");
     expect(voiceHookSource).toContain("stopPlayback()");
-    expect(voiceHookSource).toContain("await releaseReservation()");
-    expect(voiceHookSource).toContain("await context.close()");
+    expect(voiceHookSource).toContain("await releaseReservation(");
+    expect(voiceHookSource).toContain("releaseReason");
+    expect(voiceHookSource).toContain("await targetContext.close()");
+  });
+
+  it("keeps recoverable provider and microphone failures inside Voice Mode", () => {
+    expect(voiceModeSource).toContain("showRetryableSessionError");
+    expect(voiceModeSource).toContain("Continue in Chat");
+    expect(voiceModeSource).toContain("live.retryLabel");
+    expect(voiceModeSource).toContain("live.isSessionActive");
   });
 
   it("keeps Voice actions scrollable and outside Android safe-area obstructions", () => {

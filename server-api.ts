@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { JWT } from "google-auth-library";
-import { MAX_SHADOW_NOTES_CHARS, createChatCompletion, createReflection, hasChatApiKey } from "./chat-api.js";
+import {
+  MAX_SHADOW_NOTES_CHARS,
+  createChatCompletion,
+  createReflection,
+  createVoiceResponse,
+  hasChatApiKey,
+} from "./chat-api.js";
 export {
   createReflection,
   getClientErrorMessage,
@@ -14,6 +20,15 @@ export const hasPrayerApiKey = () => Boolean(process.env.GROQ_API_KEY?.trim());
 
 export const hasSpeechApiKey = () => Boolean(process.env.GROQ_API_KEY?.trim());
 
+type TextToSpeechCredentials = {
+  client_email: string;
+  private_key: string;
+};
+
+let cachedTextToSpeechRaw: string | null = null;
+let cachedTextToSpeechCredentials: TextToSpeechCredentials | null = null;
+let cachedTextToSpeechAuth: JWT | null = null;
+
 const getTextToSpeechServiceAccount = (throwOnMissing = true) => {
   const raw = process.env.GOOGLE_TTS_SERVICE_ACCOUNT_JSON?.trim();
   if (!raw) {
@@ -24,10 +39,21 @@ const getTextToSpeechServiceAccount = (throwOnMissing = true) => {
   }
 
   try {
-    const credentials = JSON.parse(raw) as { client_email?: string; private_key?: string };
+    if (cachedTextToSpeechRaw === raw && cachedTextToSpeechCredentials) {
+      return cachedTextToSpeechCredentials;
+    }
+
+    const parsed = JSON.parse(raw) as { client_email?: string; private_key?: string };
+    const credentials = {
+      client_email: parsed.client_email?.trim() || "",
+      private_key: parsed.private_key?.replace(/\\n/g, "\n").trim() || "",
+    };
     if (!credentials.client_email || !credentials.private_key) {
       throw new Error("Missing client_email or private_key.");
     }
+    cachedTextToSpeechRaw = raw;
+    cachedTextToSpeechCredentials = credentials;
+    cachedTextToSpeechAuth = null;
     return credentials;
   } catch {
     if (throwOnMissing) {
@@ -38,6 +64,18 @@ const getTextToSpeechServiceAccount = (throwOnMissing = true) => {
 };
 
 export const hasTextToSpeechConfig = () => Boolean(getTextToSpeechServiceAccount(false));
+
+const getTextToSpeechAuthClient = () => {
+  const credentials = getTextToSpeechServiceAccount();
+  if (!cachedTextToSpeechAuth) {
+    cachedTextToSpeechAuth = new JWT({
+      email: credentials!.client_email,
+      key: credentials!.private_key,
+      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    });
+  }
+  return cachedTextToSpeechAuth;
+};
 
 export const hasNativeSubscriptionSyncConfig = () => {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -376,6 +414,18 @@ export async function createReflectionResponse(
   return result;
 }
 
+export async function createVoiceReflectionResponse(
+  userId: string,
+  messages: Array<{ role: "user" | "assistant" | "ai" | "model" | "system"; content: string }>,
+  shadowNotes?: string | null,
+) {
+  const persistedShadowNotes = await loadStoredShadowNotes(userId);
+  const effectiveShadowNotes = persistedShadowNotes || shadowNotes || null;
+  return {
+    message: await createVoiceResponse(messages, effectiveShadowNotes),
+  };
+}
+
 export async function transcribeAudio(audio: string, language?: string) {
   const apiKey = process.env.GROQ_API_KEY?.trim();
   if (!apiKey) {
@@ -417,7 +467,6 @@ export async function transcribeAudio(audio: string, language?: string) {
   return data.text.trim();
 }
 
-const GOOGLE_TTS_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 export const DEFAULT_GOOGLE_TTS_VOICE = "en-AU-Chirp3-HD-Algenib";
 export const DEFAULT_GOOGLE_TTS_LANGUAGE = "en-AU";
 
@@ -427,12 +476,7 @@ export async function synthesizeSpeech(text: string) {
     throw new Error("Text-to-Speech requires a response to read.");
   }
 
-  const credentials = getTextToSpeechServiceAccount();
-  const auth = new JWT({
-    email: credentials!.client_email,
-    key: credentials!.private_key,
-    scopes: [GOOGLE_TTS_SCOPE],
-  });
+  const auth = getTextToSpeechAuthClient();
   const { token: accessToken } = await auth.getAccessToken();
   if (!accessToken) {
     throw new Error("Could not authenticate with Google Cloud Text-to-Speech.");

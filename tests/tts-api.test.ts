@@ -33,6 +33,10 @@ const createResponse = () => {
       response.body = body;
       return response;
     }),
+    send: vi.fn((body: unknown) => {
+      response.body = body;
+      return response;
+    }),
     end: vi.fn(),
   };
   return response;
@@ -68,6 +72,32 @@ describe("Text-to-Speech API", () => {
       audioContent: "base64-audio",
       voiceName: "en-AU-Chirp3-HD-Algenib",
     });
+  });
+
+  it("returns private binary MP3 when the Voice client requests it", async () => {
+    synthesizeSpeech.mockResolvedValue({
+      audioContent: Buffer.from("mp3-audio").toString("base64"),
+      mimeType: "audio/mpeg",
+      voiceName: "en-AU-Chirp3-HD-Algenib",
+    });
+    const response = createResponse();
+
+    await ttsHandler({
+      method: "POST",
+      headers: {
+        accept: "audio/mpeg",
+        "x-client-request-id": "turn-1234567890123456",
+      },
+      body: { text: "You matter." },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.setHeader).toHaveBeenCalledWith("Content-Type", "audio/mpeg");
+    expect(response.setHeader).toHaveBeenCalledWith("Cache-Control", "private, no-store");
+    expect(response.send).toHaveBeenCalledOnce();
+    expect(Buffer.isBuffer(response.body)).toBe(true);
+    expect((response.body as Buffer).toString()).toBe("mp3-audio");
+    expect(response.json).not.toHaveBeenCalled();
   });
 
   it("does not expose provider failures to the client", async () => {
