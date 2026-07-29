@@ -14,6 +14,13 @@ import {
   MAX_VOICE_AUDIO_BYTES,
   normalizeVoiceAudioMimeType,
 } from "./src/lib/voiceTranscription.js";
+import {
+  createGoogleTtsSsml,
+  isGoogleTtsSsmlEnabled,
+  normalizeVoiceSpeech,
+  parseGoogleTtsPitch,
+  parseGoogleTtsSpeakingRate,
+} from "./src/lib/voiceSpeechFormatter.js";
 export {
   createReflection,
   getClientErrorMessage,
@@ -504,12 +511,84 @@ export async function transcribeAudio(audio: string | Blob, language?: string) {
 export const DEFAULT_GOOGLE_TTS_VOICE = "en-AU-Chirp3-HD-Algenib";
 export const DEFAULT_GOOGLE_TTS_LANGUAGE = "en-AU";
 
-export async function synthesizeSpeech(text: string) {
-  const normalizedText = text.trim();
+export type GoogleTtsSynthesisOptions = {
+  languageCode?: string;
+  voiceName?: string;
+  speakingRate?: string | number;
+  pitch?: string | number;
+  enableSsml?: boolean;
+};
+
+export const getGoogleTtsSynthesisConfig = (
+  options: GoogleTtsSynthesisOptions = {},
+) => ({
+  languageCode:
+    options.languageCode?.trim() ||
+    process.env.GOOGLE_TTS_LANGUAGE_CODE?.trim() ||
+    DEFAULT_GOOGLE_TTS_LANGUAGE,
+  voiceName:
+    options.voiceName?.trim() ||
+    process.env.GOOGLE_TTS_VOICE_NAME?.trim() ||
+    DEFAULT_GOOGLE_TTS_VOICE,
+  speakingRate: parseGoogleTtsSpeakingRate(
+    options.speakingRate ?? process.env.GOOGLE_TTS_SPEAKING_RATE,
+  ),
+  pitch: parseGoogleTtsPitch(
+    options.pitch ?? process.env.GOOGLE_TTS_PITCH,
+  ),
+  enableSsml:
+    options.enableSsml ??
+    isGoogleTtsSsmlEnabled(process.env.GOOGLE_TTS_ENABLE_SSML),
+});
+
+type GoogleTtsProviderResponse = {
+  audioContent?: string;
+  error?: { message?: string };
+};
+
+const requestGoogleTtsAudio = async ({
+  accessToken,
+  input,
+  voice,
+  audioConfig,
+  signal,
+}: {
+  accessToken: string;
+  input: { text: string } | { ssml: string };
+  voice: { languageCode: string; name: string };
+  audioConfig: {
+    audioEncoding: "MP3";
+    speakingRate?: number;
+    pitch?: number;
+  };
+  signal: AbortSignal;
+}) => {
+  const response = await fetch(
+    "https://texttospeech.googleapis.com/v1/text:synthesize",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ input, voice, audioConfig }),
+      signal,
+    },
+  );
+  const data = (await response.json().catch(() => ({}))) as GoogleTtsProviderResponse;
+  return { response, data };
+};
+
+export async function synthesizeSpeech(
+  text: string,
+  options: GoogleTtsSynthesisOptions = {},
+) {
+  const normalizedText = normalizeVoiceSpeech(text);
   if (!normalizedText) {
     throw new Error("Text-to-Speech requires a response to read.");
   }
 
+  const config = getGoogleTtsSynthesisConfig(options);
   const auth = getTextToSpeechAuthClient();
   const { token: accessToken } = await auth.getAccessToken();
   if (!accessToken) {
@@ -519,39 +598,73 @@ export async function synthesizeSpeech(text: string) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15_000);
   try {
-    const response = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        input: { text: normalizedText },
-        voice: {
-          languageCode: process.env.GOOGLE_TTS_LANGUAGE_CODE?.trim() || DEFAULT_GOOGLE_TTS_LANGUAGE,
-          name: process.env.GOOGLE_TTS_VOICE_NAME?.trim() || DEFAULT_GOOGLE_TTS_VOICE,
-        },
-        audioConfig: {
-          audioEncoding: "MP3",
-          speakingRate: 1,
-        },
-      }),
+    const voice = {
+      languageCode: config.languageCode,
+      name: config.voiceName,
+    };
+    let synthesisMode: "ssml" | "plain" | "plain-fallback" =
+      config.enableSsml ? "ssml" : "plain";
+    let result = await requestGoogleTtsAudio({
+      accessToken,
+      input: config.enableSsml
+        ? {
+            ssml: createGoogleTtsSsml(normalizedText, {
+              speakingRate: config.speakingRate,
+              pitch: config.pitch,
+            }),
+          }
+        : { text: normalizedText },
+      voice,
+      audioConfig: config.enableSsml
+        ? { audioEncoding: "MP3" }
+        : {
+            audioEncoding: "MP3",
+            speakingRate: config.speakingRate,
+            pitch: config.pitch,
+          },
       signal: controller.signal,
     });
-    const data = (await response.json().catch(() => ({}))) as {
-      audioContent?: string;
-      error?: { message?: string };
-    };
-    if (!response.ok) {
-      throw new Error(data.error?.message || "Text-to-Speech generation failed.");
+
+    const shouldTryPlainText =
+      config.enableSsml &&
+      !result.data.audioContent &&
+      ![401, 403, 429].includes(result.response.status);
+    if (shouldTryPlainText) {
+      console.warn("[voice/tts] SSML unavailable; retrying with plain text", {
+        providerStatus: result.response.status,
+        voiceName: config.voiceName,
+      });
+      synthesisMode = "plain-fallback";
+      result = await requestGoogleTtsAudio({
+        accessToken,
+        input: { text: normalizedText },
+        voice,
+        audioConfig: {
+          audioEncoding: "MP3",
+          speakingRate: config.speakingRate,
+          pitch: config.pitch,
+        },
+        signal: controller.signal,
+      });
     }
-    if (!data.audioContent) {
+
+    if (!result.response.ok) {
+      throw new Error(
+        result.data.error?.message || "Text-to-Speech generation failed.",
+      );
+    }
+    if (!result.data.audioContent) {
       throw new Error("Text-to-Speech returned no audio.");
     }
     return {
-      audioContent: data.audioContent,
+      audioContent: result.data.audioContent,
       mimeType: "audio/mpeg",
-      voiceName: process.env.GOOGLE_TTS_VOICE_NAME?.trim() || DEFAULT_GOOGLE_TTS_VOICE,
+      voiceName: config.voiceName,
+      languageCode: config.languageCode,
+      speakingRate: config.speakingRate,
+      pitch: config.pitch,
+      synthesisMode,
+      characterCount: normalizedText.length,
     };
   } finally {
     clearTimeout(timeoutId);

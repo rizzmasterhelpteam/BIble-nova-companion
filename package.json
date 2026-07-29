@@ -9,6 +9,7 @@
     "verify:production": "npm run lint && npm run test && npm run build",
     "start": "tsx server.ts",
     "test": "vitest run",
+    "voice:test-google": "tsx scripts/test-google-tts-voices.ts",
     "preview": "vite preview",
     "clean": "node -e \"const fs=require('fs'); fs.rmSync('dist',{recursive:true,force:true});\"",
     "postinstall": "patch-package && node scripts/patch-native-purchases.mjs",

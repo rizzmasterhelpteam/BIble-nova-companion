@@ -30,6 +30,10 @@ import {
   MAX_VOICE_AUDIO_BYTES,
 } from "../lib/voiceTranscription";
 import { readVoiceAudioResponse } from "../lib/voiceAudioResponse";
+import {
+  applyVoicePlaybackFadeIn,
+  stopVoicePlaybackSource,
+} from "../lib/voicePlaybackEnvelope";
 import type { ConversationMessage, VoiceState } from "../types/live";
 
 export type VoiceStartMode = "fresh_start" | "recovery_resume";
@@ -294,6 +298,7 @@ export function useTurnBasedVoice({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const bargeInDetectorRef = useRef(new AdaptiveBargeInDetector());
   const playbackSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const playbackGainRef = useRef<GainNode | null>(null);
   const playbackResolveRef = useRef<(() => void) | null>(null);
   const playbackDiagnosticsRef = useRef<VoiceTurnDiagnostics | null>(null);
   const retryCheckpointRef = useRef<VoiceTurnCheckpoint | null>(null);
@@ -370,6 +375,8 @@ export function useTurnBasedVoice({
     stopVad();
     const source = playbackSourceRef.current;
     playbackSourceRef.current = null;
+    const gain = playbackGainRef.current;
+    playbackGainRef.current = null;
     const diagnostics = playbackDiagnosticsRef.current;
     playbackDiagnosticsRef.current = null;
     const resolvePlayback = playbackResolveRef.current;
@@ -379,12 +386,57 @@ export function useTurnBasedVoice({
     }
     if (source) {
       source.onended = null;
-      try {
-        source.stop();
-      } catch {
-        // The source may already have ended.
+      const context = audioContextRef.current;
+      if (gain && context && context.state === "running") {
+        try {
+          stopVoicePlaybackSource({
+            context,
+            source,
+            gain,
+            fadeOut:
+              reason === "manual_interrupt" ||
+              reason === "barge_in_interrupt",
+          });
+        } catch {
+          try {
+            source.stop();
+          } catch {
+            // The source may already have ended.
+          }
+          try {
+            source.disconnect();
+          } catch {
+            // The source may already be disconnected.
+          }
+          try {
+            gain.disconnect();
+          } catch {
+            // The gain may already be disconnected.
+          }
+        }
+      } else {
+        try {
+          source.stop();
+        } catch {
+          // The source may already have ended.
+        }
+        try {
+          source.disconnect();
+        } catch {
+          // The source may already be disconnected.
+        }
+        try {
+          gain?.disconnect();
+        } catch {
+          // The gain may already be disconnected.
+        }
       }
-      source.disconnect();
+    } else {
+      try {
+        gain?.disconnect();
+      } catch {
+        // The gain may already be disconnected.
+      }
     }
     if (source && reason !== "completed") {
       logVoiceEvent("playback_cancelled", {
@@ -633,9 +685,13 @@ export function useTurnBasedVoice({
     const playbackOperation = playbackOperationRef.current + 1;
     playbackOperationRef.current = playbackOperation;
     const source = context.createBufferSource();
+    const gain = context.createGain();
     source.buffer = audioBuffer;
-    source.connect(context.destination);
+    applyVoicePlaybackFadeIn(context, gain);
+    source.connect(gain);
+    gain.connect(context.destination);
     playbackSourceRef.current = source;
+    playbackGainRef.current = gain;
     playbackDiagnosticsRef.current = diagnostics;
     transition("assistant-speaking", {
       turnId: diagnostics.turnId,
@@ -648,12 +704,14 @@ export function useTurnBasedVoice({
       playbackResolveRef.current = resolve;
       source.onended = () => {
         if (playbackSourceRef.current === source) playbackSourceRef.current = null;
+        if (playbackGainRef.current === gain) playbackGainRef.current = null;
         if (playbackResolveRef.current === resolve) playbackResolveRef.current = null;
         if (playbackDiagnosticsRef.current === diagnostics) {
           playbackDiagnosticsRef.current = null;
         }
         stopVad();
         source.disconnect();
+        gain.disconnect();
         markTiming(diagnostics, "playback_finished_at");
         markTiming(diagnostics, "playback_stopped_at");
         resolve();

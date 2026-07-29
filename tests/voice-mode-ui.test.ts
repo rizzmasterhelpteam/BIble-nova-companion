@@ -145,6 +145,9 @@ describe("Voice mode interface", () => {
     expect(voiceHookSource).toContain("AdaptiveBargeInDetector");
     expect(voiceHookSource).toContain("interruptFromUserSpeech");
     expect(voiceHookSource).toContain('stopPlayback("barge_in_interrupt")');
+    expect(voiceHookSource).toContain("stopVoicePlaybackSource");
+    expect(voiceHookSource).toContain("applyVoicePlaybackFadeIn");
+    expect(voiceHookSource).toContain("playbackGainRef");
     expect(voiceHookSource).not.toContain("blobToDataUrl");
     const normalStopStart = voiceHookSource.indexOf("recorder.onstop = () =>");
     const normalStopBlock = voiceHookSource.slice(

@@ -53,6 +53,11 @@ export default async function handler(req: any, res: any) {
       durationMs: Date.now() - startedAt,
       providerStatus: 200,
       voiceName: audio.voiceName,
+      languageCode: audio.languageCode,
+      speakingRate: audio.speakingRate,
+      pitch: audio.pitch,
+      synthesisMode: audio.synthesisMode,
+      characterCount: audio.characterCount,
     });
 
     const accept = String(req.headers?.accept || "");
