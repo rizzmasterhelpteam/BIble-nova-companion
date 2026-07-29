@@ -2,12 +2,14 @@ import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { JWT } from "google-auth-library";
 import {
-  MAX_SHADOW_NOTES_CHARS,
   createChatCompletion,
   createReflection,
   createVoiceResponse,
   hasChatApiKey,
 } from "./chat-api.js";
+import {
+  normalizeShadowNotes,
+} from "./src/lib/shadowMemory";
 import {
   getVoiceAudioFilename,
   isSupportedVoiceAudioMimeType,
@@ -369,24 +371,35 @@ const parseBase64Audio = (audio: string) => {
   };
 };
 
-export async function loadStoredShadowNotes(userId: string) {
+export type ShadowMemoryProfile = {
+  memoryEnabled: boolean;
+  shadowNotes: string | null;
+};
+
+export async function loadShadowMemoryProfile(userId: string): Promise<ShadowMemoryProfile> {
   const adminClient = createSupabaseAdminClient();
   if (!adminClient) {
-    return null;
+    return { memoryEnabled: false, shadowNotes: null };
   }
 
   const { data, error } = await adminClient
     .from(SHADOW_NOTES_TABLE)
-    .select("notes")
+    .select("memory_enabled, notes")
     .eq("user_id", userId)
-    .maybeSingle<{ notes: string | null }>();
+    .maybeSingle<{ memory_enabled: boolean; notes: string | null }>();
 
   if (error) {
-    console.error("Shadow notes load failed:", error.message);
-    return null;
+    console.error("Shadow memory load failed:", error.message);
+    return { memoryEnabled: false, shadowNotes: null };
   }
 
-  return data?.notes?.trim().slice(0, MAX_SHADOW_NOTES_CHARS) || null;
+  const memoryEnabled = data?.memory_enabled === true;
+  return {
+    memoryEnabled,
+    shadowNotes: memoryEnabled
+      ? normalizeShadowNotes(data?.notes)
+      : null,
+  };
 }
 
 export async function saveShadowNotes(userId: string, notes: string) {
@@ -395,33 +408,90 @@ export async function saveShadowNotes(userId: string, notes: string) {
     throw new Error("Shadow note persistence requires SUPABASE_SERVICE_ROLE_KEY on the server.");
   }
 
-  const normalizedNotes = notes.trim().slice(0, MAX_SHADOW_NOTES_CHARS);
-  const { error } = await adminClient.from(SHADOW_NOTES_TABLE).upsert(
-    {
-      user_id: userId,
+  const normalizedNotes = normalizeShadowNotes(notes) || "";
+  const { data, error } = await adminClient
+    .from(SHADOW_NOTES_TABLE)
+    .update({
       notes: normalizedNotes,
       updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" },
-  );
+    })
+    .eq("user_id", userId)
+    .eq("memory_enabled", true)
+    .select("notes")
+    .maybeSingle<{ notes: string | null }>();
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return normalizedNotes;
+  return normalizeShadowNotes(data?.notes);
+}
+
+export async function setShadowMemoryPreference(
+  userId: string,
+  memoryEnabled: boolean,
+): Promise<ShadowMemoryProfile> {
+  const adminClient = createSupabaseAdminClient();
+  if (!adminClient) {
+    throw new Error("Memory preferences require SUPABASE_SERVICE_ROLE_KEY on the server.");
+  }
+
+  const { data: existing, error: loadError } = await adminClient
+    .from(SHADOW_NOTES_TABLE)
+    .select("memory_enabled, notes")
+    .eq("user_id", userId)
+    .maybeSingle<{ memory_enabled: boolean; notes: string | null }>();
+  if (loadError) throw new Error(loadError.message);
+
+  if (existing?.memory_enabled === true && memoryEnabled) {
+    return {
+      memoryEnabled: true,
+      shadowNotes: normalizeShadowNotes(existing.notes),
+    };
+  }
+
+  const now = new Date().toISOString();
+  const { data, error } = await adminClient
+    .from(SHADOW_NOTES_TABLE)
+    .upsert(
+      {
+        user_id: userId,
+        memory_enabled: memoryEnabled,
+        memory_consent_updated_at: now,
+        notes: "",
+        updated_at: now,
+      },
+      { onConflict: "user_id" },
+    )
+    .select("memory_enabled, notes")
+    .single<{ memory_enabled: boolean; notes: string | null }>();
+  if (error) throw new Error(error.message);
+
+  return {
+    memoryEnabled: data.memory_enabled === true,
+    shadowNotes:
+      data.memory_enabled === true
+        ? normalizeShadowNotes(data.notes)
+        : null,
+  };
 }
 
 export async function createReflectionResponse(
   userId: string,
   messages: Array<{ role: "user" | "assistant" | "ai" | "model" | "system"; content: string }>,
-  shadowNotes?: string | null,
+  _shadowNotes?: string | null,
 ) {
-  const persistedShadowNotes = await loadStoredShadowNotes(userId);
-  const effectiveShadowNotes = persistedShadowNotes || shadowNotes || null;
-  const result = await createReflection(messages, effectiveShadowNotes);
+  const memoryProfile = await loadShadowMemoryProfile(userId);
+  const effectiveShadowNotes = memoryProfile.memoryEnabled ? memoryProfile.shadowNotes : null;
+  const result = await createReflection(messages, effectiveShadowNotes, {
+    rememberUser: memoryProfile.memoryEnabled,
+  });
 
-  if (result.shadowNotes) {
+  if (
+    memoryProfile.memoryEnabled &&
+    result.shadowNotes &&
+    result.shadowNotes !== effectiveShadowNotes
+  ) {
     try {
       result.shadowNotes = await saveShadowNotes(userId, result.shadowNotes);
     } catch (error) {
@@ -438,7 +508,7 @@ export async function createVoiceReflectionResponse(
   shadowNotes?: string | null,
 ) {
   const effectiveShadowNotes =
-    shadowNotes?.trim().slice(0, MAX_SHADOW_NOTES_CHARS) || null;
+    normalizeShadowNotes(shadowNotes);
   return {
     message: await createVoiceResponse(messages, effectiveShadowNotes),
   };

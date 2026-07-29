@@ -821,26 +821,358 @@
     box-shadow: 0 16px 34px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
-  .voice-page .voice-privacy-pill {
-    color: var(--app-text);
-    background-color: color-mix(in srgb, var(--app-surface-solid) 56%, transparent) !important;
-    border-color: color-mix(in srgb, var(--app-accent) 28%, var(--app-card-border)) !important;
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  .voice-page .voice-orb {
+    contain: layout paint style;
   }
 
-  .voice-page .voice-presence-ring {
-    border-color: color-mix(in srgb, var(--app-accent) 70%, transparent);
+  .voice-page .voice-orb-ambient {
+    inset: 16%;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--app-accent) 42%, transparent) 0%,
+      color-mix(in srgb, var(--app-accent) 15%, transparent) 48%,
+      transparent 74%
+    );
+    filter: blur(9px);
+    opacity: 0.42;
+    transform: scale(0.94);
+    transition: opacity 360ms ease, transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  .voice-page .voice-presence-core {
+  .voice-page .voice-orb-layer {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 320ms ease;
+  }
+
+  .voice-page .voice-orb-core-shell {
+    transform: scale(1);
+    transition: transform 90ms linear;
+  }
+
+  .voice-page .voice-orb-core {
     color: var(--app-accent);
-    background-color: color-mix(in srgb, var(--app-surface-elevated) 88%, transparent);
+    background:
+      radial-gradient(circle at 38% 30%, rgba(255, 255, 255, 0.12), transparent 34%),
+      color-mix(in srgb, var(--app-surface-elevated) 88%, transparent);
     border-color: color-mix(in srgb, var(--app-accent) 72%, var(--app-card-border));
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-accent) 22%, transparent), 0 18px 44px color-mix(in srgb, var(--app-accent) 20%, transparent);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--app-accent) 22%, transparent),
+      0 0 28px color-mix(in srgb, var(--app-accent) 16%, transparent),
+      0 18px 44px color-mix(in srgb, var(--app-accent) 20%, transparent);
+    transition: border-color 360ms ease, box-shadow 360ms ease, opacity 320ms ease;
   }
 
-  .voice-page .voice-audio-bar {
-    background-color: var(--app-accent);
+  .voice-page .voice-orb-core-glint {
+    border: 1px solid color-mix(in srgb, white 14%, transparent);
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.055), transparent 48%);
+    opacity: 0.76;
+  }
+
+  .voice-page .voice-orb-icon {
+    color: var(--app-accent);
+    filter: drop-shadow(0 0 8px color-mix(in srgb, var(--app-accent) 34%, transparent));
+    transition: color 320ms ease, opacity 320ms ease;
+  }
+
+  .voice-page .voice-listening-ring {
+    inset: 12px;
+    border-color: color-mix(in srgb, var(--app-accent) 64%, transparent);
+    opacity: 0;
+    transform: scale(0.72);
+    will-change: transform, opacity;
+  }
+
+  .voice-page .voice-orb--listening .voice-listening-layer {
+    opacity: 1;
+  }
+
+  .voice-page .voice-orb--listening .voice-listening-ring {
+    animation: voice-listening-ripple 3.35s cubic-bezier(0.22, 0.7, 0.24, 1) infinite;
+  }
+
+  .voice-page .voice-orb--listening .voice-orb-ambient {
+    opacity: 0.62;
+    transform: scale(1.08);
+  }
+
+  .voice-page .voice-orb--listening .voice-orb-core {
+    animation: voice-core-breathe 3.2s ease-in-out infinite;
+  }
+
+  .voice-page .voice-wave-spoke {
+    pointer-events: none;
+  }
+
+  .voice-page .voice-wave-bar {
+    left: calc(50% - 2px);
+    top: 0;
+    width: 4px;
+    min-height: 7px;
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, white 34%, var(--app-accent)),
+      var(--app-accent)
+    );
+    box-shadow: 0 0 8px color-mix(in srgb, var(--app-accent) 36%, transparent);
+    opacity: 0.78;
+    transform: scaleY(var(--voice-level-scale));
+    transform-origin: center bottom;
+    transition: transform 90ms linear, opacity 160ms ease;
+    will-change: transform;
+  }
+
+  .voice-page .voice-orb--user-speaking .voice-wave-halo {
+    opacity: 1;
+  }
+
+  .voice-page .voice-orb--user-speaking .voice-orb-core-shell {
+    transform: scale(var(--voice-core-scale));
+  }
+
+  .voice-page .voice-orb--user-speaking .voice-orb-ambient {
+    opacity: 0.76;
+    transform: scale(1.14);
+  }
+
+  .voice-page .voice-orb--user-speaking .voice-orb-core {
+    border-color: color-mix(in srgb, var(--app-accent) 88%, white);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--app-accent) 34%, transparent),
+      0 0 34px color-mix(in srgb, var(--app-accent) 28%, transparent),
+      0 18px 44px color-mix(in srgb, var(--app-accent) 22%, transparent);
+  }
+
+  .voice-page .voice-thinking-halo {
+    border-color: transparent;
+    border-right-color: color-mix(in srgb, var(--app-accent) 36%, transparent);
+    border-top-color: color-mix(in srgb, var(--app-accent) 82%, white);
+    box-shadow: inset 0 0 18px color-mix(in srgb, var(--app-accent) 8%, transparent);
+    will-change: transform;
+  }
+
+  .voice-page .voice-thinking-dots {
+    animation: voice-halo-rotate 8.5s linear infinite reverse;
+    will-change: transform;
+  }
+
+  .voice-page .voice-thinking-dot {
+    inset: 0;
+  }
+
+  .voice-page .voice-thinking-dot > span {
+    left: calc(50% - 2px);
+    top: -2px;
+    width: 4px;
+    height: 4px;
+    background: color-mix(in srgb, var(--app-accent) 84%, white);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--app-accent) 48%, transparent);
+  }
+
+  .voice-page .voice-orb--reflecting .voice-thinking-layer {
+    opacity: 0.9;
+  }
+
+  .voice-page .voice-orb--reflecting .voice-thinking-halo {
+    animation: voice-halo-rotate 6.2s linear infinite;
+  }
+
+  .voice-page .voice-orb--reflecting .voice-orb-ambient {
+    opacity: 0.54;
+    transform: scale(1.02);
+  }
+
+  .voice-page .voice-assistant-ripple {
+    inset: 11px;
+    border-color: color-mix(in srgb, var(--app-accent) 62%, transparent);
+    opacity: 0;
+    transform: scale(0.76);
+    will-change: transform, opacity;
+  }
+
+  .voice-page .voice-assistant-orbit {
+    animation: voice-halo-rotate 4.8s linear infinite;
+    will-change: transform;
+  }
+
+  .voice-page .voice-assistant-dot {
+    left: calc(50% - 2px);
+    top: -1px;
+    width: 4px;
+    height: 7px;
+    background: linear-gradient(180deg, white, var(--app-accent));
+    box-shadow: 0 0 7px color-mix(in srgb, var(--app-accent) 45%, transparent);
+    opacity: 0.72;
+  }
+
+  .voice-page .voice-assistant-spoke:nth-child(2n) .voice-assistant-dot {
+    height: 4px;
+    opacity: 0.48;
+  }
+
+  .voice-page .voice-orb--assistant-speaking .voice-assistant-layer {
+    opacity: 1;
+  }
+
+  .voice-page .voice-orb--assistant-speaking .voice-assistant-ripple {
+    animation: voice-assistant-ripple 1.48s cubic-bezier(0.22, 0.7, 0.24, 1) infinite;
+  }
+
+  .voice-page .voice-orb--assistant-speaking .voice-orb-ambient {
+    opacity: 0.72;
+    transform: scale(1.12);
+  }
+
+  .voice-page .voice-orb--assistant-speaking .voice-orb-core {
+    animation: voice-assistant-core 1.55s ease-in-out infinite;
+  }
+
+  .voice-page .voice-orb-particles {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 480ms ease;
+  }
+
+  .voice-page .voice-orb--listening .voice-orb-particles,
+  .voice-page .voice-orb--user-speaking .voice-orb-particles {
+    opacity: 0.72;
+  }
+
+  .voice-page .voice-orb--listening .voice-orb-particle,
+  .voice-page .voice-orb--user-speaking .voice-orb-particle {
+    animation: voice-particle-drift ease-in-out infinite;
+  }
+
+  .voice-page .voice-orb-particle {
+    background: color-mix(in srgb, white 58%, var(--app-accent));
+    box-shadow: 0 0 6px color-mix(in srgb, var(--app-accent) 52%, transparent);
+    opacity: 0;
+    will-change: transform, opacity;
+  }
+
+  .voice-page .voice-orb--paused .voice-orb-core,
+  .voice-page .voice-orb--unavailable .voice-orb-core {
+    border-color: color-mix(in srgb, var(--app-text-muted) 42%, transparent);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+    opacity: 0.8;
+  }
+
+  .voice-page .voice-orb--paused .voice-orb-icon,
+  .voice-page .voice-orb--unavailable .voice-orb-icon {
+    color: var(--app-text-muted);
+    filter: none;
+    opacity: 0.82;
+  }
+
+  .voice-page .voice-orb--paused .voice-orb-ambient,
+  .voice-page .voice-orb--unavailable .voice-orb-ambient {
+    opacity: 0.2;
+    transform: scale(0.9);
+  }
+
+  .voice-page .voice-orb--performance .voice-orb-ambient {
+    filter: none;
+  }
+
+  .voice-page .voice-orb--performance .voice-orb-icon {
+    filter: none;
+  }
+
+  .voice-page .voice-orb--performance .voice-listening-ring:not(:first-child),
+  .voice-page .voice-orb--performance .voice-assistant-ripple:not(:first-child) {
+    display: none;
+  }
+
+  .voice-page .voice-orb--performance.voice-orb--user-speaking .voice-listening-layer {
+    opacity: 0.9;
+  }
+
+  .voice-page .voice-orb--performance.voice-orb--user-speaking .voice-listening-ring {
+    animation: voice-listening-ripple 1.6s cubic-bezier(0.22, 0.7, 0.24, 1) infinite;
+  }
+
+  .voice-page .voice-orb--performance .voice-thinking-halo {
+    box-shadow: none;
+  }
+
+  @keyframes voice-listening-ripple {
+    0% {
+      opacity: 0;
+      transform: scale(0.72);
+    }
+    22% {
+      opacity: 0.72;
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.04);
+    }
+  }
+
+  @keyframes voice-core-breathe {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--app-accent) 20%, transparent),
+        0 0 22px color-mix(in srgb, var(--app-accent) 14%, transparent),
+        0 18px 44px color-mix(in srgb, var(--app-accent) 18%, transparent);
+    }
+    50% {
+      box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--app-accent) 30%, transparent),
+        0 0 34px color-mix(in srgb, var(--app-accent) 24%, transparent),
+        0 18px 44px color-mix(in srgb, var(--app-accent) 22%, transparent);
+    }
+  }
+
+  @keyframes voice-halo-rotate {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes voice-assistant-ripple {
+    0% {
+      opacity: 0;
+      transform: scale(0.76);
+    }
+    24% {
+      opacity: 0.76;
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.04);
+    }
+  }
+
+  @keyframes voice-assistant-core {
+    0%,
+    100% {
+      transform: scale(0.985);
+      box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--app-accent) 24%, transparent),
+        0 0 24px color-mix(in srgb, var(--app-accent) 18%, transparent),
+        0 18px 44px color-mix(in srgb, var(--app-accent) 18%, transparent);
+    }
+    50% {
+      transform: scale(1.015);
+      box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--app-accent) 34%, transparent),
+        0 0 38px color-mix(in srgb, var(--app-accent) 28%, transparent),
+        0 18px 44px color-mix(in srgb, var(--app-accent) 24%, transparent);
+    }
+  }
+
+  @keyframes voice-particle-drift {
+    0%,
+    100% {
+      opacity: 0.16;
+      transform: translate3d(0, 3px, 0) scale(0.8);
+    }
+    50% {
+      opacity: 0.86;
+      transform: translate3d(0, -5px, 0) scale(1.08);
+    }
   }
 
   .voice-page .voice-state-title {
@@ -871,7 +1203,6 @@
   }
 
   :root.dark[data-design="nocturne"] .voice-page .voice-mode-row > div > div,
-  :root.dark[data-design="nocturne"] .voice-page .voice-privacy-pill,
   :root.dark[data-design="nocturne"] .voice-page .voice-transcript,
   :root.dark[data-design="nocturne"] .voice-page .voice-session-notice {
     background-color: rgba(8, 14, 24, 0.78) !important;
@@ -1489,8 +1820,14 @@
     .app-card-shimmer::after,
     .app-status-dot::after,
     .app-typing-dot,
-    .app-float {
-      animation: none;
+    .app-float,
+    .voice-page .voice-orb * {
+      animation: none !important;
+      transition-duration: 0ms !important;
+    }
+
+    .voice-page .voice-orb-particles {
+      display: none;
     }
   }
 
@@ -1583,10 +1920,9 @@
   }
 
   .native-android .voice-page .voice-mode-row > div > div,
-  .native-android .voice-page .voice-privacy-pill,
   .native-android .voice-page .voice-session-notice,
   .native-android .voice-page .voice-primary-action,
-  .native-android .voice-page .voice-presence-core,
+  .native-android .voice-page .voice-orb-core,
   .native-android .voice-session-close {
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
   }

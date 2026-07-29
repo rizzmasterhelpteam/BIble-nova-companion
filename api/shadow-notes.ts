@@ -1,18 +1,29 @@
-import { getClientErrorMessage } from "../chat-api.js";
-import { saveShadowNotes } from "../server-api.js";
+import {
+  getClientErrorMessage,
+  MAX_SHADOW_NOTES_CHARS,
+} from "../chat-api.js";
+import {
+  loadShadowMemoryProfile,
+  saveShadowNotes,
+  setShadowMemoryPreference,
+} from "../server-api.js";
 import {
   assertStringLength,
   enforceRateLimits,
   getHttpErrorDetails,
+  HttpError,
   requireAuthenticatedRequest,
 } from "../server-security.js";
 
-const API_BUILD_ID = "2026-07-22-shadow-notes";
+const API_BUILD_ID = "2026-07-29-shadow-memory-consent";
 
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
-  res.setHeader?.("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader?.("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
+  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control");
+  res.setHeader?.("Cache-Control", "private, no-store, no-cache, max-age=0, must-revalidate");
+  res.setHeader?.("Pragma", "no-cache");
+  res.setHeader?.("Expires", "0");
 };
 
 const getBody = (req: any) => {
@@ -36,22 +47,46 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  if (req.method !== "POST") {
+  if (!["GET", "POST", "PUT"].includes(req.method)) {
     res.status(405).json({ error: "Method not allowed." });
     return;
   }
 
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
+    const isRead = req.method === "GET";
     await enforceRateLimits([
-      { key: `shadow-notes:user:${userId}`, limit: 20 },
-      { key: `shadow-notes:ip:${ip}`, limit: 40 },
+      { key: `shadow-notes:${req.method.toLowerCase()}:user:${userId}`, limit: isRead ? 60 : 20 },
+      { key: `shadow-notes:${req.method.toLowerCase()}:ip:${ip}`, limit: isRead ? 120 : 40 },
     ]);
 
-    const { notes } = getBody(req);
-    assertStringLength(notes, 2_000, "Shadow notes");
-    const shadowNotes = await saveShadowNotes(userId, notes);
-    res.status(200).json({ shadowNotes });
+    if (req.method === "GET") {
+      res.status(200).json(await loadShadowMemoryProfile(userId));
+      return;
+    }
+
+    const body = getBody(req);
+    if (req.method === "PUT") {
+      if (typeof body.memoryEnabled !== "boolean") {
+        throw new HttpError("Memory preference must be true or false.", 400);
+      }
+      res.status(200).json(await setShadowMemoryPreference(userId, body.memoryEnabled));
+      return;
+    }
+
+    assertStringLength(body.notes, MAX_SHADOW_NOTES_CHARS, "Shadow notes");
+    const profile = await loadShadowMemoryProfile(userId);
+    if (!profile.memoryEnabled) {
+      res.status(200).json({ memoryEnabled: false, shadowNotes: null });
+      return;
+    }
+
+    const shadowNotes = await saveShadowNotes(userId, body.notes);
+    if (!shadowNotes && body.notes.trim()) {
+      res.status(200).json(await loadShadowMemoryProfile(userId));
+      return;
+    }
+    res.status(200).json({ memoryEnabled: true, shadowNotes });
   } catch (error) {
     console.error("Vercel API shadow notes error:", error);
     const details = getHttpErrorDetails(error);

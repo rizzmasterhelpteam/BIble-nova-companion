@@ -57,6 +57,7 @@ type TurnBasedVoiceOptions = {
   onReservationChange: (reservation: VoiceReservation | null) => void;
   liveReady: boolean;
   apiStatusConnectionError?: string;
+  enableInputLevel: boolean;
 };
 
 type ApiErrorBody = {
@@ -109,6 +110,7 @@ const RECORDING_MIME_TYPES = [
 const MAX_RECORDING_MS = 45_000;
 const MIN_SPEECH_MS = 450;
 const SPEECH_RMS_THRESHOLD = 0.022;
+const INPUT_LEVEL_UPDATE_INTERVAL_MS = 90;
 
 const getRecordingMimeType = () => {
   for (const mimeType of RECORDING_MIME_TYPES) {
@@ -253,6 +255,7 @@ export function useTurnBasedVoice({
   onReservationChange,
   liveReady,
   apiStatusConnectionError,
+  enableInputLevel,
 }: TurnBasedVoiceOptions) {
   const [state, setState] = useState<VoiceState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -262,6 +265,7 @@ export function useTurnBasedVoice({
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [retryUntil, setRetryUntil] = useState<number | null>(null);
   const [retryPhase, setRetryPhase] = useState<VoiceTurnPhase | null>(null);
+  const [inputLevel, setInputLevel] = useState(0);
 
   const stateRef = useRef<VoiceState>("idle");
   const historyRef = useRef(history);
@@ -296,6 +300,8 @@ export function useTurnBasedVoice({
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const inputLevelRef = useRef(0);
+  const lastInputLevelUpdateAtRef = useRef(0);
   const bargeInDetectorRef = useRef(new AdaptiveBargeInDetector());
   const playbackSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const playbackGainRef = useRef<GainNode | null>(null);
@@ -344,13 +350,31 @@ export function useTurnBasedVoice({
     recordingTimerOperationRef.current = null;
   }, []);
 
+  const resetInputLevel = useCallback(() => {
+    inputLevelRef.current = 0;
+    lastInputLevelUpdateAtRef.current = 0;
+    setInputLevel((current) => current === 0 ? current : 0);
+  }, []);
+
+  const publishInputLevel = useCallback((rms: number) => {
+    if (!enableInputLevel) return;
+    const normalized = Math.min(1, Math.max(0, (rms - 0.006) / 0.085));
+    const smoothed = inputLevelRef.current * 0.58 + normalized * 0.42;
+    inputLevelRef.current = smoothed;
+    const now = performance.now();
+    if (now - lastInputLevelUpdateAtRef.current < INPUT_LEVEL_UPDATE_INTERVAL_MS) return;
+    lastInputLevelUpdateAtRef.current = now;
+    setInputLevel(Number(smoothed.toFixed(3)));
+  }, [enableInputLevel]);
+
   const stopVad = useCallback(() => {
     if (vadFrameRef.current !== null) {
       window.cancelAnimationFrame(vadFrameRef.current);
       vadFrameRef.current = null;
     }
     bargeInDetectorRef.current.resetCandidate();
-  }, []);
+    resetInputLevel();
+  }, [resetInputLevel]);
 
   const releaseStream = useCallback((expectedStream?: MediaStream | null) => {
     const microphoneSession = microphoneSessionRef.current!;
@@ -1239,6 +1263,7 @@ export function useTurnBasedVoice({
         }
         analyser.getFloatTimeDomainData(samples);
         const rms = calculateVoiceRms(samples);
+        publishInputLevel(rms);
         const now = performance.now();
         const speechThreshold = Math.max(
           SPEECH_RMS_THRESHOLD,
@@ -1307,6 +1332,7 @@ export function useTurnBasedVoice({
     ensureMicrophoneGraph,
     finishTurn,
     processRecording,
+    publishInputLevel,
     releaseStream,
     transition,
   ]);
@@ -1392,7 +1418,7 @@ export function useTurnBasedVoice({
     setSessionNotice(
       mode === "recovery_resume"
         ? "Restoring your interrupted reflection…"
-        : "Confirming premium access…",
+        : "Connecting to your voice session…",
     );
 
     const previousReservation = mode === "fresh_start" ? savedReservation : null;
@@ -1437,7 +1463,7 @@ export function useTurnBasedVoice({
         isNativePlatform() &&
         getNativePlatform() === "android"
       ) {
-        setSessionNotice("Rechecking your Google Play premium access…");
+        setSessionNotice("Refreshing your voice session…");
         const { refreshNativeSubscriptionEntitlement } = await import(
           "../lib/native/subscriptionSync"
         );
@@ -1808,6 +1834,7 @@ export function useTurnBasedVoice({
     errorCode,
     sessionNotice,
     isMuted,
+    inputLevel,
     isSessionActive,
     canRecover,
     retryUntil,

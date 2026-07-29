@@ -299,6 +299,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const {
     identityKey,
     shadowNotes,
+    memoryEnabled,
     acceptPersistedShadowNotes,
   } = useAuth();
   const { isVoiceSessionActive, setVoiceSessionActive } = useVoiceSession();
@@ -1012,6 +1013,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
             userId={identityKey || ""}
             messages={messages}
             shadowNotes={shadowNotes}
+            memoryEnabled={memoryEnabled}
             isTyping={isTyping}
             onAppendUserMessage={appendVoiceUserMessage}
             onAppendAssistantMessage={appendVoiceAssistantMessage}

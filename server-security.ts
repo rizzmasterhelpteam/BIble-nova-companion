@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { normalizeShadowNotes } from "./src/lib/shadowMemory";
 
 type RequestLike = {
   headers?: Record<string, string | string[] | undefined>;
@@ -244,7 +245,7 @@ export const getServerShadowNotes = async (userId: string) => {
     throw new HttpError("Voice context is temporarily unavailable.", 503);
   }
   const notes = Array.isArray(data) ? data[0]?.notes : null;
-  return typeof notes === "string" ? notes.trim().slice(0, 1_500) : "";
+  return normalizeShadowNotes(typeof notes === "string" ? notes : null) || "";
 };
 
 export const getRateLimitStorageKey = (key: string) => {

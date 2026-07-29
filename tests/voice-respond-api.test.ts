@@ -8,6 +8,7 @@ const requireAuthenticatedRequest = vi.hoisted(() => vi.fn());
 
 vi.mock("../chat-api", () => ({
   getClientErrorMessage: (error: Error) => error.message,
+  MAX_SHADOW_NOTES_CHARS: 4_000,
 }));
 vi.mock("../server-api", () => ({
   createReflectionResponse,

@@ -1,11 +1,12 @@
 import { createShadowNotes, type ChatMessage } from "../../chat-api.js";
-import { saveShadowNotes } from "../../server-api.js";
+import { loadShadowMemoryProfile, saveShadowNotes } from "../../server-api.js";
 import { assertStringLength, enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../../server-security.js";
 
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
   res.setHeader?.("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Request-Id");
+  res.setHeader?.("Cache-Control", "private, no-store, no-cache, max-age=0, must-revalidate");
 };
 
 const normalizeMessages = (value: unknown): ChatMessage[] => {
@@ -46,13 +47,18 @@ export default async function handler(req: any, res: any) {
       { key: `live-shadow-notes:ip:${ip}`, limit: 20 },
     ]);
 
+    const memoryProfile = await loadShadowMemoryProfile(userId);
+    if (!memoryProfile.memoryEnabled) {
+      res.status(200).json({ memoryEnabled: false, shadowNotes: null });
+      return;
+    }
+
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
     const messages = normalizeMessages(body.messages);
-    const existingShadowNotes = typeof body.shadowNotes === "string" ? body.shadowNotes.trim() : "";
-    assertStringLength(existingShadowNotes, 2_000, "Shadow notes");
+    const existingShadowNotes = memoryProfile.shadowNotes;
 
     if (!messages.length) {
-      res.status(200).json({ shadowNotes: existingShadowNotes || null });
+      res.status(200).json({ memoryEnabled: true, shadowNotes: existingShadowNotes });
       return;
     }
 
@@ -60,7 +66,11 @@ export default async function handler(req: any, res: any) {
     const shadowNotes = generatedShadowNotes
       ? await saveShadowNotes(userId, generatedShadowNotes)
       : null;
-    res.status(200).json({ shadowNotes });
+    if (generatedShadowNotes && !shadowNotes) {
+      res.status(200).json(await loadShadowMemoryProfile(userId));
+      return;
+    }
+    res.status(200).json({ memoryEnabled: true, shadowNotes });
   } catch (error) {
     console.error("Voice shadow-note request failed:", error instanceof Error ? error.message : error);
     const details = getHttpErrorDetails(error);

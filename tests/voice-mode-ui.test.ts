@@ -13,6 +13,10 @@ const voiceHookSource = readFileSync(
   new URL("../src/hooks/useTurnBasedVoice.ts", import.meta.url),
   "utf8",
 );
+const voiceOrbSource = readFileSync(
+  new URL("../src/components/voice/VoiceOrb.tsx", import.meta.url),
+  "utf8",
+);
 const voiceSessionSource = readFileSync(
   new URL("../api/voice/session.ts", import.meta.url),
   "utf8",
@@ -36,6 +40,29 @@ describe("Voice mode interface", () => {
     expect(voiceModeSource).not.toContain("showCaptions");
     expect(voiceModeSource).not.toContain("voice-transcript");
     expect(voiceModeSource).not.toContain("latestTranscript");
+  });
+
+  it("renders calm, distinct visuals for each active Voice state", () => {
+    expect(voiceModeSource).toContain("<VoiceOrb");
+    expect(voiceModeSource).toContain("inputLevel={live.inputLevel}");
+    expect(voiceOrbSource).toContain('listening: "listening"');
+    expect(voiceOrbSource).toContain('"user-speaking": "user-speaking"');
+    expect(voiceOrbSource).toContain('"assistant-speaking": "assistant-speaking"');
+    expect(voiceOrbSource).toContain('thinking: "reflecting"');
+    expect(voiceOrbSource).toContain("voice-listening-ring");
+    expect(voiceOrbSource).toContain("voice-wave-halo");
+    expect(voiceOrbSource).toContain("voice-thinking-halo");
+    expect(voiceOrbSource).toContain("voice-assistant-ripple");
+  });
+
+  it("throttles audio-reactive feedback and simplifies motion on Android", () => {
+    expect(voiceModeSource).toContain("enableInputLevel: !isPerformanceMode");
+    expect(voiceHookSource).toContain("INPUT_LEVEL_UPDATE_INTERVAL_MS = 90");
+    expect(voiceHookSource).toContain("publishInputLevel(rms)");
+    expect(voiceOrbSource).toContain("voice-orb--performance");
+    expect(voiceOrbSource).toContain("!isPerformanceMode &&");
+    expect(appStylesSource).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(appStylesSource).toContain(".voice-page .voice-orb *");
   });
 
   it("rechecks readiness and starts turn-based Voice when readiness is recovered", () => {
@@ -82,6 +109,12 @@ describe("Voice mode interface", () => {
     expect(retryIndex).toBeGreaterThan(entitlementRepairIndex);
     expect(subscriptionSyncSource).toContain("selectNewestConfiguredNativePurchase");
     expect(subscriptionSyncSource).toContain("NATIVE_ENTITLEMENT_SYNC_TIMEOUT_MS");
+  });
+
+  it("does not show premium verification as the normal Voice Mode startup status", () => {
+    expect(voiceHookSource).not.toContain("Confirming premium access");
+    expect(voiceHookSource).not.toContain("Rechecking your Google Play premium access");
+    expect(voiceHookSource).toContain("Connecting to your voice session");
   });
 
   it("lets a premium retry revalidate before sending someone to plan management", () => {

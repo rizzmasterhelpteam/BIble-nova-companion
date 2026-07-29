@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import type { ChatMessage } from "../chat-api.js";
-import { getClientErrorMessage } from "../chat-api.js";
+import {
+  getClientErrorMessage,
+  MAX_SHADOW_NOTES_CHARS,
+} from "../chat-api.js";
 import {
   createReflectionResponse,
   createVoiceReflectionResponse,
@@ -104,7 +107,7 @@ export default async function handler(req: any, res: any) {
 
     const { messages, shadowNotes } = body;
     if (shadowNotes !== undefined && shadowNotes !== null) {
-      assertStringLength(shadowNotes, 2_000, "Shadow notes");
+      assertStringLength(shadowNotes, MAX_SHADOW_NOTES_CHARS, "Shadow notes");
     }
 
     if (voiceMode) {

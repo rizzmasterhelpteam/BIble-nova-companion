@@ -11,15 +11,22 @@ import {
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
+  loadShadowMemoryProfile,
   saveShadowNotes,
+  setShadowMemoryPreference,
   syncNativeSubscription,
   transcribeAudio,
 } from './server-api';
-import { createShadowNotes, type ChatMessage } from './chat-api';
+import {
+  createShadowNotes,
+  MAX_SHADOW_NOTES_CHARS,
+  type ChatMessage,
+} from './chat-api';
 import {
   assertStringLength,
   enforceRateLimits,
   getHttpErrorDetails,
+  HttpError,
   requireAuthenticatedRequest,
 } from './server-security';
 
@@ -80,6 +87,11 @@ const localApiPlugin = () => ({
             { key: `voice-shadow-notes:user:${userId}`, limit: 10 },
             { key: `voice-shadow-notes:ip:${ip}`, limit: 20 },
           ]);
+          const memoryProfile = await loadShadowMemoryProfile(userId);
+          if (!memoryProfile.memoryEnabled) {
+            sendJson(res, 200, { memoryEnabled: false, shadowNotes: null });
+            return;
+          }
           const body = await readJsonBody(req);
           const messages = Array.isArray(body?.messages) ? body.messages.slice(-12) : [];
           const normalizedMessages = messages
@@ -93,11 +105,10 @@ const localApiPlugin = () => ({
               } satisfies ChatMessage;
             })
             .filter((message: ChatMessage | null): message is ChatMessage => Boolean(message));
-          const existingShadowNotes = typeof body?.shadowNotes === 'string' ? body.shadowNotes.trim() : '';
-          assertStringLength(existingShadowNotes, 2_000, 'Shadow notes');
+          const existingShadowNotes = memoryProfile.shadowNotes;
 
           if (!normalizedMessages.length) {
-            sendJson(res, 200, { shadowNotes: existingShadowNotes || null });
+            sendJson(res, 200, { memoryEnabled: true, shadowNotes: existingShadowNotes });
             return;
           }
 
@@ -105,7 +116,11 @@ const localApiPlugin = () => ({
           const shadowNotes = generatedShadowNotes
             ? await saveShadowNotes(userId, generatedShadowNotes)
             : null;
-          sendJson(res, 200, { shadowNotes });
+          if (generatedShadowNotes && !shadowNotes) {
+            sendJson(res, 200, await loadShadowMemoryProfile(userId));
+            return;
+          }
+          sendJson(res, 200, { memoryEnabled: true, shadowNotes });
         } catch (error) {
           console.error('Vite local API Voice shadow-note error:', error instanceof Error ? error.message : error);
           const details = getHttpErrorDetails(error);
@@ -133,7 +148,7 @@ const localApiPlugin = () => ({
           ]);
           const { messages, shadowNotes } = await readJsonBody(req);
           if (shadowNotes !== undefined && shadowNotes !== null) {
-            assertStringLength(shadowNotes, 2_000, 'Shadow notes');
+            assertStringLength(shadowNotes, MAX_SHADOW_NOTES_CHARS, 'Shadow notes');
           }
           const result = await createReflectionResponse(userId, messages, shadowNotes);
           sendJson(res, 200, result);
@@ -147,21 +162,44 @@ const localApiPlugin = () => ({
       }
 
       if (pathname === '/api/shadow-notes') {
-        if (req.method !== 'POST') {
+        if (!['GET', 'POST', 'PUT'].includes(req.method || '')) {
           sendJson(res, 405, { error: 'Method not allowed.' });
           return;
         }
 
         try {
           const { userId, ip } = await requireAuthenticatedRequest(req);
+          const isRead = req.method === 'GET';
           await enforceRateLimits([
-            { key: `shadow-notes:user:${userId}`, limit: 20 },
-            { key: `shadow-notes:ip:${ip}`, limit: 40 },
+            { key: `shadow-notes:${req.method?.toLowerCase()}:user:${userId}`, limit: isRead ? 60 : 20 },
+            { key: `shadow-notes:${req.method?.toLowerCase()}:ip:${ip}`, limit: isRead ? 120 : 40 },
           ]);
-          const { notes } = await readJsonBody(req);
-          assertStringLength(notes, 2_000, 'Shadow notes');
-          const shadowNotes = await saveShadowNotes(userId, notes);
-          sendJson(res, 200, { shadowNotes });
+          if (isRead) {
+            sendJson(res, 200, await loadShadowMemoryProfile(userId));
+            return;
+          }
+
+          const body = await readJsonBody(req);
+          if (req.method === 'PUT') {
+            if (typeof body.memoryEnabled !== 'boolean') {
+              throw new HttpError('Memory preference must be true or false.', 400);
+            }
+            sendJson(res, 200, await setShadowMemoryPreference(userId, body.memoryEnabled));
+            return;
+          }
+
+          assertStringLength(body.notes, MAX_SHADOW_NOTES_CHARS, 'Shadow notes');
+          const profile = await loadShadowMemoryProfile(userId);
+          if (!profile.memoryEnabled) {
+            sendJson(res, 200, { memoryEnabled: false, shadowNotes: null });
+            return;
+          }
+          const shadowNotes = await saveShadowNotes(userId, body.notes);
+          if (!shadowNotes && body.notes.trim()) {
+            sendJson(res, 200, await loadShadowMemoryProfile(userId));
+            return;
+          }
+          sendJson(res, 200, { memoryEnabled: true, shadowNotes });
         } catch (error) {
           console.error('Vite local API shadow notes error:', error);
           const details = getHttpErrorDetails(error);

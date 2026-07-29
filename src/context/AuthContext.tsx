@@ -5,6 +5,7 @@ import { apiFetch, setApiAccessToken } from "../lib/apiClient";
 import { isNativePlatform } from "../lib/native/platform";
 import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
 import { startup } from "../lib/startup";
+import { normalizeShadowNotes } from "../lib/shadowMemory";
 
 type AuthContextType = {
   user: User | null;
@@ -539,7 +540,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setMemoryEnabled(enabled);
         setShadowNotes(
           enabled && typeof data.shadowNotes === "string"
-            ? data.shadowNotes.trim().slice(0, 2_000) || null
+            ? normalizeShadowNotes(data.shadowNotes)
             : null,
         );
       })
@@ -713,7 +714,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setMemoryEnabled(confirmedEnabled);
       setShadowNotes(
         confirmedEnabled && typeof data.shadowNotes === "string"
-          ? data.shadowNotes.trim().slice(0, 2_000) || null
+          ? normalizeShadowNotes(data.shadowNotes)
           : null,
       );
     } catch (error) {
@@ -766,11 +767,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setShadowNotes(null);
         return;
       }
-      setShadowNotes(data.shadowNotes || trimmed);
+      setShadowNotes(normalizeShadowNotes(data.shadowNotes || trimmed));
       return;
     }
 
-    setShadowNotes(trimmed);
+    setShadowNotes(normalizeShadowNotes(trimmed));
   }, [memoryEnabled, user]);
 
   const acceptPersistedShadowNotes = useCallback((notes: string | null) => {
@@ -778,8 +779,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setShadowNotes(null);
       return;
     }
-    const normalized = notes?.trim().slice(0, 2_000) || null;
-    setShadowNotes(normalized);
+    setShadowNotes(normalizeShadowNotes(notes));
   }, [memoryEnabled]);
 
   const value = useMemo(

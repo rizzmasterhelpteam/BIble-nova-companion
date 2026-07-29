@@ -10,6 +10,10 @@ const serverApiSource = readFileSync(
   new URL("../server-api.ts", import.meta.url),
   "utf8",
 );
+const voiceShadowNotesSource = readFileSync(
+  new URL("../api/voice/shadow-notes.ts", import.meta.url),
+  "utf8",
+);
 
 describe("fast Voice response path", () => {
   const previousApiKey = process.env.GROQ_API_KEY;
@@ -66,6 +70,9 @@ describe("fast Voice response path", () => {
     expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("one or two short sentences");
     expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("below 45 words");
     expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("no Markdown");
+    expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("ATTUNE → VALIDATE → ANCHOR");
+    expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("Reflect one specific detail");
+    expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("If the user may be unsafe");
     expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("at most one short follow-up");
   });
 
@@ -90,6 +97,12 @@ describe("fast Voice response path", () => {
 
     expect(voiceResponsePath).not.toContain("loadStoredShadowNotes");
     expect(voiceResponsePath).not.toContain("saveShadowNotes");
+    expect(voiceResponsePath).not.toContain("createShadowNotes");
     expect(voiceResponsePath).toContain("createVoiceResponse");
+  });
+
+  it("does not log transcript or private note contents", () => {
+    expect(serverApiSource).not.toMatch(/console\.(log|info|warn|error)[^\n]*(messages|shadowNotes|content)/i);
+    expect(voiceShadowNotesSource).not.toMatch(/console\.(log|info|warn|error)[^\n]*(messages|shadowNotes|content)/i);
   });
 });
