@@ -600,7 +600,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       apiStatusRef.current = data;
       setApiStatus(data);
       void refreshSpeechSupport("api-status-retry");
-      return data.liveReady === true;
+      return data.voiceReady === true;
     } finally {
       setIsCheckingApiStatus(false);
     }
@@ -1019,10 +1019,10 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
             onSessionActiveChange={setVoiceSessionActive}
             reservation={voiceReservation}
             onReservationChange={updateVoiceReservation}
-            liveReady={apiStatus?.liveReady === true}
-            isCheckingLiveReady={isCheckingApiStatus}
+            voiceReady={apiStatus?.voiceReady === true}
+            isCheckingVoiceReady={isCheckingApiStatus}
             apiStatusConnectionError={apiStatus?.connectionError}
-            onRetryLiveReady={retryApiStatus}
+            onRetryVoiceReady={retryApiStatus}
           />
         </React.Suspense>
       ) : (

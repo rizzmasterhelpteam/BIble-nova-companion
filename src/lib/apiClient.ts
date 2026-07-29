@@ -50,7 +50,7 @@ export const apiFetch = async (path: string, init: RequestInit = {}) => {
   const headers = new Headers(init.headers);
   if (
     !headers.has("X-Client-Request-Id") &&
-    (path === "/api/transcribe" || path.startsWith("/api/live/"))
+    (path === "/api/transcribe" || path.startsWith("/api/voice/"))
   ) {
     headers.set("X-Client-Request-Id", crypto.randomUUID());
   }

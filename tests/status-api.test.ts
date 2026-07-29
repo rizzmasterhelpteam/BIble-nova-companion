@@ -33,7 +33,8 @@ describe("status endpoint cache policy", () => {
       chatReady: true,
       prayerReady: true,
       speechReady: true,
-      liveReady: true,
+      ttsReady: true,
+      voiceReady: true,
     });
   });
 
@@ -47,7 +48,7 @@ describe("status endpoint cache policy", () => {
     expect(response.headers.get("Pragma")).toBe("no-cache");
     expect(response.headers.get("Expires")).toBe("0");
     expect(response.headers.get("Access-Control-Allow-Headers")).toContain("Cache-Control");
-    expect(response.body).toMatchObject({ liveReady: true });
+    expect(response.body).toMatchObject({ voiceReady: true, ttsReady: true });
   });
 
   it("sets no-store headers on OPTIONS responses", () => {

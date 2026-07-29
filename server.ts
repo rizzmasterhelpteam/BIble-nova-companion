@@ -13,8 +13,8 @@ import {
   syncNativeSubscription,
   transcribeAudio,
 } from "./server-api";
-import liveTokenHandler from "./api/live/token";
-import liveEligibilityHandler from "./api/live/eligibility";
+import voiceSessionHandler from "./api/voice/session";
+import textToSpeechHandler from "./api/tts";
 import { createShadowNotes, type ChatMessage } from "./chat-api";
 import {
   assertStringLength,
@@ -35,16 +35,17 @@ app.get("/api/status", (_req, res) => {
   res.json(getApiStatus());
 });
 
-app.post("/api/live/token", liveTokenHandler);
-app.get("/api/live/eligibility", liveEligibilityHandler);
-app.options("/api/live/eligibility", liveEligibilityHandler);
+app.post("/api/voice/session", voiceSessionHandler);
+app.options("/api/voice/session", voiceSessionHandler);
+app.post("/api/tts", textToSpeechHandler);
+app.options("/api/tts", textToSpeechHandler);
 
-app.post("/api/live/shadow-notes", async (req, res) => {
+app.post("/api/voice/shadow-notes", async (req, res) => {
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
-      { key: `live-shadow-notes:user:${userId}`, limit: 10 },
-      { key: `live-shadow-notes:ip:${ip}`, limit: 20 },
+      { key: `voice-shadow-notes:user:${userId}`, limit: 10 },
+      { key: `voice-shadow-notes:ip:${ip}`, limit: 20 },
     ]);
     const messages = Array.isArray(req.body?.messages) ? req.body.messages.slice(-12) : [];
     const normalizedMessages = messages
@@ -72,7 +73,7 @@ app.post("/api/live/shadow-notes", async (req, res) => {
       : null;
     res.json({ shadowNotes });
   } catch (error) {
-    console.error("Gemini Live shadow-note request failed:", error instanceof Error ? error.message : error);
+    console.error("Voice shadow-note request failed:", error instanceof Error ? error.message : error);
     const details = getHttpErrorDetails(error);
     if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
     res.status(details.statusCode).json({

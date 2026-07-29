@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { JWT } from "google-auth-library";
 import { MAX_SHADOW_NOTES_CHARS, createChatCompletion, createReflection, hasChatApiKey } from "./chat-api.js";
-import { getGeminiLiveStatus } from "./live-api.js";
 export {
   createReflection,
   getClientErrorMessage,
@@ -14,6 +13,31 @@ export const hasModelsApiKey = () => Boolean(process.env.GROK_API_KEY?.trim());
 export const hasPrayerApiKey = () => Boolean(process.env.GROQ_API_KEY?.trim());
 
 export const hasSpeechApiKey = () => Boolean(process.env.GROQ_API_KEY?.trim());
+
+const getTextToSpeechServiceAccount = (throwOnMissing = true) => {
+  const raw = process.env.GOOGLE_TTS_SERVICE_ACCOUNT_JSON?.trim();
+  if (!raw) {
+    if (throwOnMissing) {
+      throw new Error("Google Cloud Text-to-Speech is not configured on the server.");
+    }
+    return null;
+  }
+
+  try {
+    const credentials = JSON.parse(raw) as { client_email?: string; private_key?: string };
+    if (!credentials.client_email || !credentials.private_key) {
+      throw new Error("Missing client_email or private_key.");
+    }
+    return credentials;
+  } catch {
+    if (throwOnMissing) {
+      throw new Error("GOOGLE_TTS_SERVICE_ACCOUNT_JSON is invalid.");
+    }
+    return null;
+  }
+};
+
+export const hasTextToSpeechConfig = () => Boolean(getTextToSpeechServiceAccount(false));
 
 export const hasNativeSubscriptionSyncConfig = () => {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -61,8 +85,9 @@ export const getApiStatus = () => ({
   modelsReady: hasModelsApiKey(),
   prayerReady: hasPrayerApiKey(),
   speechReady: hasSpeechApiKey(),
+  ttsReady: hasTextToSpeechConfig(),
+  voiceReady: hasChatApiKey() && hasSpeechApiKey() && hasTextToSpeechConfig(),
   nativeSubscriptionSyncReady: hasNativeSubscriptionSyncConfig(),
-  ...getGeminiLiveStatus(),
 });
 
 type UserSubscriptionMetadata = {
@@ -354,7 +379,7 @@ export async function transcribeAudio(audio: string, language?: string) {
   const extension = mimeType.split("/")[1]?.split(";")[0] || "webm";
   const formData = new FormData();
   formData.append("file", new Blob([buffer], { type: mimeType }), `speech.${extension}`);
-  formData.append("model", process.env.GROQ_TRANSCRIBE_MODEL?.trim() || "whisper-large-v3");
+  formData.append("model", process.env.GROQ_TRANSCRIBE_MODEL?.trim() || "whisper-large-v3-turbo");
   formData.append("response_format", "json");
   formData.append("temperature", "0");
 
@@ -383,6 +408,69 @@ export async function transcribeAudio(audio: string, language?: string) {
   }
 
   return data.text.trim();
+}
+
+const GOOGLE_TTS_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
+export const DEFAULT_GOOGLE_TTS_VOICE = "en-AU-Chirp3-HD-Algenib";
+export const DEFAULT_GOOGLE_TTS_LANGUAGE = "en-AU";
+
+export async function synthesizeSpeech(text: string) {
+  const normalizedText = text.trim();
+  if (!normalizedText) {
+    throw new Error("Text-to-Speech requires a response to read.");
+  }
+
+  const credentials = getTextToSpeechServiceAccount();
+  const auth = new JWT({
+    email: credentials!.client_email,
+    key: credentials!.private_key,
+    scopes: [GOOGLE_TTS_SCOPE],
+  });
+  const { token: accessToken } = await auth.getAccessToken();
+  if (!accessToken) {
+    throw new Error("Could not authenticate with Google Cloud Text-to-Speech.");
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        input: { text: normalizedText },
+        voice: {
+          languageCode: process.env.GOOGLE_TTS_LANGUAGE_CODE?.trim() || DEFAULT_GOOGLE_TTS_LANGUAGE,
+          name: process.env.GOOGLE_TTS_VOICE_NAME?.trim() || DEFAULT_GOOGLE_TTS_VOICE,
+        },
+        audioConfig: {
+          audioEncoding: "MP3",
+          speakingRate: 1,
+        },
+      }),
+      signal: controller.signal,
+    });
+    const data = (await response.json().catch(() => ({}))) as {
+      audioContent?: string;
+      error?: { message?: string };
+    };
+    if (!response.ok) {
+      throw new Error(data.error?.message || "Text-to-Speech generation failed.");
+    }
+    if (!data.audioContent) {
+      throw new Error("Text-to-Speech returned no audio.");
+    }
+    return {
+      audioContent: data.audioContent,
+      mimeType: "audio/mpeg",
+      voiceName: process.env.GOOGLE_TTS_VOICE_NAME?.trim() || DEFAULT_GOOGLE_TTS_VOICE,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function generatePrayer(prompt: string) {

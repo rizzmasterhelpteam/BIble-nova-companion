@@ -112,6 +112,24 @@ describe("server security", () => {
     expect(getApiStatus().nativeSubscriptionSyncReady).toBe(false);
   });
 
+  it("reports turn-based Voice readiness only when Groq and Google TTS are configured", () => {
+    process.env.GROQ_API_KEY = "test-groq-key";
+    process.env.GOOGLE_TTS_SERVICE_ACCOUNT_JSON = JSON.stringify({
+      client_email: "tts@example.iam.gserviceaccount.com",
+      private_key: "test-private-key",
+    });
+    expect(getApiStatus()).toMatchObject({
+      chatReady: true,
+      speechReady: true,
+      ttsReady: true,
+      voiceReady: true,
+    });
+
+    delete process.env.GOOGLE_TTS_SERVICE_ACCOUNT_JSON;
+    expect(getApiStatus()).toMatchObject({ ttsReady: false, voiceReady: false });
+    delete process.env.GROQ_API_KEY;
+  });
+
   it("never formats subscription failures as reflection-service errors", () => {
     expect(
       getNativeSubscriptionClientErrorMessage(

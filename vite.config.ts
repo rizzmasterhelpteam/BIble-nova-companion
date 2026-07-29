@@ -15,7 +15,6 @@ import {
   syncNativeSubscription,
   transcribeAudio,
 } from './server-api';
-import liveTokenHandler from './api/live/token';
 import { createShadowNotes, type ChatMessage } from './chat-api';
 import {
   assertStringLength,
@@ -69,33 +68,7 @@ const localApiPlugin = () => ({
         return;
       }
 
-      if (pathname === '/api/live/token') {
-        if (req.method !== 'POST') {
-          sendJson(res, 405, { error: 'Method not allowed.' });
-          return;
-        }
-
-        try {
-          const request = Object.assign(req, { body: await readJsonBody(req) });
-          const response = Object.assign(res, {
-            status(statusCode: number) {
-              res.statusCode = statusCode;
-              return response;
-            },
-            json(data: unknown) {
-              sendJson(res, res.statusCode || 200, data);
-              return response;
-            },
-          });
-          await liveTokenHandler(request, response);
-        } catch (error) {
-          console.error('Vite local Voice token adapter error:', error instanceof Error ? error.message : error);
-          sendJson(res, 500, { error: 'Voice is temporarily unavailable. You can continue in Chat.' });
-        }
-        return;
-      }
-
-      if (pathname === '/api/live/shadow-notes') {
+      if (pathname === '/api/voice/shadow-notes') {
         if (req.method !== 'POST') {
           sendJson(res, 405, { error: 'Method not allowed.' });
           return;
@@ -104,8 +77,8 @@ const localApiPlugin = () => ({
         try {
           const { userId, ip } = await requireAuthenticatedRequest(req);
           await enforceRateLimits([
-            { key: `live-shadow-notes:user:${userId}`, limit: 10 },
-            { key: `live-shadow-notes:ip:${ip}`, limit: 20 },
+            { key: `voice-shadow-notes:user:${userId}`, limit: 10 },
+            { key: `voice-shadow-notes:ip:${ip}`, limit: 20 },
           ]);
           const body = await readJsonBody(req);
           const messages = Array.isArray(body?.messages) ? body.messages.slice(-12) : [];
@@ -134,7 +107,7 @@ const localApiPlugin = () => ({
             : null;
           sendJson(res, 200, { shadowNotes });
         } catch (error) {
-          console.error('Vite local API Gemini Live shadow-note error:', error instanceof Error ? error.message : error);
+          console.error('Vite local API Voice shadow-note error:', error instanceof Error ? error.message : error);
           const details = getHttpErrorDetails(error);
           if (details.retryAfterSeconds) res.setHeader('Retry-After', String(details.retryAfterSeconds));
           sendJson(res, details.statusCode, {

@@ -5,7 +5,8 @@ export type ApiStatus = {
   chatReady: boolean;
   prayerReady: boolean;
   speechReady?: boolean;
-  liveReady?: boolean;
+  ttsReady?: boolean;
+  voiceReady?: boolean;
   connectionError?: string;
 };
 
@@ -13,7 +14,8 @@ export const DEFAULT_API_STATUS: ApiStatus = {
   chatReady: false,
   prayerReady: false,
   speechReady: false,
-  liveReady: false,
+  ttsReady: false,
+  voiceReady: false,
 };
 
 type StatusFetcher = (path: string, init?: RequestInit) => Promise<Response>;
@@ -23,7 +25,7 @@ type StatusDiagnostics = {
   httpStatus: number | null;
   responseOk: boolean | null;
   cacheMode: RequestCache;
-  returnedLiveReady: boolean;
+  returnedVoiceReady: boolean;
   usedLastKnownGood: boolean;
   error?: string;
 };
@@ -88,7 +90,7 @@ export const createApiStatusLoader = (
             httpStatus: responseStatus,
             responseOk,
             cacheMode,
-            returnedLiveReady: lastSuccessfulApiStatus.liveReady === true,
+            returnedVoiceReady: lastSuccessfulApiStatus.voiceReady === true,
             usedLastKnownGood: false,
           });
           return lastSuccessfulApiStatus;
@@ -105,7 +107,7 @@ export const createApiStatusLoader = (
             httpStatus: error instanceof ApiStatusRequestError ? error.status : responseStatus,
             responseOk: error instanceof ApiStatusRequestError ? error.responseOk : responseOk,
             cacheMode,
-            returnedLiveReady: fallback.liveReady === true,
+            returnedVoiceReady: fallback.voiceReady === true,
             usedLastKnownGood: Boolean(lastSuccessfulApiStatus),
             error: message,
           });

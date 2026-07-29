@@ -62,7 +62,7 @@ export default async function handler(req: any, res: any) {
       : null;
     res.status(200).json({ shadowNotes });
   } catch (error) {
-    console.error("Gemini Live shadow-note request failed:", error instanceof Error ? error.message : error);
+    console.error("Voice shadow-note request failed:", error instanceof Error ? error.message : error);
     const details = getHttpErrorDetails(error);
     if (details.retryAfterSeconds) {
       res.setHeader?.("Retry-After", String(details.retryAfterSeconds));

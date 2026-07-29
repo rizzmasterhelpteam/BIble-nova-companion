@@ -7,6 +7,7 @@ import {
   MicOff,
   Pause,
   RotateCcw,
+  Send,
   Sparkles,
   X,
 } from "lucide-react";
@@ -16,7 +17,7 @@ import { apiFetch } from "../../lib/apiClient";
 import { isNativePlatform } from "../../lib/native/platform";
 import { cn } from "../../lib/utils";
 import { useMobileViewport } from "../../context/MobileViewportContext";
-import { useGeminiLive } from "../../hooks/useGeminiLive";
+import { useTurnBasedVoice } from "../../hooks/useTurnBasedVoice";
 import { usePerformanceMode } from "../../hooks/usePerformanceMode";
 import type { ConversationMessage, VoiceState } from "../../types/live";
 
@@ -31,10 +32,10 @@ type VoiceModeProps = {
   onSessionActiveChange: (active: boolean) => void;
   reservation: { handle: string; expiresAt: string } | null;
   onReservationChange: (reservation: { handle: string; expiresAt: string } | null) => void;
-  liveReady: boolean;
-  isCheckingLiveReady: boolean;
+  voiceReady: boolean;
+  isCheckingVoiceReady: boolean;
   apiStatusConnectionError?: string;
-  onRetryLiveReady: () => Promise<boolean>;
+  onRetryVoiceReady: () => Promise<boolean>;
 };
 
 const STATE_HEADLINES: Record<VoiceState, string> = {
@@ -60,8 +61,8 @@ const STATE_DESCRIPTIONS: Record<VoiceState, string> = {
   "requesting-permission": "Your microphone is used only during this conversation.",
   connecting: "This will only take a moment.",
   ready: "You can begin speaking.",
-  listening: "Take your time.",
-  "user-speaking": "There is no need to rush.",
+  listening: "Take your time. Tap Done speaking if the pause is not detected.",
+  "user-speaking": "Pause when finished, or tap Done speaking.",
   thinking: "Considering what you shared.",
   "assistant-speaking": "You can interrupt at any time.",
   interrupted: "I'm listening again.",
@@ -101,10 +102,10 @@ export default function VoiceMode({
   onSessionActiveChange,
   reservation,
   onReservationChange,
-  liveReady,
-  isCheckingLiveReady,
+  voiceReady,
+  isCheckingVoiceReady,
   apiStatusConnectionError,
-  onRetryLiveReady,
+  onRetryVoiceReady,
 }: VoiceModeProps) {
   const { isCompactPhone, isShortPhone } = useMobileViewport();
   const navigate = useNavigate();
@@ -136,14 +137,14 @@ export default function VoiceMode({
     onAppendAssistantMessage(text);
   }, [onAppendAssistantMessage]);
 
-  const live = useGeminiLive({
+  const live = useTurnBasedVoice({
     history: messages,
+    shadowNotes,
     onUserTranscript: handleUserTranscript,
     onAssistantTranscript: handleAssistantTranscript,
+    onAcceptShadowNotes,
     reservation,
     onReservationChange,
-    liveReady,
-    apiStatusConnectionError,
   });
   const stopLive = live.stop;
   const premiumRequired = live.errorCode === "subscription_required";
@@ -178,7 +179,7 @@ export default function VoiceMode({
       const timeout = window.setTimeout(() => controller.abort(), SHADOW_NOTE_TIMEOUT_MS);
       lastPersistAttemptAtRef.current = Date.now();
       try {
-        const response = await apiFetch("/api/live/shadow-notes", {
+        const response = await apiFetch("/api/voice/shadow-notes", {
           method: "POST",
           signal: controller.signal,
           headers: { "Content-Type": "application/json" },
@@ -258,18 +259,18 @@ export default function VoiceMode({
     // Android requires audio to be activated directly from the tap. Do this
     // before a status retry yields to the network or the Capacitor bridge.
     live.primeAudioForUserGesture();
-    let ready = liveReady;
+    let ready = voiceReady;
     const shouldRefreshStatus =
       !ready ||
       live.state === "error" ||
       live.state === "permission-denied" ||
       live.state === "offline";
     if (shouldRefreshStatus) {
-      const refreshedReady = await onRetryLiveReady();
+      const refreshedReady = await onRetryVoiceReady();
       ready = refreshedReady || ready;
     }
     if (ready) await live.start();
-  }, [live.primeAudioForUserGesture, live.start, liveReady, onRetryLiveReady]);
+  }, [live.primeAudioForUserGesture, live.start, onRetryVoiceReady, voiceReady]);
 
   const handleExitVoice = useCallback(() => {
     if (exitPromiseRef.current) return exitPromiseRef.current;
@@ -312,13 +313,13 @@ export default function VoiceMode({
     ? "Recheck premium access"
     : cooldownActive
       ? `Available in ${cooldownMinutes} min`
-      : isCheckingLiveReady
+      : isCheckingVoiceReady
         ? "Retry Voice"
         : live.state === "permission-denied"
           ? "Try microphone again"
           : live.state === "offline"
             ? "Reconnect and retry"
-            : !liveReady || live.state === "error"
+            : !voiceReady || live.state === "error"
               ? "Try Voice again"
               : live.state === "ended"
                 ? "Begin another reflection"
@@ -334,10 +335,10 @@ export default function VoiceMode({
   ].includes(live.state);
   const sessionNotice = premiumRequired
     ? live.error || "We could not confirm your premium plan yet. Restore it with Google Play and try Voice again."
-    : !isCheckingLiveReady && !liveReady
+    : !isCheckingVoiceReady && !voiceReady
       ? apiStatusConnectionError || "Voice mode is temporarily unavailable. You can retry the connection or continue in Chat."
     : live.error || live.sessionNotice;
-  const sessionNoticeIsError = Boolean(live.error) || (!isCheckingLiveReady && !liveReady);
+  const sessionNoticeIsError = Boolean(live.error) || (!isCheckingVoiceReady && !voiceReady);
 
   return (
     <div className="voice-mode relative flex min-h-0 flex-1 overflow-hidden bg-transparent">
@@ -438,7 +439,7 @@ export default function VoiceMode({
                 type="button"
                 onClick={() => void handleStart()}
                 disabled={isTyping || cooldownActive}
-                aria-busy={isCheckingLiveReady}
+                aria-busy={isCheckingVoiceReady}
                 className="voice-primary-action touch-target app-primary-button inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-pill px-5 text-[15px] font-semibold transition-transform active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {premiumRequired ? <RotateCcw className="h-5 w-5" /> : live.state === "error" || live.state === "permission-denied" || live.state === "offline" ? <RotateCcw className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
@@ -447,7 +448,11 @@ export default function VoiceMode({
             ) : canControlMicrophone ? (
               <div className={cn(
                 "grid w-full gap-2",
-                live.state === "assistant-speaking" ? "grid-cols-3" : "grid-cols-2",
+                live.state === "assistant-speaking" ||
+                  live.state === "listening" ||
+                  live.state === "user-speaking"
+                  ? "grid-cols-3"
+                  : "grid-cols-2",
               )}>
                 <button
                   type="button"
@@ -467,6 +472,16 @@ export default function VoiceMode({
                   >
                     <Pause className="h-4 w-4" />
                     <span>Stop audio</span>
+                  </button>
+                ) : live.state === "listening" || live.state === "user-speaking" ? (
+                  <button
+                    type="button"
+                    onClick={live.finishTurn}
+                    aria-label="Done speaking"
+                    className="voice-control-button touch-target app-secondary-button flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] px-2 text-[13px] font-medium"
+                  >
+                    <Send className="h-4 w-4" />
+                    <span>Done speaking</span>
                   </button>
                 ) : null}
                 <button

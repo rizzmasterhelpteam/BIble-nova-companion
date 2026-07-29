@@ -1,7 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "1.1.5",
+  "version": "1.1.6",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -39,7 +39,6 @@
     "@capgo/capacitor-social-login": "^8.3.22",
     "@capgo/capacitor-speech-recognition": "^8.1.10",
     "@capgo/native-purchases": "^8.3.10",
-    "@google/genai": "2.13.0",
     "@supabase/supabase-js": "^2.104.1",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",

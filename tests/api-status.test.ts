@@ -21,16 +21,17 @@ describe("API readiness status loading", () => {
     logger = vi.fn();
   });
 
-  it("requests status with browser cache disabled and keeps a successful live status", async () => {
+  it("requests status with browser cache disabled and keeps successful Voice readiness", async () => {
     fetcher.mockResolvedValueOnce(createResponse(200, {
       chatReady: true,
       prayerReady: true,
       speechReady: true,
-      liveReady: true,
+      ttsReady: true,
+      voiceReady: true,
     }));
     const loadApiStatus = createApiStatusLoader(fetcher, logger);
 
-    await expect(loadApiStatus()).resolves.toMatchObject({ liveReady: true });
+    await expect(loadApiStatus()).resolves.toMatchObject({ voiceReady: true });
     expect(fetcher).toHaveBeenCalledWith("/api/status", {
       cache: "no-store",
       headers: { "Cache-Control": "no-cache" },
@@ -38,15 +39,15 @@ describe("API readiness status loading", () => {
     expect(logger).toHaveBeenLastCalledWith(expect.objectContaining({
       httpStatus: 200,
       responseOk: true,
-      returnedLiveReady: true,
+      returnedVoiceReady: true,
       usedLastKnownGood: false,
     }));
   });
 
   it("cache-busts forced refreshes", async () => {
     fetcher
-      .mockResolvedValueOnce(createResponse(200, { liveReady: true }))
-      .mockResolvedValueOnce(createResponse(200, { liveReady: true }));
+      .mockResolvedValueOnce(createResponse(200, { voiceReady: true }))
+      .mockResolvedValueOnce(createResponse(200, { voiceReady: true }));
     const loadApiStatus = createApiStatusLoader(fetcher, logger);
 
     await loadApiStatus();
@@ -64,36 +65,37 @@ describe("API readiness status loading", () => {
         chatReady: true,
         prayerReady: true,
         speechReady: true,
-        liveReady: true,
+        ttsReady: true,
+        voiceReady: true,
       }))
       .mockResolvedValueOnce(createResponse(304))
-      .mockResolvedValueOnce(createResponse(200, { liveReady: true }));
+      .mockResolvedValueOnce(createResponse(200, { voiceReady: true }));
     const loadApiStatus = createApiStatusLoader(fetcher, logger);
 
     await loadApiStatus();
     const cachedFailure = await loadApiStatus(true);
-    expect(cachedFailure.liveReady).toBe(true);
+    expect(cachedFailure.voiceReady).toBe(true);
     expect(cachedFailure.connectionError).toContain("304");
     expect(logger).toHaveBeenLastCalledWith(expect.objectContaining({
       httpStatus: 304,
-      returnedLiveReady: true,
+      returnedVoiceReady: true,
       usedLastKnownGood: true,
     }));
 
-    const readyForVoiceStart = (await loadApiStatus(true)).liveReady === true;
+    const readyForVoiceStart = (await loadApiStatus(true)).voiceReady === true;
     expect(readyForVoiceStart).toBe(true);
   });
 
   it("preserves last-known-good readiness after a non-304 transient failure", async () => {
     fetcher
-      .mockResolvedValueOnce(createResponse(200, { liveReady: true }))
+      .mockResolvedValueOnce(createResponse(200, { voiceReady: true }))
       .mockResolvedValueOnce(createResponse(503));
     const loadApiStatus = createApiStatusLoader(fetcher, logger);
 
     await loadApiStatus();
     const fallback = await loadApiStatus(true);
 
-    expect(fallback.liveReady).toBe(true);
+    expect(fallback.voiceReady).toBe(true);
     expect(fallback.connectionError).toContain("503");
   });
 });
