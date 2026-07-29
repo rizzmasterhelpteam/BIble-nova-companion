@@ -5,7 +5,7 @@ import {
 } from "../src/lib/voiceBargeIn";
 
 describe("adaptive Voice barge-in detector", () => {
-  it("requires sustained speech and ignores clicks and room noise", () => {
+  it("accepts a short intentional interruption while rejecting clicks and room noise", () => {
     const detector = new AdaptiveBargeInDetector({
       initialNoiseFloor: 0.01,
     });
@@ -14,8 +14,20 @@ describe("adaptive Voice barge-in detector", () => {
     expect(detector.observePlayback(0.04, 0)).toBe(false);
     expect(detector.observePlayback(0.01, 40)).toBe(false);
     expect(detector.observePlayback(0.04, 100)).toBe(false);
-    expect(detector.observePlayback(0.04, 279)).toBe(false);
-    expect(detector.observePlayback(0.04, 280)).toBe(true);
+    expect(detector.observePlayback(0.04, 219)).toBe(false);
+    expect(detector.observePlayback(0.04, 220)).toBe(true);
+  });
+
+  it("learns a short playback echo baseline before accepting a barge-in", () => {
+    const detector = new AdaptiveBargeInDetector({ initialNoiseFloor: 0.01 });
+
+    detector.beginPlayback(0);
+    expect(detector.observePlayback(0.05, 0)).toBe(false);
+    expect(detector.observePlayback(0.05, 150)).toBe(false);
+    expect(detector.observePlayback(0.05, 349)).toBe(false);
+    expect(detector.observePlayback(0.05, 360)).toBe(false);
+    expect(detector.observePlayback(0.12, 400)).toBe(false);
+    expect(detector.observePlayback(0.12, 520)).toBe(true);
   });
 
   it("adapts above a steady ambient floor and applies a trigger cooldown", () => {

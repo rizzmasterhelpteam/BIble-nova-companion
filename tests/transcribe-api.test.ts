@@ -77,9 +77,13 @@ describe("transcription API", () => {
     expect(audio.type).toBe("audio/webm;codecs=opus");
     expect(language).toBe("en");
     expect(enforceRateLimits).toHaveBeenCalledWith([
-      { key: "transcribe:user:user-1", limit: 30 },
+      { key: "transcribe:user:user-1", limit: 60 },
       { key: "transcribe:ip:127.0.0.1", limit: 60 },
-    ]);
+    ], 600_000);
+    expect(response.setHeader).toHaveBeenCalledWith(
+      "Server-Timing",
+      expect.stringContaining("auth;dur="),
+    );
   });
 
   it("retains base64 JSON compatibility for an older Android build", async () => {
@@ -92,7 +96,7 @@ describe("transcription API", () => {
     }, response);
 
     expect(response.statusCode).toBe(200);
-    expect(transcribeAudio).toHaveBeenCalledWith(audio, "en");
+    expect(transcribeAudio).toHaveBeenCalledWith(audio, "en", "auto");
   });
 
   it("rejects unsupported multipart audio before provider upload", async () => {

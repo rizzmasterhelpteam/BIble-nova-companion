@@ -28,4 +28,12 @@ describe("Voice transcription uploads", () => {
     expect(getVoiceAudioFilename("audio/mp4")).toBe("speech.mp4");
     expect(isSupportedVoiceAudioMimeType("audio/wav")).toBe(false);
   });
+
+  it("lets Auto and Hinglish omit Whisper's forced English language", () => {
+    const blob = new Blob(["recording"], { type: "audio/webm" });
+
+    expect(createVoiceTranscriptionFormData(blob).get("language")).toBeNull();
+    expect(createVoiceTranscriptionFormData(blob, "hi", "hindi").get("language")).toBe("hi");
+    expect(createVoiceTranscriptionFormData(blob, undefined, "hinglish").get("voiceLanguage")).toBe("hinglish");
+  });
 });

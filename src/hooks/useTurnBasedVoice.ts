@@ -15,6 +15,8 @@ import {
 } from "../lib/voiceSessionLifecycle";
 import {
   getAdaptiveSilenceMs,
+  isIntentionalVoiceSpeech,
+  NO_SPEECH_TIMEOUT_MS,
   runVoiceTurn,
   VoiceTurnPipelineError,
   type VoiceTurnCheckpoint,
@@ -29,12 +31,21 @@ import {
   createVoiceTranscriptionFormData,
   MAX_VOICE_AUDIO_BYTES,
 } from "../lib/voiceTranscription";
+import { normalizeVoiceContextMessages } from "../lib/voiceContext";
+import {
+  getWhisperLanguage,
+  type VoiceLanguage,
+} from "../lib/voiceLanguage";
 import { readVoiceAudioResponse } from "../lib/voiceAudioResponse";
 import {
   applyVoicePlaybackFadeIn,
   stopVoicePlaybackSource,
 } from "../lib/voicePlaybackEnvelope";
-import type { ConversationMessage, VoiceState } from "../types/live";
+import type {
+  ConversationMessage,
+  VoicePlaybackMetadata,
+  VoiceState,
+} from "../types/live";
 
 export type VoiceStartMode = "fresh_start" | "recovery_resume";
 
@@ -52,12 +63,20 @@ type TurnBasedVoiceOptions = {
   history: ConversationMessage[];
   shadowNotes: string | null;
   onUserTranscript: (text: string) => void;
-  onAssistantTranscript: (text: string) => void;
+  onAssistantTranscript: (
+    text: string,
+    playback: VoicePlaybackMetadata,
+  ) => string | void;
+  onAssistantPlaybackStatusChange: (
+    messageId: string,
+    playback: VoicePlaybackMetadata,
+  ) => void;
   reservation: VoiceReservation | null;
   onReservationChange: (reservation: VoiceReservation | null) => void;
   liveReady: boolean;
   apiStatusConnectionError?: string;
   enableInputLevel: boolean;
+  voiceLanguage: VoiceLanguage;
 };
 
 type ApiErrorBody = {
@@ -73,12 +92,18 @@ type VoiceTimingKey =
   | "speech_finished_at"
   | "recording_stop_requested_at"
   | "recording_finished_at"
+  | "blob_ready_at"
   | "transcription_started_at"
+  | "transcription_request_sent_at"
+  | "transcription_response_received_at"
   | "transcription_finished_at"
   | "llm_started_at"
   | "llm_finished_at"
   | "tts_started_at"
+  | "tts_request_sent_at"
+  | "tts_response_received_at"
   | "tts_finished_at"
+  | "audio_decode_finished_at"
   | "playback_started_at"
   | "playback_finished_at"
   | "barge_in_detected_at"
@@ -92,6 +117,7 @@ type VoiceTurnDiagnostics = {
   timestamps: Partial<Record<VoiceTimingKey, string>>;
   marks: Partial<Record<VoiceTimingKey, number>>;
   decodeMs?: number;
+  serverTimings: Record<string, Record<string, number>>;
 };
 
 type VoicePlaybackStopReason =
@@ -101,6 +127,20 @@ type VoicePlaybackStopReason =
   | "cleanup"
   | "superseded";
 
+type ActiveVoicePlaybackMessage = {
+  id: string;
+  startedAt: number;
+  audioDurationMs: number;
+};
+
+type BargeInPreRollCapture = {
+  recorder: MediaRecorder;
+  stream: MediaStream;
+  chunks: Blob[];
+  startedAt: number;
+  playbackOperation: number;
+};
+
 const RECORDING_MIME_TYPES = [
   "audio/webm;codecs=opus",
   "audio/webm",
@@ -108,8 +148,9 @@ const RECORDING_MIME_TYPES = [
   "audio/ogg;codecs=opus",
 ];
 const MAX_RECORDING_MS = 45_000;
-const MIN_SPEECH_MS = 450;
 const SPEECH_RMS_THRESHOLD = 0.022;
+const SPEECH_START_HYSTERESIS_MULTIPLIER = 1.15;
+const SPEECH_STOP_HYSTERESIS_MULTIPLIER = 0.72;
 const INPUT_LEVEL_UPDATE_INTERVAL_MS = 90;
 
 const getRecordingMimeType = () => {
@@ -145,15 +186,6 @@ const parseApiResponse = async <T,>(response: Response): Promise<T> => {
   return data;
 };
 
-const normalizeMessages = (messages: ConversationMessage[]) =>
-  messages
-    .filter((message) => message.content.trim())
-    .slice(-24)
-    .map((message) => ({
-      role: message.role === "ai" ? "ai" as const : "user" as const,
-      content: message.content.trim(),
-    }));
-
 const markTiming = (diagnostics: VoiceTurnDiagnostics, key: VoiceTimingKey) => {
   diagnostics.timestamps[key] = new Date().toISOString();
   diagnostics.marks[key] = performance.now();
@@ -186,6 +218,30 @@ const logVoiceEvent = (event: string, details: Record<string, unknown> = {}) => 
   console.info("[Bible Nova voice]", { event, ...details });
 };
 
+const parseServerTiming = (value: string | null) => {
+  const timings: Record<string, number> = {};
+  if (!value) return timings;
+  for (const entry of value.split(",")) {
+    const [name, ...parameters] = entry.trim().split(";");
+    const duration = parameters
+      .map((parameter) => parameter.match(/^dur=([0-9.]+)$/)?.[1])
+      .find(Boolean);
+    if (!name || !duration) continue;
+    const parsed = Number(duration);
+    if (Number.isFinite(parsed)) timings[name] = parsed;
+  }
+  return timings;
+};
+
+const recordServerTiming = (
+  diagnostics: VoiceTurnDiagnostics,
+  phase: "transcription" | "response" | "tts",
+  response: Response,
+) => {
+  const timings = parseServerTiming(response.headers.get("Server-Timing"));
+  if (Object.keys(timings).length) diagnostics.serverTimings[phase] = timings;
+};
+
 const logVoiceInteraction = (
   reason: VoiceSessionInteractionReason,
   details: Record<string, unknown> = {},
@@ -194,6 +250,17 @@ const logVoiceInteraction = (
 };
 
 const logTurnMetrics = (diagnostics: VoiceTurnDiagnostics) => {
+  if (!import.meta.env.DEV && import.meta.env.VITE_VOICE_DIAGNOSTICS !== "true") {
+    return;
+  }
+  const serverTimingMetrics = Object.fromEntries(
+    Object.entries(diagnostics.serverTimings).flatMap(([phase, timings]) =>
+      Object.entries(timings).map(([name, duration]) => [
+        `${phase}_server_${name}_ms`,
+        duration,
+      ]),
+    ),
+  );
   logVoiceEvent("turn_metrics", {
     turnId: diagnostics.turnId,
     sessionGeneration: diagnostics.sessionGeneration,
@@ -204,15 +271,25 @@ const logTurnMetrics = (diagnostics: VoiceTurnDiagnostics) => {
       "speech_finished_at",
       "recording_stop_requested_at",
     ),
-    blob_prepare_ms: durationBetween(
+    recorder_stop_to_blob_ready_ms: durationBetween(
       diagnostics,
       "recording_stop_requested_at",
-      "recording_finished_at",
+      "blob_ready_at",
     ),
-    upload_to_transcript_ms: durationBetween(
+    blob_ready_to_request_sent_ms: durationBetween(
       diagnostics,
-      "transcription_started_at",
-      "transcription_finished_at",
+      "blob_ready_at",
+      "transcription_request_sent_at",
+    ),
+    speech_end_to_transcription_start_ms: durationBetween(
+      diagnostics,
+      "speech_finished_at",
+      "transcription_request_sent_at",
+    ),
+    transcription_request_ms: durationBetween(
+      diagnostics,
+      "transcription_request_sent_at",
+      "transcription_response_received_at",
     ),
     llm_ms: durationBetween(
       diagnostics,
@@ -225,9 +302,19 @@ const logTurnMetrics = (diagnostics: VoiceTurnDiagnostics) => {
       "tts_finished_at",
     ),
     decode_ms: diagnostics.decodeMs ?? null,
-    pause_to_first_audio_ms: durationBetween(
+    audio_download_ms: durationBetween(
       diagnostics,
-      "recording_finished_at",
+      "tts_response_received_at",
+      "tts_finished_at",
+    ),
+    audio_decode_ms: durationBetween(
+      diagnostics,
+      "tts_finished_at",
+      "audio_decode_finished_at",
+    ),
+    speech_end_to_first_audio_ms: durationBetween(
+      diagnostics,
+      "speech_finished_at",
       "playback_started_at",
     ),
     playback_to_listening_ms: durationBetween(
@@ -242,6 +329,12 @@ const logTurnMetrics = (diagnostics: VoiceTurnDiagnostics) => {
       "barge_in_detected_at",
       "playback_stopped_at",
     ),
+    barge_in_to_recorder_started_ms: durationBetween(
+      diagnostics,
+      "barge_in_detected_at",
+      "recording_restarted_at",
+    ),
+    ...serverTimingMetrics,
   });
 };
 
@@ -251,11 +344,13 @@ export function useTurnBasedVoice({
   shadowNotes,
   onUserTranscript,
   onAssistantTranscript,
+  onAssistantPlaybackStatusChange,
   reservation,
   onReservationChange,
   liveReady,
   apiStatusConnectionError,
   enableInputLevel,
+  voiceLanguage,
 }: TurnBasedVoiceOptions) {
   const [state, setState] = useState<VoiceState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -270,6 +365,7 @@ export function useTurnBasedVoice({
   const stateRef = useRef<VoiceState>("idle");
   const historyRef = useRef(history);
   const shadowNotesRef = useRef(shadowNotes);
+  const voiceLanguageRef = useRef(voiceLanguage);
   const reservationRef = useRef(reservation);
   const activeRef = useRef(false);
   const mutedRef = useRef(false);
@@ -296,6 +392,9 @@ export function useTurnBasedVoice({
   const vadFrameRef = useRef<number | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
   const recordingTimerOperationRef = useRef<number | null>(null);
+  const pendingNoSpeechRestartOperationRef = useRef<number | null>(null);
+  const bargeInFalseTriggerCountRef = useRef(0);
+  const autoBargeInDisabledRef = useRef(false);
   const requestControllerRef = useRef<AbortController | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -307,6 +406,8 @@ export function useTurnBasedVoice({
   const playbackGainRef = useRef<GainNode | null>(null);
   const playbackResolveRef = useRef<(() => void) | null>(null);
   const playbackDiagnosticsRef = useRef<VoiceTurnDiagnostics | null>(null);
+  const playbackMessageRef = useRef<ActiveVoicePlaybackMessage | null>(null);
+  const bargeInPreRollRef = useRef<BargeInPreRollCapture | null>(null);
   const retryCheckpointRef = useRef<VoiceTurnCheckpoint | null>(null);
   const retryDiagnosticsRef = useRef<VoiceTurnDiagnostics | null>(null);
   const microphonePermissionKnownRef = useRef(false);
@@ -318,8 +419,23 @@ export function useTurnBasedVoice({
     shadowNotesRef.current = shadowNotes;
   }, [shadowNotes]);
   useEffect(() => {
+    voiceLanguageRef.current = voiceLanguage;
+  }, [voiceLanguage]);
+  useEffect(() => {
     reservationRef.current = reservation;
   }, [reservation]);
+
+  const updateAssistantPlaybackStatus = useCallback((
+    messageId: string,
+    playback: VoicePlaybackMetadata,
+  ) => {
+    historyRef.current = historyRef.current.map((message) =>
+      message.id === messageId
+        ? { ...message, ...playback }
+        : message,
+    );
+    onAssistantPlaybackStatusChange(messageId, playback);
+  }, [onAssistantPlaybackStatusChange]);
 
   const transition = useCallback((next: VoiceState, details: Record<string, unknown> = {}) => {
     const previous = stateRef.current;
@@ -348,6 +464,21 @@ export function useTurnBasedVoice({
       recordingTimerRef.current = null;
     }
     recordingTimerOperationRef.current = null;
+  }, []);
+
+  const discardBargeInPreRoll = useCallback(() => {
+    const capture = bargeInPreRollRef.current;
+    bargeInPreRollRef.current = null;
+    if (!capture) return;
+    capture.recorder.ondataavailable = null;
+    capture.recorder.onerror = null;
+    if (capture.recorder.state !== "inactive") {
+      try {
+        capture.recorder.stop();
+      } catch {
+        // The candidate recorder can race with Android's recorder shutdown.
+      }
+    }
   }, []);
 
   const resetInputLevel = useCallback(() => {
@@ -397,12 +528,15 @@ export function useTurnBasedVoice({
     reason: VoicePlaybackStopReason = "superseded",
   ) => {
     stopVad();
+    discardBargeInPreRoll();
     const source = playbackSourceRef.current;
     playbackSourceRef.current = null;
     const gain = playbackGainRef.current;
     playbackGainRef.current = null;
     const diagnostics = playbackDiagnosticsRef.current;
     playbackDiagnosticsRef.current = null;
+    const playbackMessage = playbackMessageRef.current;
+    playbackMessageRef.current = null;
     const resolvePlayback = playbackResolveRef.current;
     playbackResolveRef.current = null;
     if (diagnostics && !diagnostics.marks.playback_stopped_at) {
@@ -469,8 +603,19 @@ export function useTurnBasedVoice({
         reason,
       });
     }
+    if (playbackMessage && reason !== "completed") {
+      const interrupted =
+        reason === "manual_interrupt" || reason === "barge_in_interrupt";
+      updateAssistantPlaybackStatus(playbackMessage.id, {
+        playbackStatus: interrupted ? "interrupted" : "failed",
+        audioDurationMs: playbackMessage.audioDurationMs,
+        ...(interrupted
+          ? { interruptedAtMs: Math.max(0, Math.round(performance.now() - playbackMessage.startedAt)) }
+          : {}),
+      });
+    }
     resolvePlayback?.();
-  }, [stopVad]);
+  }, [discardBargeInPreRoll, stopVad, updateAssistantPlaybackStatus]);
 
   const primeAudioForUserGesture = useCallback(() => {
     const AudioContextConstructor =
@@ -574,6 +719,7 @@ export function useTurnBasedVoice({
         requestControllerRef.current?.abort();
         requestControllerRef.current = null;
         clearRecordingTimer();
+        pendingNoSpeechRestartOperationRef.current = null;
         const recorder = recorderRef.current;
         if (recorder) discardedRecordersRef.current.add(recorder);
         recorderRef.current = null;
@@ -637,11 +783,47 @@ export function useTurnBasedVoice({
     (
       restartDiagnostics?: VoiceTurnDiagnostics,
       fromBargeIn?: boolean,
+      preRollCapture?: BargeInPreRollCapture | null,
     ) => Promise<boolean>
   >(async () => false);
   const interruptFromUserSpeechRef = useRef<
     (diagnostics: VoiceTurnDiagnostics) => void
   >(() => undefined);
+
+  const startBargeInPreRoll = useCallback((playbackOperation: number) => {
+    if (bargeInPreRollRef.current || mutedRef.current) return;
+    const stream = microphoneSessionRef.current!.current;
+    const mimeType = getRecordingMimeType();
+    if (!stream || typeof MediaRecorder === "undefined") return;
+
+    try {
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const capture: BargeInPreRollCapture = {
+        recorder,
+        stream,
+        chunks: [],
+        startedAt: performance.now(),
+        playbackOperation,
+      };
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) capture.chunks.push(event.data);
+      };
+      recorder.onerror = () => {
+        if (bargeInPreRollRef.current === capture) {
+          bargeInPreRollRef.current = null;
+        }
+      };
+      recorder.start(100);
+      bargeInPreRollRef.current = capture;
+      logVoiceEvent("barge_in_preroll_started", {
+        sessionGeneration: currentSessionGenerationRef.current || null,
+        playbackOperation,
+      });
+    } catch {
+      // Android can reject a candidate recorder on some WebView builds. The
+      // normal post-detection recorder remains a safe fallback.
+    }
+  }, []);
 
   const startBargeInVad = useCallback((
     diagnostics: VoiceTurnDiagnostics,
@@ -649,7 +831,8 @@ export function useTurnBasedVoice({
   ) => {
     stopVad();
     const analyser = analyserRef.current;
-    if (!analyser || mutedRef.current) return;
+    if (!analyser || mutedRef.current || autoBargeInDisabledRef.current) return;
+    bargeInDetectorRef.current.beginPlayback();
     const samples = new Float32Array(analyser.fftSize);
     const monitor = () => {
       if (
@@ -664,6 +847,7 @@ export function useTurnBasedVoice({
       }
       analyser.getFloatTimeDomainData(samples);
       const rms = calculateVoiceRms(samples);
+      const hadCandidate = bargeInDetectorRef.current.hasCandidate();
       if (bargeInDetectorRef.current.observePlayback(rms)) {
         markTiming(diagnostics, "barge_in_detected_at");
         logVoiceEvent("barge_in_detected", {
@@ -676,15 +860,25 @@ export function useTurnBasedVoice({
         interruptFromUserSpeechRef.current(diagnostics);
         return;
       }
+      if (!hadCandidate && bargeInDetectorRef.current.hasCandidate()) {
+        startBargeInPreRoll(playbackOperation);
+      } else if (
+        hadCandidate &&
+        !bargeInDetectorRef.current.hasCandidate() &&
+        bargeInPreRollRef.current?.playbackOperation === playbackOperation
+      ) {
+        discardBargeInPreRoll();
+      }
       vadFrameRef.current = window.requestAnimationFrame(monitor);
     };
     vadFrameRef.current = window.requestAnimationFrame(monitor);
-  }, [stopVad]);
+  }, [discardBargeInPreRoll, startBargeInPreRoll, stopVad]);
 
   const playResponse = useCallback(async (
     audio: ArrayBuffer,
     operation: number,
     diagnostics: VoiceTurnDiagnostics,
+    assistantMessageId?: string,
   ) => {
     const context = audioContextRef.current;
     if (!context || context.state === "closed") {
@@ -696,6 +890,7 @@ export function useTurnBasedVoice({
     const audioBuffer = await context.decodeAudioData(audio.slice(0));
     const audioDecodeDurationMs = Math.round(performance.now() - decodeStartedAt);
     diagnostics.decodeMs = audioDecodeDurationMs;
+    markTiming(diagnostics, "audio_decode_finished_at");
     if (!activeRef.current || operation !== operationRef.current) {
       logVoiceEvent("stale_tts_discarded", {
         turnId: diagnostics.turnId,
@@ -717,6 +912,13 @@ export function useTurnBasedVoice({
     playbackSourceRef.current = source;
     playbackGainRef.current = gain;
     playbackDiagnosticsRef.current = diagnostics;
+    playbackMessageRef.current = assistantMessageId
+      ? {
+          id: assistantMessageId,
+          startedAt: performance.now(),
+          audioDurationMs: Math.round(audioBuffer.duration * 1_000),
+        }
+      : null;
     transition("assistant-speaking", {
       turnId: diagnostics.turnId,
       audioContextStateBeforeResume,
@@ -733,6 +935,14 @@ export function useTurnBasedVoice({
         if (playbackDiagnosticsRef.current === diagnostics) {
           playbackDiagnosticsRef.current = null;
         }
+        const playbackMessage = playbackMessageRef.current;
+        if (playbackMessage?.id === assistantMessageId) {
+          playbackMessageRef.current = null;
+          updateAssistantPlaybackStatus(playbackMessage.id, {
+            playbackStatus: "completed",
+            audioDurationMs: playbackMessage.audioDurationMs,
+          });
+        }
         stopVad();
         source.disconnect();
         gain.disconnect();
@@ -744,7 +954,13 @@ export function useTurnBasedVoice({
       source.start();
       startBargeInVad(diagnostics, playbackOperation);
     });
-  }, [startBargeInVad, stopPlayback, stopVad, transition]);
+  }, [
+    startBargeInVad,
+    stopPlayback,
+    stopVad,
+    transition,
+    updateAssistantPlaybackStatus,
+  ]);
 
   const processCheckpoint = useCallback(async (
     checkpoint: VoiceTurnCheckpoint,
@@ -796,8 +1012,14 @@ export function useTurnBasedVoice({
           }
         },
         transcribe: async (blob) => {
-          const formData = createVoiceTranscriptionFormData(blob, "en");
+          const selectedVoiceLanguage = voiceLanguageRef.current;
+          const formData = createVoiceTranscriptionFormData(
+            blob,
+            getWhisperLanguage(selectedVoiceLanguage),
+            selectedVoiceLanguage,
+          );
           markTiming(diagnostics, "transcription_started_at");
+          markTiming(diagnostics, "transcription_request_sent_at");
           const response = await apiFetch("/api/transcribe", {
             method: "POST",
             headers: {
@@ -806,6 +1028,8 @@ export function useTurnBasedVoice({
             body: formData,
             signal: controller.signal,
           });
+          markTiming(diagnostics, "transcription_response_received_at");
+          recordServerTiming(diagnostics, "transcription", response);
           logVoiceEvent("provider_response", {
             turnId: diagnostics.turnId,
             phase: "transcription",
@@ -837,11 +1061,13 @@ export function useTurnBasedVoice({
             },
             body: JSON.stringify({
               mode: "voice",
-              messages: normalizeMessages(historyRef.current),
+              messages: normalizeVoiceContextMessages(historyRef.current),
               shadowNotes: shadowNotesRef.current,
+              voiceLanguage: voiceLanguageRef.current,
             }),
             signal: controller.signal,
           });
+          recordServerTiming(diagnostics, "response", response);
           if (
             operation !== operationRef.current ||
             !lifecycleRef.current!.isCurrent(diagnostics.sessionGeneration)
@@ -862,14 +1088,18 @@ export function useTurnBasedVoice({
           return result.message?.trim() || "";
         },
         commitAssistant: (text) => {
-          onAssistantTranscript(text);
+          const assistantMessageId =
+            onAssistantTranscript(text, { playbackStatus: "pending" }) ||
+            crypto.randomUUID();
+          checkpoint.assistantMessageId = assistantMessageId;
           historyRef.current = [
             ...historyRef.current,
             {
-              id: crypto.randomUUID(),
+              id: assistantMessageId,
               role: "ai",
               content: text,
               source: "voice",
+              playbackStatus: "pending",
             },
           ];
         },
@@ -877,6 +1107,7 @@ export function useTurnBasedVoice({
           const ttsOperation = ttsOperationRef.current + 1;
           ttsOperationRef.current = ttsOperation;
           markTiming(diagnostics, "tts_started_at");
+          markTiming(diagnostics, "tts_request_sent_at");
           const response = await apiFetch("/api/tts", {
             method: "POST",
             headers: {
@@ -884,9 +1115,14 @@ export function useTurnBasedVoice({
               Accept: "audio/mpeg",
               "X-Client-Request-Id": diagnostics.turnId,
             },
-            body: JSON.stringify({ text }),
+            body: JSON.stringify({
+              text,
+              voiceLanguage: voiceLanguageRef.current,
+            }),
             signal: controller.signal,
           });
+          markTiming(diagnostics, "tts_response_received_at");
+          recordServerTiming(diagnostics, "tts", response);
           if (
             ttsOperation !== ttsOperationRef.current ||
             operation !== operationRef.current ||
@@ -911,7 +1147,12 @@ export function useTurnBasedVoice({
           markTiming(diagnostics, "tts_finished_at");
           return audio;
         },
-        play: (audio) => playResponse(audio, operation, diagnostics),
+        play: (audio) => playResponse(
+          audio,
+          operation,
+          diagnostics,
+          checkpoint.assistantMessageId,
+        ),
         restartListening: () => beginRecordingRef.current(diagnostics),
         setReady: () => {
           setSessionNotice("Microphone paused.");
@@ -941,6 +1182,15 @@ export function useTurnBasedVoice({
         caught instanceof VoiceTurnPipelineError
           ? caught
           : new VoiceTurnPipelineError("response", checkpoint, caught);
+      if (
+        pipelineError.checkpoint.assistantMessageId &&
+        (pipelineError.phase === "tts" || pipelineError.phase === "playback")
+      ) {
+        updateAssistantPlaybackStatus(
+          pipelineError.checkpoint.assistantMessageId,
+          { playbackStatus: "failed" },
+        );
+      }
       retryCheckpointRef.current = pipelineError.checkpoint;
       retryDiagnosticsRef.current = diagnostics;
       setRetryPhase(pipelineError.phase);
@@ -974,6 +1224,7 @@ export function useTurnBasedVoice({
     }
   }, [
     onAssistantTranscript,
+    updateAssistantPlaybackStatus,
     onUserTranscript,
     playResponse,
     transition,
@@ -1034,6 +1285,7 @@ export function useTurnBasedVoice({
   const beginRecording = useCallback(async (
     restartDiagnostics?: VoiceTurnDiagnostics,
     fromBargeIn = false,
+    preRollCapture: BargeInPreRollCapture | null = null,
   ): Promise<boolean> => {
     if (!activeRef.current || mutedRef.current) {
       if (activeRef.current) transition("paused");
@@ -1168,8 +1420,26 @@ export function useTurnBasedVoice({
 
     const mimeType = getRecordingMimeType();
     let recorder: MediaRecorder;
+    const canPromotePreRoll = Boolean(
+      preRollCapture &&
+      preRollCapture.stream === stream &&
+      preRollCapture.recorder.state === "recording",
+    );
+    if (preRollCapture && !canPromotePreRoll) {
+      preRollCapture.recorder.ondataavailable = null;
+      preRollCapture.recorder.onerror = null;
+      if (preRollCapture.recorder.state !== "inactive") {
+        try {
+          preRollCapture.recorder.stop();
+        } catch {
+          // The normal recorder below is the fallback if promotion is not viable.
+        }
+      }
+    }
     try {
-      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recorder = canPromotePreRoll
+        ? preRollCapture!.recorder
+        : new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
     } catch {
       releaseStream(stream);
       setError("Audio recording could not start on this device.");
@@ -1188,12 +1458,27 @@ export function useTurnBasedVoice({
       startMode: currentStartModeRef.current,
       timestamps: {},
       marks: {},
+      serverTimings: {},
     };
     recordingDiagnosticsRef.current = diagnostics;
-    const recorderChunks: Blob[] = [];
-    recordingStartedAtRef.current = performance.now();
-    speechStartedAtRef.current = null;
-    lastSpeechAtRef.current = null;
+    const recorderChunks: Blob[] = canPromotePreRoll
+      ? preRollCapture!.chunks
+      : [];
+    recordingStartedAtRef.current = canPromotePreRoll
+      ? preRollCapture!.startedAt
+      : performance.now();
+    speechStartedAtRef.current = canPromotePreRoll
+      ? preRollCapture!.startedAt
+      : null;
+    lastSpeechAtRef.current = canPromotePreRoll ? performance.now() : null;
+    if (canPromotePreRoll) {
+      markTimingAt(
+        diagnostics,
+        "speech_started_at",
+        preRollCapture!.startedAt,
+      );
+      bargeInFalseTriggerCountRef.current = 0;
+    }
 
     recorder.ondataavailable = (event) => {
       if (event.data.size) recorderChunks.push(event.data);
@@ -1222,7 +1507,7 @@ export function useTurnBasedVoice({
       setRetryPhase("restart");
       transition("error");
     };
-    recorder.onstop = () => {
+      recorder.onstop = () => {
       recorder.ondataavailable = null;
       recorder.onerror = null;
       recorder.onstop = null;
@@ -1239,15 +1524,27 @@ export function useTurnBasedVoice({
         }
       }
       discardedRecordersRef.current.delete(recorder);
-      if (!diagnostics.marks.recording_stop_requested_at) {
-        markTiming(diagnostics, "recording_stop_requested_at");
-      }
-      markTiming(diagnostics, "recording_finished_at");
-      const blob = new Blob(recorderChunks, {
-        type: recorderChunks[0]?.type || recorder.mimeType || "audio/webm",
-      });
-      if (!discard) void processRecording(blob, operation, diagnostics);
-    };
+        if (!diagnostics.marks.recording_stop_requested_at) {
+          markTiming(diagnostics, "recording_stop_requested_at");
+        }
+        markTiming(diagnostics, "recording_finished_at");
+        markTiming(diagnostics, "blob_ready_at");
+        const blob = new Blob(recorderChunks, {
+          type: recorderChunks[0]?.type || recorder.mimeType || "audio/webm",
+        });
+        const restartAfterNoSpeech =
+          pendingNoSpeechRestartOperationRef.current === recordingOperation;
+        if (restartAfterNoSpeech) {
+          pendingNoSpeechRestartOperationRef.current = null;
+          void beginRecordingRef.current().then(() => {
+            if (autoBargeInDisabledRef.current) {
+              setSessionNotice("Automatic interruption is paused. Use Stop audio when you want to interrupt.");
+            }
+          });
+          return;
+        }
+        if (!discard) void processRecording(blob, operation, diagnostics);
+      };
 
     const analyser = analyserRef.current;
     if (analyser) {
@@ -1265,22 +1562,32 @@ export function useTurnBasedVoice({
         const rms = calculateVoiceRms(samples);
         publishInputLevel(rms);
         const now = performance.now();
-        const speechThreshold = Math.max(
+        const baseSpeechThreshold = Math.max(
           SPEECH_RMS_THRESHOLD,
           bargeInDetectorRef.current.getNoiseFloor() * 1.8,
         );
+        const speechThreshold = speechStartedAtRef.current === null
+          ? baseSpeechThreshold * SPEECH_START_HYSTERESIS_MULTIPLIER
+          : baseSpeechThreshold * SPEECH_STOP_HYSTERESIS_MULTIPLIER;
         if (rms >= speechThreshold) {
           if (speechStartedAtRef.current === null) {
             speechStartedAtRef.current = now;
             markTimingAt(diagnostics, "speech_started_at", now);
             transition("user-speaking");
+            if (fromBargeIn) bargeInFalseTriggerCountRef.current = 0;
           }
           lastSpeechAtRef.current = now;
         } else if (speechStartedAtRef.current !== null) {
-          const speechDuration = now - speechStartedAtRef.current;
+          const speechDuration = Math.max(
+            0,
+            (lastSpeechAtRef.current || now) - speechStartedAtRef.current,
+          );
           const silenceDuration = now - (lastSpeechAtRef.current || now);
           const requiredSilence = getAdaptiveSilenceMs(speechDuration);
-          if (speechDuration >= MIN_SPEECH_MS && silenceDuration >= requiredSilence) {
+          if (
+            isIntentionalVoiceSpeech(speechDuration) &&
+            silenceDuration >= requiredSilence
+          ) {
             finishTurn();
             return;
           }
@@ -1293,25 +1600,73 @@ export function useTurnBasedVoice({
     }
 
     try {
-      recorder.start(250);
-      recordingStartedAtRef.current = performance.now();
+      if (!canPromotePreRoll) recorder.start(250);
+      recordingStartedAtRef.current = canPromotePreRoll
+        ? preRollCapture!.startedAt
+        : performance.now();
       markTimingAt(
         diagnostics,
         "recording_started_at",
         recordingStartedAtRef.current,
       );
-      transition(fromBargeIn ? "barge-in-listening" : "listening", {
+      transition(canPromotePreRoll ? "user-speaking" : fromBargeIn ? "barge-in-listening" : "listening", {
         audioContextState: audioContextRef.current?.state || "missing",
         mediaRecorderMimeType: recorder.mimeType || mimeType || "browser-default",
         microphoneStreamReused: streamReused,
+        bargeInPreRollUsed: canPromotePreRoll,
       });
       if (restartDiagnostics) {
         markTiming(restartDiagnostics, "recording_restarted_at");
       }
       recordingTimerOperationRef.current = recordingOperation;
       recordingTimerRef.current = window.setTimeout(
-        () => finishTurn(),
-        MAX_RECORDING_MS,
+        () => {
+          if (
+            recorderRef.current !== recorder ||
+            recorder.state === "inactive" ||
+            recordingOperation !== recordingOperationRef.current
+          ) {
+            return;
+          }
+          if (speechStartedAtRef.current === null) {
+            if (fromBargeIn) {
+              bargeInFalseTriggerCountRef.current += 1;
+              if (bargeInFalseTriggerCountRef.current >= 2) {
+                autoBargeInDisabledRef.current = true;
+                logVoiceEvent("auto_barge_in_paused", {
+                  sessionGeneration,
+                  falseTriggerCount: bargeInFalseTriggerCountRef.current,
+                });
+              }
+            }
+            pendingNoSpeechRestartOperationRef.current = recordingOperation;
+            discardedRecordersRef.current.add(recorder);
+            recordingOperationRef.current += 1;
+            clearRecordingTimer(recordingOperation);
+            stopVad();
+            setSessionNotice("I'm still listening—start whenever you're ready.");
+            transition("restarting-listener", { noSpeechTimeoutMs: NO_SPEECH_TIMEOUT_MS });
+            try {
+              recorder.requestData();
+              recorder.stop();
+            } catch {
+              pendingNoSpeechRestartOperationRef.current = null;
+              setError("The microphone could not restart. Please try again.");
+              setErrorCode("connection_failed");
+              setRetryPhase("restart");
+              transition("error");
+            }
+            return;
+          }
+
+          const remainingMs = Math.max(
+            1_000,
+            MAX_RECORDING_MS - (performance.now() - recordingStartedAtRef.current),
+          );
+          recordingTimerRef.current = window.setTimeout(() => finishTurn(), remainingMs);
+          recordingTimerOperationRef.current = recordingOperation;
+        },
+        NO_SPEECH_TIMEOUT_MS,
       );
       return true;
     } catch {
@@ -1349,6 +1704,12 @@ export function useTurnBasedVoice({
       return;
     }
 
+    const activePlaybackOperation = playbackOperationRef.current;
+    const preRollCapture =
+      bargeInPreRollRef.current?.playbackOperation === activePlaybackOperation
+        ? bargeInPreRollRef.current
+        : null;
+    bargeInPreRollRef.current = null;
     operationRef.current += 1;
     playbackOperationRef.current += 1;
     ttsOperationRef.current += 1;
@@ -1364,7 +1725,7 @@ export function useTurnBasedVoice({
       turnId: diagnostics.turnId,
       sessionGeneration: diagnostics.sessionGeneration,
     });
-    void beginRecordingRef.current(diagnostics, true).then(
+    void beginRecordingRef.current(diagnostics, true, preRollCapture).then(
       () => logTurnMetrics(diagnostics),
       () => logTurnMetrics(diagnostics),
     );
@@ -1403,6 +1764,9 @@ export function useTurnBasedVoice({
     currentStartModeRef.current = mode;
     activeRef.current = true;
     setIsSessionActive(true);
+    pendingNoSpeechRestartOperationRef.current = null;
+    bargeInFalseTriggerCountRef.current = 0;
+    autoBargeInDisabledRef.current = false;
     operationRef.current += 1;
     recordingOperationRef.current += 1;
     playbackOperationRef.current += 1;

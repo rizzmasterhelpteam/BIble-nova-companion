@@ -9,6 +9,7 @@ export type VoiceTurnCheckpoint = {
   blob: Blob;
   transcript?: string;
   assistantText?: string;
+  assistantMessageId?: string;
   audio?: ArrayBuffer;
   userCommitted?: boolean;
   assistantCommitted?: boolean;
@@ -17,15 +18,22 @@ export type VoiceTurnCheckpoint = {
 
 export type VoiceTurnResult = "completed" | "muted" | "stale";
 
-export const NORMAL_SILENCE_MS = 800;
-export const SHORT_UTTERANCE_SILENCE_MS = 1_000;
-export const LONG_UTTERANCE_SILENCE_MS = 700;
+export const TINY_UTTERANCE_SILENCE_MS = 1_050;
+export const SHORT_UTTERANCE_SILENCE_MS = 900;
+export const NORMAL_SILENCE_MS = 750;
+export const LONG_UTTERANCE_SILENCE_MS = 650;
+export const MIN_INTENTIONAL_SPEECH_MS = 140;
+export const NO_SPEECH_TIMEOUT_MS = 9_000;
 
 export const getAdaptiveSilenceMs = (speechDurationMs: number) => {
+  if (speechDurationMs < 300) return TINY_UTTERANCE_SILENCE_MS;
   if (speechDurationMs < 1_500) return SHORT_UTTERANCE_SILENCE_MS;
   if (speechDurationMs >= 6_000) return LONG_UTTERANCE_SILENCE_MS;
   return NORMAL_SILENCE_MS;
 };
+
+export const isIntentionalVoiceSpeech = (speechDurationMs: number) =>
+  speechDurationMs >= MIN_INTENTIONAL_SPEECH_MS;
 
 export class VoiceTurnPipelineError extends Error {
   readonly phase: VoiceTurnPhase;

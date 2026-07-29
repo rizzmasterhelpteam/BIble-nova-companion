@@ -23,6 +23,18 @@ export type VoiceState =
   | "offline"
   | "error";
 
+export type VoicePlaybackStatus =
+  | "pending"
+  | "completed"
+  | "interrupted"
+  | "failed";
+
+export type VoicePlaybackMetadata = {
+  playbackStatus: VoicePlaybackStatus;
+  interruptedAtMs?: number;
+  audioDurationMs?: number;
+};
+
 export type ConversationMessage = {
   id: string;
   role: "user" | "ai";
@@ -31,4 +43,7 @@ export type ConversationMessage = {
   tone?: "default" | "error";
   source?: "voice" | "chat";
   createdAt?: string;
+  playbackStatus?: VoicePlaybackStatus;
+  interruptedAtMs?: number;
+  audioDurationMs?: number;
 };

@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const rpcMock = vi.hoisted(() => vi.fn());
+const getClaimsMock = vi.hoisted(() => vi.fn());
+const getUserMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@supabase/supabase-js", () => ({
-  createClient: vi.fn(() => ({ rpc: rpcMock })),
+  createClient: vi.fn(() => ({
+    rpc: rpcMock,
+    auth: {
+      getClaims: getClaimsMock,
+      getUser: getUserMock,
+    },
+  })),
 }));
 
 import {
@@ -19,9 +27,15 @@ import { getApiStatus, getNativeSubscriptionClientErrorMessage } from "../server
 describe("server security", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    rpcMock.mockReset();
     process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "test-anon-key";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
     process.env.RATE_LIMIT_IP_SALT = "test-salt";
+    getClaimsMock.mockReset();
+    getUserMock.mockReset();
+    getClaimsMock.mockResolvedValue({ data: null, error: new Error("legacy key") });
+    getUserMock.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
   });
 
   it("requires a bearer token before any backend work", async () => {
@@ -29,6 +43,54 @@ describe("server security", () => {
       statusCode: 401,
       message: "Authentication is required.",
     });
+  });
+
+  it("uses verified JWT claims without a getUser round trip when supported", async () => {
+    getClaimsMock.mockResolvedValueOnce({
+      data: {
+        claims: {
+          sub: "verified-user",
+          iss: "https://example.supabase.co/auth/v1",
+          aud: "authenticated",
+          exp: Math.floor(Date.now() / 1_000) + 300,
+          role: "authenticated",
+        },
+      },
+      error: null,
+    });
+
+    await expect(requireAuthenticatedRequest({
+      headers: { authorization: "Bearer signed-token" },
+    })).resolves.toMatchObject({ userId: "verified-user" });
+    expect(getUserMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to getUser if verified claims are unavailable", async () => {
+    await expect(requireAuthenticatedRequest({
+      headers: { authorization: "Bearer legacy-token" },
+    })).resolves.toMatchObject({ userId: "user-1" });
+    expect(getClaimsMock).toHaveBeenCalledWith("legacy-token");
+    expect(getUserMock).toHaveBeenCalledWith("legacy-token");
+  });
+
+  it("rejects expired verified claims instead of trusting a fallback user", async () => {
+    getClaimsMock.mockResolvedValueOnce({
+      data: {
+        claims: {
+          sub: "expired-user",
+          iss: "https://example.supabase.co/auth/v1",
+          aud: "authenticated",
+          exp: Math.floor(Date.now() / 1_000) - 1,
+          role: "authenticated",
+        },
+      },
+      error: null,
+    });
+
+    await expect(requireAuthenticatedRequest({
+      headers: { authorization: "Bearer expired-token" },
+    })).rejects.toMatchObject({ statusCode: 401 });
+    expect(getUserMock).not.toHaveBeenCalled();
   });
 
   it("hashes IP keys so raw client addresses are never persisted", () => {
@@ -65,6 +127,25 @@ describe("server security", () => {
     await expect(enforceRateLimits([{ key: "chat:user:user-1", limit: 1 }])).rejects.toMatchObject({
       statusCode: 503,
     });
+  });
+
+  it("starts user and IP persistent checks concurrently while remaining fail-closed", async () => {
+    let resolveFirst: ((value: { data: unknown; error: null }) => void) | null = null;
+    const firstCheck = new Promise<{ data: unknown; error: null }>((resolve) => {
+      resolveFirst = resolve;
+    });
+    rpcMock
+      .mockImplementationOnce(() => firstCheck)
+      .mockResolvedValueOnce({ data: [{ allowed: true, retry_after_seconds: 0 }], error: null });
+
+    const pending = enforceRateLimits([
+      { key: "voice:user:user-1", limit: 60 },
+      { key: "voice:ip:203.0.113.44", limit: 60 },
+    ]);
+    await Promise.resolve();
+    expect(rpcMock).toHaveBeenCalledTimes(2);
+    resolveFirst?.({ data: [{ allowed: true, retry_after_seconds: 0 }], error: null });
+    await expect(pending).resolves.toBeUndefined();
   });
 
   it.each([

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   getAdaptiveSilenceMs,
+  isIntentionalVoiceSpeech,
+  NO_SPEECH_TIMEOUT_MS,
   runVoiceTurn,
   VoiceTurnPipelineError,
   type VoiceTurnCheckpoint,
@@ -155,9 +157,13 @@ describe("Voice turn pipeline", () => {
     expect(dependencies.restartListening).not.toHaveBeenCalled();
   });
 
-  it("uses conservative adaptive Android silence thresholds", () => {
-    expect(getAdaptiveSilenceMs(900)).toBe(1_000);
-    expect(getAdaptiveSilenceMs(3_000)).toBe(800);
-    expect(getAdaptiveSilenceMs(7_000)).toBe(700);
+  it("accepts short intentional speech with extra silence while keeping normal turns quick", () => {
+    expect(isIntentionalVoiceSpeech(139)).toBe(false);
+    expect(isIntentionalVoiceSpeech(140)).toBe(true);
+    expect(getAdaptiveSilenceMs(200)).toBe(1_050);
+    expect(getAdaptiveSilenceMs(900)).toBe(900);
+    expect(getAdaptiveSilenceMs(3_000)).toBe(750);
+    expect(getAdaptiveSilenceMs(7_000)).toBe(650);
+    expect(NO_SPEECH_TIMEOUT_MS).toBe(9_000);
   });
 });

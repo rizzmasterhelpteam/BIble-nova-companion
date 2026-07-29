@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  classifyVoiceResponseIntensity,
   createVoiceResponse,
   normalizeVoiceResponse,
   VOICE_RESPONSE_INSTRUCTIONS,
@@ -46,7 +47,7 @@ describe("fast Voice response path", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses one blocking GPT-OSS request with low reasoning and short speech constraints", async () => {
+  it("uses one blocking GPT-OSS request with a reflective spoken-response budget", async () => {
     const result = await createVoiceResponse([
       { role: "user", content: "I feel overwhelmed." },
     ], "User appreciates calm guidance.");
@@ -58,8 +59,8 @@ describe("fast Voice response path", () => {
     expect(body.model).toBe("openai/gpt-oss-120b");
     expect(body.reasoning_effort).toBe("low");
     expect(body.include_reasoning).toBe(false);
-    expect(body.max_tokens).toBe(140);
-    expect(body.messages[0].content).toContain("Stay below 45 words");
+    expect(body.max_tokens).toBe(180);
+    expect(body.messages[0].content).toContain("Voice turn profile: reflective");
     expect(body.messages[0].content).toContain("no Markdown");
     expect(body.messages[0].content).toContain("Practical-first response policy");
     expect(body.messages[0].content).toContain("Do not redirect ordinary questions");
@@ -68,7 +69,7 @@ describe("fast Voice response path", () => {
 
   it("keeps the Voice prompt concise and spoken-language focused", () => {
     expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("one or two short sentences");
-    expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("below 45 words");
+    expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("20 to 45 words");
     expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("no Markdown");
     expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("ATTUNE → VALIDATE → ANCHOR");
     expect(VOICE_RESPONSE_INSTRUCTIONS).toContain("Reflect one specific detail");
@@ -87,6 +88,30 @@ describe("fast Voice response path", () => {
     expect(response).not.toContain("- ");
     expect(response.split(/\s+/)).toHaveLength(45);
     expect(response).not.toContain("third sentence");
+  });
+
+  it("gives distress and crisis-risk turns more room without another model call", async () => {
+    expect(classifyVoiceResponseIntensity([
+      { role: "user", content: "I'm depressed, help me." },
+    ])).toBe("distress");
+    expect(classifyVoiceResponseIntensity([
+      { role: "user", content: "I don't want to live." },
+    ])).toBe("crisis-risk");
+
+    await createVoiceResponse([
+      { role: "user", content: "I'm depressed, help me." },
+    ]);
+    const distressRequest = JSON.parse(String(vi.mocked(fetch).mock.calls.at(-1)?.[1]?.body));
+    expect(distressRequest.reasoning_effort).toBe("medium");
+    expect(distressRequest.max_tokens).toBe(240);
+
+    const crisis = normalizeVoiceResponse(
+      "You should keep going.",
+      false,
+      "crisis-risk",
+    );
+    expect(crisis).toContain("Are you safe right now");
+    expect(crisis).toContain("emergency services");
   });
 
   it("does not block the fast response on shadow-note database work", () => {

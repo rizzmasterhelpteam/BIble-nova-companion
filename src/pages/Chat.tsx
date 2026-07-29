@@ -40,7 +40,11 @@ import {
 } from "../lib/speechRecognition";
 import { scheduleIdleTask } from "../lib/idleTask";
 import { VoiceModeToggle } from "../components/voice/VoiceModeToggle";
-import type { ConversationMessage, HomeMode } from "../types/live";
+import type {
+  ConversationMessage,
+  HomeMode,
+  VoicePlaybackMetadata,
+} from "../types/live";
 
 const VoiceMode = React.lazy(() => import("../components/voice/VoiceMode"));
 
@@ -626,15 +630,22 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
     });
   }, []);
 
-  const appendAiMessage = useCallback((content: string, tone: "default" | "error" = "default", source: "voice" | "chat" = "chat") => {
+  const appendAiMessage = useCallback((
+    content: string,
+    tone: "default" | "error" = "default",
+    source: "voice" | "chat" = "chat",
+    playback?: VoicePlaybackMetadata,
+  ) => {
+    const id = crypto.randomUUID();
     const nextMessage: Message = {
-      id: crypto.randomUUID(),
+      id,
       role: "ai",
       content,
       reference: tone === "default" ? extractReference(content) : undefined,
       tone,
       source,
       createdAt: new Date().toISOString(),
+      ...playback,
     };
 
     setMessages((prev) => {
@@ -642,15 +653,34 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       messagesRef.current = nextMessages;
       return nextMessages;
     });
+    return id;
   }, []);
 
   const appendVoiceUserMessage = useCallback((content: string) => {
     appendUserMessage(content, "voice");
   }, [appendUserMessage]);
 
-  const appendVoiceAssistantMessage = useCallback((content: string) => {
-    appendAiMessage(content, "default", "voice");
+  const appendVoiceAssistantMessage = useCallback((
+    content: string,
+    playback: VoicePlaybackMetadata,
+  ) => {
+    return appendAiMessage(content, "default", "voice", playback);
   }, [appendAiMessage]);
+
+  const updateVoiceAssistantPlayback = useCallback((
+    messageId: string,
+    playback: VoicePlaybackMetadata,
+  ) => {
+    setMessages((previous) => {
+      const nextMessages = previous.map((message) =>
+        message.id === messageId
+          ? { ...message, ...playback }
+          : message,
+      );
+      messagesRef.current = nextMessages;
+      return nextMessages;
+    });
+  }, []);
 
   const continueInChat = useCallback(() => {
     scrollToLatestAfterVoiceRef.current = true;
@@ -1017,6 +1047,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
             isTyping={isTyping}
             onAppendUserMessage={appendVoiceUserMessage}
             onAppendAssistantMessage={appendVoiceAssistantMessage}
+            onUpdateAssistantVoicePlayback={updateVoiceAssistantPlayback}
             onAcceptShadowNotes={acceptPersistedShadowNotes}
             onExitVoice={continueInChat}
             onSessionActiveChange={setVoiceSessionActive}

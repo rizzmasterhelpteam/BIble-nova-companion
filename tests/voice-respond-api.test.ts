@@ -17,10 +17,14 @@ vi.mock("../server-api", () => ({
 vi.mock("../server-security", () => ({
   assertStringLength: vi.fn(),
   enforceRateLimits,
+  formatServerTiming: (timings: Record<string, number>) =>
+    Object.keys(timings).map((key) => `${key};dur=1`).join(", "),
   getHttpErrorDetails: (error: Error & { statusCode?: number }) => ({
     statusCode: error.statusCode || 500,
     message: error.message,
   }),
+  getVoiceRateLimit: () => 60,
+  getVoiceRateLimitWindowMs: () => 600_000,
   requireAuthenticatedRequest,
 }));
 
@@ -96,9 +100,9 @@ describe("Voice response API", () => {
 
     expect(requireAuthenticatedRequest).toHaveBeenCalledOnce();
     expect(enforceRateLimits).toHaveBeenCalledWith([
-      { key: "voice-respond:user:user-1", limit: 30 },
+      { key: "voice-respond:user:user-1", limit: 60 },
       { key: "voice-respond:ip:127.0.0.1", limit: 60 },
-    ]);
+    ], 600_000);
   });
 
   it("formalizes /api/voice/respond without adding another Vercel function", async () => {

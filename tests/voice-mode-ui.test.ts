@@ -156,6 +156,19 @@ describe("Voice mode interface", () => {
     expect(voiceModeSource).toContain("Done speaking");
   });
 
+  it("supports Auto, English, Hindi, and Hinglish without forcing Whisper to English", () => {
+    expect(voiceModeSource).toContain("Voice language");
+    expect(voiceModeSource).toContain("VOICE_LANGUAGE_OPTIONS");
+    expect(voiceHookSource).toContain("getWhisperLanguage(selectedVoiceLanguage)");
+    expect(voiceHookSource).toContain("voiceLanguage: voiceLanguageRef.current");
+  });
+
+  it("restarts cleanly after a no-speech timeout instead of sending empty audio", () => {
+    expect(voiceHookSource).toContain("NO_SPEECH_TIMEOUT_MS");
+    expect(voiceHookSource).toContain("I'm still listening—start whenever you're ready.");
+    expect(voiceHookSource).toContain("pendingNoSpeechRestartOperationRef");
+  });
+
   it("releases recording, playback, requests, and the premium lease on stop", () => {
     expect(voiceHookSource).toContain("requestControllerRef.current?.abort()");
     expect(voiceHookSource).toContain("releaseStream()");
@@ -199,6 +212,10 @@ describe("Voice mode interface", () => {
       normalStopBlock.indexOf("stopVad();"),
     );
     expect(bargeInBlock).not.toContain("releaseReservation(");
+    expect(voiceHookSource).toContain("bargeInDetectorRef.current.beginPlayback()");
+    expect(voiceHookSource).toContain("barge_in_preroll_started");
+    expect(voiceHookSource).toContain("bargeInPreRollUsed");
+    expect(voiceHookSource).toContain("auto_barge_in_paused");
   });
 
   it("keeps Voice actions scrollable and outside Android safe-area obstructions", () => {

@@ -23,7 +23,16 @@ import {
 } from "../../hooks/useTurnBasedVoice";
 import { usePerformanceMode } from "../../hooks/usePerformanceMode";
 import type { VoiceReservation } from "../../lib/voiceReservation";
-import type { ConversationMessage, VoiceState } from "../../types/live";
+import type {
+  ConversationMessage,
+  VoicePlaybackMetadata,
+  VoiceState,
+} from "../../types/live";
+import {
+  normalizeVoiceLanguage,
+  VOICE_LANGUAGE_OPTIONS,
+  type VoiceLanguage,
+} from "../../lib/voiceLanguage";
 import { VoiceOrb } from "./VoiceOrb";
 
 type VoiceModeProps = {
@@ -33,7 +42,14 @@ type VoiceModeProps = {
   memoryEnabled: boolean;
   isTyping: boolean;
   onAppendUserMessage: (content: string, source?: "voice" | "chat") => void;
-  onAppendAssistantMessage: (content: string) => void;
+  onAppendAssistantMessage: (
+    content: string,
+    playback: VoicePlaybackMetadata,
+  ) => string;
+  onUpdateAssistantVoicePlayback: (
+    messageId: string,
+    playback: VoicePlaybackMetadata,
+  ) => void;
   onAcceptShadowNotes: (notes: string | null) => void;
   onExitVoice: () => void;
   onSessionActiveChange: (active: boolean) => void;
@@ -95,7 +111,18 @@ const STATE_DESCRIPTIONS: Record<VoiceState, string> = {
 
 const isVoiceMessage = (message: ConversationMessage) => message.source === "voice";
 const SHADOW_NOTE_PERSIST_INTERVAL_MS = 70_000;
-const SHADOW_NOTE_TIMEOUT_MS = 2_500;
+const SHADOW_NOTE_TIMEOUT_MS = 10_000;
+const VOICE_LANGUAGE_STORAGE_PREFIX = "bible-nova-companion-voice-language";
+
+const getStoredVoiceLanguage = (userId: string): VoiceLanguage => {
+  try {
+    return normalizeVoiceLanguage(
+      window.localStorage.getItem(`${VOICE_LANGUAGE_STORAGE_PREFIX}-${userId}`),
+    );
+  } catch {
+    return "auto";
+  }
+};
 
 export default function VoiceMode({
   userId,
@@ -105,6 +132,7 @@ export default function VoiceMode({
   isTyping,
   onAppendUserMessage,
   onAppendAssistantMessage,
+  onUpdateAssistantVoicePlayback,
   onAcceptShadowNotes,
   onExitVoice,
   onSessionActiveChange,
@@ -118,6 +146,9 @@ export default function VoiceMode({
   const { isCompactPhone, isShortPhone } = useMobileViewport();
   const navigate = useNavigate();
   const isPerformanceMode = usePerformanceMode();
+  const [voiceLanguage, setVoiceLanguage] = useState<VoiceLanguage>(
+    () => getStoredVoiceLanguage(userId),
+  );
   const [cooldownNow, setCooldownNow] = useState(() => Date.now());
   const persistTimerRef = useRef<number | null>(null);
   const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -127,6 +158,24 @@ export default function VoiceMode({
   const sessionVoiceBaselineRef = useRef(0);
   const lastPersistAttemptAtRef = useRef(0);
   const persistenceBaselineInitializedRef = useRef(false);
+  const previousVoiceLanguageUserRef = useRef(userId);
+
+  useEffect(() => {
+    if (previousVoiceLanguageUserRef.current === userId) return;
+    previousVoiceLanguageUserRef.current = userId;
+    setVoiceLanguage(getStoredVoiceLanguage(userId));
+  }, [userId]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        `${VOICE_LANGUAGE_STORAGE_PREFIX}-${userId}`,
+        voiceLanguage,
+      );
+    } catch {
+      // Voice continues with the in-memory preference when storage is unavailable.
+    }
+  }, [userId, voiceLanguage]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -141,8 +190,11 @@ export default function VoiceMode({
     onAppendUserMessage(text, "voice");
   }, [onAppendUserMessage]);
 
-  const handleAssistantTranscript = useCallback((text: string) => {
-    onAppendAssistantMessage(text);
+  const handleAssistantTranscript = useCallback((
+    text: string,
+    playback: VoicePlaybackMetadata,
+  ) => {
+    return onAppendAssistantMessage(text, playback);
   }, [onAppendAssistantMessage]);
 
   const live = useTurnBasedVoice({
@@ -151,11 +203,13 @@ export default function VoiceMode({
     shadowNotes,
     onUserTranscript: handleUserTranscript,
     onAssistantTranscript: handleAssistantTranscript,
+    onAssistantPlaybackStatusChange: onUpdateAssistantVoicePlayback,
     reservation,
     onReservationChange,
     liveReady: voiceReady,
     apiStatusConnectionError,
     enableInputLevel: !isPerformanceMode,
+    voiceLanguage,
   });
   const stopLive = live.stop;
   const premiumRequired = live.errorCode === "subscription_required";
@@ -443,6 +497,23 @@ export default function VoiceMode({
           )}
 
           <div className={cn("voice-actions mt-4 w-full pb-safe", isShortPhone ? "pt-1" : "pt-2")}>
+            {!active && (
+              <label className="voice-language-select app-muted mb-3 flex w-full items-center justify-between gap-3 rounded-[1rem] border px-3.5 py-3 text-left text-sm" style={{ background: "var(--app-card-soft)", borderColor: "var(--app-card-border)" }}>
+                <span className="font-medium">Voice language</span>
+                <select
+                  value={voiceLanguage}
+                  onChange={(event) => setVoiceLanguage(normalizeVoiceLanguage(event.target.value))}
+                  className="app-input min-h-9 rounded-lg px-2 py-1 text-sm"
+                  aria-label="Voice language"
+                >
+                  {VOICE_LANGUAGE_OPTIONS.map((language) => (
+                    <option key={language} value={language}>
+                      {language === "auto" ? "Auto" : language === "english" ? "English" : language === "hindi" ? "Hindi" : "Hinglish"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {showStartButton ? (
               <div className="flex w-full flex-col gap-2">
                 <button

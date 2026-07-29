@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { JWT } from "google-auth-library";
 import {
   createChatCompletion,
@@ -16,6 +16,11 @@ import {
   MAX_VOICE_AUDIO_BYTES,
   normalizeVoiceAudioMimeType,
 } from "./src/lib/voiceTranscription.js";
+import {
+  getWhisperVocabularyPrompt,
+  normalizeVoiceLanguage,
+  type VoiceLanguage,
+} from "./src/lib/voiceLanguage.js";
 import {
   createGoogleTtsSsml,
   isGoogleTtsSsmlEnabled,
@@ -181,6 +186,8 @@ export type NativeSubscriptionSyncPayload = {
 const GOOGLE_PLAY_PACKAGE_NAME = "com.biblenovacompanion.app";
 const GOOGLE_PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher";
 const SHADOW_NOTES_TABLE = "user_shadow_notes";
+let cachedSupabaseAdminConfigKey: string | null = null;
+let cachedSupabaseAdminClient: SupabaseClient<any, "public", "public", any, any> | null = null;
 
 const getSupabaseServerConfig = () => {
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
@@ -199,9 +206,20 @@ const createSupabaseAdminClient = () => {
     return null;
   }
 
-  return createClient(config.supabaseUrl, config.serviceRoleKey, {
+  const configKey = `${config.supabaseUrl}|${config.serviceRoleKey}`;
+  if (
+    cachedSupabaseAdminClient &&
+    cachedSupabaseAdminConfigKey === configKey
+  ) {
+    return cachedSupabaseAdminClient;
+  }
+
+  const client = createClient(config.supabaseUrl, config.serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+  cachedSupabaseAdminConfigKey = configKey;
+  cachedSupabaseAdminClient = client;
+  return client;
 };
 
 const getGooglePlayServiceAccount = () => {
@@ -506,15 +524,24 @@ export async function createVoiceReflectionResponse(
   _userId: string,
   messages: Array<{ role: "user" | "assistant" | "ai" | "model" | "system"; content: string }>,
   shadowNotes?: string | null,
+  voiceLanguage?: VoiceLanguage,
 ) {
   const effectiveShadowNotes =
     normalizeShadowNotes(shadowNotes);
   return {
-    message: await createVoiceResponse(messages, effectiveShadowNotes),
+    message: await createVoiceResponse(
+      messages,
+      effectiveShadowNotes,
+      normalizeVoiceLanguage(voiceLanguage),
+    ),
   };
 }
 
-export async function transcribeAudio(audio: string | Blob, language?: string) {
+export async function transcribeAudio(
+  audio: string | Blob,
+  language?: string,
+  voiceLanguage: VoiceLanguage = "auto",
+) {
   const apiKey = process.env.GROQ_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("Speech transcription requires GROQ_API_KEY on the server.");
@@ -547,6 +574,7 @@ export async function transcribeAudio(audio: string | Blob, language?: string) {
   if (language) {
     formData.append("language", language);
   }
+  formData.append("prompt", getWhisperVocabularyPrompt(voiceLanguage));
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15_000);
@@ -580,6 +608,15 @@ export async function transcribeAudio(audio: string | Blob, language?: string) {
 
 export const DEFAULT_GOOGLE_TTS_VOICE = "en-AU-Chirp3-HD-Algenib";
 export const DEFAULT_GOOGLE_TTS_LANGUAGE = "en-AU";
+const DEFAULT_GOOGLE_TTS_ENDPOINT = "https://texttospeech.googleapis.com/v1/text:synthesize";
+const GOOGLE_TTS_REQUEST_TIMEOUT_MS = 9_000;
+const GOOGLE_TTS_AUDIO_PROFILES = [
+  "handset-class-device",
+  "headphone-class-device",
+  "small-bluetooth-speaker-class-device",
+] as const;
+
+type GoogleTtsAudioProfile = (typeof GOOGLE_TTS_AUDIO_PROFILES)[number];
 
 export type GoogleTtsSynthesisOptions = {
   languageCode?: string;
@@ -587,6 +624,43 @@ export type GoogleTtsSynthesisOptions = {
   speakingRate?: string | number;
   pitch?: string | number;
   enableSsml?: boolean;
+  audioProfile?: string;
+};
+
+const getGoogleTtsAudioProfile = (value: string | undefined): GoogleTtsAudioProfile | undefined =>
+  GOOGLE_TTS_AUDIO_PROFILES.includes(value as GoogleTtsAudioProfile)
+    ? value as GoogleTtsAudioProfile
+    : undefined;
+
+export const getGoogleTtsEndpoint = () => {
+  const configured = process.env.GOOGLE_TTS_ENDPOINT?.trim();
+  if (!configured) return DEFAULT_GOOGLE_TTS_ENDPOINT;
+
+  try {
+    const parsed = new URL(configured);
+    if (
+      parsed.protocol !== "https:" ||
+      !/(?:^|[.])[a-z0-9-]*texttospeech[.]googleapis[.]com$/i.test(parsed.hostname)
+    ) {
+      return DEFAULT_GOOGLE_TTS_ENDPOINT;
+    }
+    const path = parsed.pathname.replace(/\/+$/, "");
+    return path.endsWith(":synthesize")
+      ? `${parsed.origin}${path}`
+      : `${parsed.origin}${path}/v1/text:synthesize`;
+  } catch {
+    return DEFAULT_GOOGLE_TTS_ENDPOINT;
+  }
+};
+
+export const getGoogleTtsOptionsForVoiceLanguage = (
+  voiceLanguage: VoiceLanguage,
+): GoogleTtsSynthesisOptions => {
+  if (voiceLanguage !== "hindi" && voiceLanguage !== "hinglish") return {};
+  return {
+    languageCode: process.env.GOOGLE_TTS_HINDI_LANGUAGE_CODE?.trim() || "hi-IN",
+    voiceName: process.env.GOOGLE_TTS_HINDI_VOICE_NAME?.trim() || "hi-IN-Standard-A",
+  };
 };
 
 export const getGoogleTtsSynthesisConfig = (
@@ -609,6 +683,9 @@ export const getGoogleTtsSynthesisConfig = (
   enableSsml:
     options.enableSsml ??
     isGoogleTtsSsmlEnabled(process.env.GOOGLE_TTS_ENABLE_SSML),
+  audioProfile: getGoogleTtsAudioProfile(
+    options.audioProfile ?? process.env.GOOGLE_TTS_AUDIO_PROFILE,
+  ),
 });
 
 type GoogleTtsProviderResponse = {
@@ -621,7 +698,6 @@ const requestGoogleTtsAudio = async ({
   input,
   voice,
   audioConfig,
-  signal,
 }: {
   accessToken: string;
   input: { text: string } | { ssml: string };
@@ -630,23 +706,27 @@ const requestGoogleTtsAudio = async ({
     audioEncoding: "MP3";
     speakingRate?: number;
     pitch?: number;
+    effectsProfileId?: string[];
   };
-  signal: AbortSignal;
 }) => {
-  const response = await fetch(
-    "https://texttospeech.googleapis.com/v1/text:synthesize",
-    {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), GOOGLE_TTS_REQUEST_TIMEOUT_MS);
+  const startedAt = Date.now();
+  try {
+    const response = await fetch(getGoogleTtsEndpoint(), {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ input, voice, audioConfig }),
-      signal,
-    },
-  );
-  const data = (await response.json().catch(() => ({}))) as GoogleTtsProviderResponse;
-  return { response, data };
+      signal: controller.signal,
+    });
+    const data = (await response.json().catch(() => ({}))) as GoogleTtsProviderResponse;
+    return { response, data, durationMs: Date.now() - startedAt };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 };
 
 export async function synthesizeSpeech(
@@ -660,85 +740,88 @@ export async function synthesizeSpeech(
 
   const config = getGoogleTtsSynthesisConfig(options);
   const auth = getTextToSpeechAuthClient();
+  const authStartedAt = Date.now();
   const { token: accessToken } = await auth.getAccessToken();
+  const authMs = Date.now() - authStartedAt;
   if (!accessToken) {
     throw new Error("Could not authenticate with Google Cloud Text-to-Speech.");
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const voice = {
-      languageCode: config.languageCode,
-      name: config.voiceName,
-    };
-    let synthesisMode: "ssml" | "plain" | "plain-fallback" =
-      config.enableSsml ? "ssml" : "plain";
-    let result = await requestGoogleTtsAudio({
-      accessToken,
-      input: config.enableSsml
-        ? {
-            ssml: createGoogleTtsSsml(normalizedText, {
-              speakingRate: config.speakingRate,
-              pitch: config.pitch,
-            }),
-          }
-        : { text: normalizedText },
-      voice,
-      audioConfig: config.enableSsml
-        ? { audioEncoding: "MP3" }
-        : {
-            audioEncoding: "MP3",
+  const voice = {
+    languageCode: config.languageCode,
+    name: config.voiceName,
+  };
+  const withAudioProfile = <T extends { audioEncoding: "MP3" }>(audioConfig: T) =>
+    config.audioProfile
+      ? { ...audioConfig, effectsProfileId: [config.audioProfile] }
+      : audioConfig;
+  let synthesisMode: "ssml" | "plain" | "plain-fallback" =
+    config.enableSsml ? "ssml" : "plain";
+  let result = await requestGoogleTtsAudio({
+    accessToken,
+    input: config.enableSsml
+      ? {
+          ssml: createGoogleTtsSsml(normalizedText, {
             speakingRate: config.speakingRate,
             pitch: config.pitch,
-          },
-      signal: controller.signal,
-    });
-
-    const shouldTryPlainText =
-      config.enableSsml &&
-      !result.data.audioContent &&
-      ![401, 403, 429].includes(result.response.status);
-    if (shouldTryPlainText) {
-      console.warn("[voice/tts] SSML unavailable; retrying with plain text", {
-        providerStatus: result.response.status,
-        voiceName: config.voiceName,
-      });
-      synthesisMode = "plain-fallback";
-      result = await requestGoogleTtsAudio({
-        accessToken,
-        input: { text: normalizedText },
-        voice,
-        audioConfig: {
+          }),
+        }
+      : { text: normalizedText },
+    voice,
+    audioConfig: config.enableSsml
+      ? withAudioProfile({ audioEncoding: "MP3" })
+      : withAudioProfile({
           audioEncoding: "MP3",
           speakingRate: config.speakingRate,
           pitch: config.pitch,
-        },
-        signal: controller.signal,
-      });
-    }
+        }),
+  });
+  let providerMs = result.durationMs;
 
-    if (!result.response.ok) {
-      throw new Error(
-        result.data.error?.message || "Text-to-Speech generation failed.",
-      );
-    }
-    if (!result.data.audioContent) {
-      throw new Error("Text-to-Speech returned no audio.");
-    }
-    return {
-      audioContent: result.data.audioContent,
-      mimeType: "audio/mpeg",
+  const shouldTryPlainText =
+    config.enableSsml &&
+    !result.data.audioContent &&
+    ![401, 403, 429].includes(result.response.status);
+  if (shouldTryPlainText) {
+    console.warn("[voice/tts] SSML unavailable; retrying with plain text", {
+      providerStatus: result.response.status,
       voiceName: config.voiceName,
-      languageCode: config.languageCode,
-      speakingRate: config.speakingRate,
-      pitch: config.pitch,
-      synthesisMode,
-      characterCount: normalizedText.length,
-    };
-  } finally {
-    clearTimeout(timeoutId);
+    });
+    synthesisMode = "plain-fallback";
+    result = await requestGoogleTtsAudio({
+      accessToken,
+      input: { text: normalizedText },
+      voice,
+      audioConfig: withAudioProfile({
+        audioEncoding: "MP3",
+        speakingRate: config.speakingRate,
+        pitch: config.pitch,
+      }),
+    });
+    providerMs += result.durationMs;
   }
+
+  if (!result.response.ok) {
+    throw new Error(
+      result.data.error?.message || "Text-to-Speech generation failed.",
+    );
+  }
+  if (!result.data.audioContent) {
+    throw new Error("Text-to-Speech returned no audio.");
+  }
+  return {
+    audioContent: result.data.audioContent,
+    mimeType: "audio/mpeg",
+    voiceName: config.voiceName,
+    languageCode: config.languageCode,
+    speakingRate: config.speakingRate,
+    pitch: config.pitch,
+    synthesisMode,
+    characterCount: normalizedText.length,
+    authMs,
+    providerMs,
+    endpoint: getGoogleTtsEndpoint(),
+  };
 }
 
 export async function generatePrayer(prompt: string) {

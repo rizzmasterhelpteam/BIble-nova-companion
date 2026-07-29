@@ -1,7 +1,9 @@
-export const BARGE_IN_MIN_SPEECH_MS = 180;
+export const BARGE_IN_MIN_SPEECH_MS = 120;
 export const BARGE_IN_RMS_MULTIPLIER = 2.2;
 export const BARGE_IN_ABSOLUTE_FLOOR = 0.028;
 export const BARGE_IN_COOLDOWN_MS = 500;
+export const BARGE_IN_PLAYBACK_GRACE_MS = 350;
+export const BARGE_IN_ECHO_MULTIPLIER = 1.8;
 
 type BargeInDetectorOptions = {
   minimumSpeechMs?: number;
@@ -10,6 +12,8 @@ type BargeInDetectorOptions = {
   cooldownMs?: number;
   initialNoiseFloor?: number;
   ambientSmoothing?: number;
+  playbackGraceMs?: number;
+  echoMultiplier?: number;
 };
 
 export const calculateVoiceRms = (samples: Float32Array) => {
@@ -28,9 +32,13 @@ export class AdaptiveBargeInDetector {
   private readonly absoluteFloor: number;
   private readonly cooldownMs: number;
   private readonly ambientSmoothing: number;
+  private readonly playbackGraceMs: number;
+  private readonly echoMultiplier: number;
   private noiseFloor: number;
+  private playbackEchoFloor: number;
   private candidateStartedAt: number | null = null;
   private cooldownUntil = 0;
+  private playbackStartedAt = Number.NEGATIVE_INFINITY;
 
   constructor(options: BargeInDetectorOptions = {}) {
     this.minimumSpeechMs = options.minimumSpeechMs ?? BARGE_IN_MIN_SPEECH_MS;
@@ -38,7 +46,10 @@ export class AdaptiveBargeInDetector {
     this.absoluteFloor = options.absoluteFloor ?? BARGE_IN_ABSOLUTE_FLOOR;
     this.cooldownMs = options.cooldownMs ?? BARGE_IN_COOLDOWN_MS;
     this.noiseFloor = options.initialNoiseFloor ?? 0.01;
+    this.playbackEchoFloor = options.initialNoiseFloor ?? 0.01;
     this.ambientSmoothing = options.ambientSmoothing ?? 0.08;
+    this.playbackGraceMs = options.playbackGraceMs ?? BARGE_IN_PLAYBACK_GRACE_MS;
+    this.echoMultiplier = options.echoMultiplier ?? BARGE_IN_ECHO_MULTIPLIER;
   }
 
   getNoiseFloor() {
@@ -46,7 +57,21 @@ export class AdaptiveBargeInDetector {
   }
 
   getThreshold() {
-    return Math.max(this.absoluteFloor, this.noiseFloor * this.rmsMultiplier);
+    return Math.max(
+      this.absoluteFloor,
+      this.noiseFloor * this.rmsMultiplier,
+      this.playbackEchoFloor * this.echoMultiplier,
+    );
+  }
+
+  beginPlayback(now = performance.now()) {
+    this.playbackStartedAt = now;
+    this.playbackEchoFloor = this.noiseFloor;
+    this.candidateStartedAt = null;
+  }
+
+  hasCandidate() {
+    return this.candidateStartedAt !== null;
   }
 
   observeAmbient(rms: number) {
@@ -58,8 +83,34 @@ export class AdaptiveBargeInDetector {
       rms * this.ambientSmoothing;
   }
 
+  private observePlaybackEcho(rms: number) {
+    if (!Number.isFinite(rms) || rms < 0) return;
+    // During playback this is an envelope, not just a quiet-room average.
+    // Holding the recent peak prevents the assistant's own first loud phrase
+    // from becoming a false interruption once the grace window ends.
+    this.playbackEchoFloor = Math.max(
+      rms,
+      this.playbackEchoFloor * (1 - this.ambientSmoothing) +
+        rms * this.ambientSmoothing,
+    );
+  }
+
   observePlayback(rms: number, now = performance.now()) {
-    if (!Number.isFinite(rms) || rms < this.getThreshold() || now < this.cooldownUntil) {
+    if (!Number.isFinite(rms) || now < this.cooldownUntil) {
+      this.candidateStartedAt = null;
+      return false;
+    }
+
+    if (now - this.playbackStartedAt < this.playbackGraceMs) {
+      this.observePlaybackEcho(rms);
+      this.candidateStartedAt = null;
+      return false;
+    }
+
+    if (rms < this.getThreshold()) {
+      if (Number.isFinite(this.playbackStartedAt)) {
+        this.observePlaybackEcho(rms);
+      }
       this.candidateStartedAt = null;
       return false;
     }
