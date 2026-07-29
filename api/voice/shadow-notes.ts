@@ -5,7 +5,7 @@ import { assertStringLength, enforceRateLimits, getHttpErrorDetails, requireAuth
 const setCorsHeaders = (res: any) => {
   res.setHeader?.("Access-Control-Allow-Origin", "*");
   res.setHeader?.("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Request-Id");
 };
 
 const normalizeMessages = (value: unknown): ChatMessage[] => {

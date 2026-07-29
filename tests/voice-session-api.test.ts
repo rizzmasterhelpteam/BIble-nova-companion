@@ -82,6 +82,20 @@ describe("turn-based Voice session API", () => {
     expect(response.body).toMatchObject({ reservationHandle: "r".repeat(43), resumed: false });
   });
 
+  it("allows the request id header used by Android voice requests", async () => {
+    const response = createResponse();
+
+    await voiceSessionHandler({ method: "OPTIONS" }, response);
+
+    expect(response.statusCode).toBe(204);
+    expect(response.setHeader).toHaveBeenCalledWith(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization, X-Client-Request-Id",
+    );
+    expect(response.status).toHaveBeenCalledWith(204);
+    expect(response.end).toHaveBeenCalledOnce();
+  });
+
   it("recovers a lost start response without acquiring another lease", async () => {
     getVoiceSessionAvailability.mockResolvedValue({
       eligible: true,
