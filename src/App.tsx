@@ -16,6 +16,10 @@ import { getNativePlatform, isNativePlatform } from "./lib/native/platform";
 import { initializeNativeApp } from "./lib/native/app";
 import { startup } from "./lib/startup";
 import { isNativeAndroidDevice } from "./hooks/usePerformanceMode";
+import {
+  shouldRedirectAndroidToPaywall,
+  shouldWaitForAndroidSubscriptionResolution,
+} from "./lib/subscriptionAccess";
 
 const Layout = lazy(() => import("./components/Layout"));
 const Home = lazy(() => import("./pages/Home"));
@@ -73,7 +77,13 @@ const ConnectivityNotice = () => {
 };
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
-  const { user, isLoading, hasCompletedOnboarding, isSubscribed } = useAuth();
+  const {
+    user,
+    isLoading,
+    hasCompletedOnboarding,
+    isSubscribed,
+    isSubscriptionResolved,
+  } = useAuth();
   const location = useLocation();
   const hasActiveIdentity = Boolean(user);
   const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
@@ -90,15 +100,25 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/onboarding" replace />;
   }
 
+  if (
+    shouldWaitForAndroidSubscriptionResolution({
+      isAndroidNative,
+      hasCompletedOnboarding,
+      isSubscriptionResolved,
+    })
+  ) {
+    return <FullScreenLoader />;
+  }
+
   // The native Android app must have an active entitlement before entering
   // the main experience. The web app remains accessible because its current
   // billing flow is Android-only.
-  if (
-    isAndroidNative &&
-    hasCompletedOnboarding &&
-    !isSubscribed &&
-    location.pathname !== "/paywall"
-  ) {
+  if (shouldRedirectAndroidToPaywall({
+    isAndroidNative,
+    hasCompletedOnboarding,
+    isSubscribed,
+    pathname: location.pathname,
+  })) {
     return <Navigate to="/paywall" replace />;
   }
 

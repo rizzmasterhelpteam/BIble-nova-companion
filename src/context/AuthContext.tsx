@@ -11,6 +11,7 @@ type AuthContextType = {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
+  isSubscriptionResolved: boolean;
   identityKey: string | null;
   profileName: string | null;
   profileAvatarUrl: string | null;
@@ -23,6 +24,9 @@ type AuthContextType = {
   completeOnboarding: () => void;
   subscribe: (source: SubscriptionSource) => void;
   shadowNotes: string | null;
+  memoryEnabled: boolean;
+  memoryPreferenceLoading: boolean;
+  updateMemoryPreference: (enabled: boolean) => Promise<void>;
   updateShadowNotes: (notes: string) => Promise<void>;
   acceptPersistedShadowNotes: (notes: string | null) => void;
 };
@@ -49,6 +53,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   isLoading: true,
+  isSubscriptionResolved: false,
   identityKey: null,
   profileName: null,
   profileAvatarUrl: null,
@@ -61,6 +66,9 @@ const AuthContext = createContext<AuthContextType>({
   completeOnboarding: () => {},
   subscribe: () => {},
   shadowNotes: null,
+  memoryEnabled: false,
+  memoryPreferenceLoading: false,
+  updateMemoryPreference: async () => {},
   updateShadowNotes: async () => {},
   acceptPersistedShadowNotes: () => {},
 });
@@ -120,11 +128,6 @@ const getStoredProfileAvatarUrl = (id: string, currentUser: User | null) => {
   const stored = storageGet(`bible-nova-companion-profile-avatar-${id}`);
   if (stored === AVATAR_NONE) return null;
   return stored || getUserAvatarUrl(currentUser);
-};
-
-const getStoredShadowNotes = (currentUser: User | null) => {
-  const metadata = currentUser?.user_metadata || {};
-  return metadata.shadow_notes || null;
 };
 
 const setStoredSubscriptionState = (id: string, value: boolean) => {
@@ -190,12 +193,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubscriptionResolved, setIsSubscriptionResolved] = useState(false);
   const [identityKey, setIdentityKey] = useState<string | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [shadowNotes, setShadowNotes] = useState<string | null>(null);
+  const [memoryEnabled, setMemoryEnabled] = useState(false);
+  const [memoryPreferenceLoading, setMemoryPreferenceLoading] = useState(false);
+  const memoryRequestVersionRef = React.useRef(0);
+  const activeMemoryUserIdRef = React.useRef<string | null>(null);
+  activeMemoryUserIdRef.current = user?.id || null;
 
   useEffect(() => {
     let isDisposed = false;
@@ -219,12 +228,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (!isDisposed) {
         setProfileName(id ? getStoredProfileName(id, currentUser) : null);
         setProfileAvatarUrl(id ? getStoredProfileAvatarUrl(id, currentUser) : null);
-      }
-    };
-
-    const syncShadowNotes = (currentUser: User | null) => {
-      if (!isDisposed) {
-        setShadowNotes(currentUser ? getStoredShadowNotes(currentUser) : null);
       }
     };
 
@@ -262,7 +265,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     ) => {
       const id = currentUser?.id || null;
       if (!id) {
-        if (!isDisposed) setIsSubscribed(false);
+        if (!isDisposed) {
+          setIsSubscribed(false);
+          setIsSubscriptionResolved(true);
+        }
         return;
       }
 
@@ -323,17 +329,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setStoredSubscriptionState(id, hasEntitlement);
       if (!hasEntitlement) clearStoredSubscriptionSource(id);
       setIsSubscribed(hasEntitlement);
+      setIsSubscriptionResolved(true);
     };
 
     const restoreCachedSubscriptionState = (currentUser: User) => {
       const id = currentUser.id;
       const storedSubscription = storageGet(`isSubscribed_${id}`) === "true";
       const storedSubscriptionSource = getStoredSubscriptionSource(id);
-      const hasCachedEntitlement =
-        hasActiveServerSubscription(currentUser) ||
-        (storedSubscription && isNativeSubscriptionSource(storedSubscriptionSource));
+      const hasServerEntitlement = hasActiveServerSubscription(currentUser);
+      const hasCachedNativeEntitlement =
+        storedSubscription && isNativeSubscriptionSource(storedSubscriptionSource);
+      const needsNativeVerification =
+        isNativePlatform() &&
+        hasCachedNativeEntitlement &&
+        !hasServerEntitlement;
 
-      setIsSubscribed(hasCachedEntitlement);
+      setIsSubscribed(hasServerEntitlement || hasCachedNativeEntitlement);
+      setIsSubscriptionResolved(!needsNativeVerification);
     };
 
     const clearActiveSession = async () => {
@@ -343,7 +355,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIdentityKey(null);
       syncOnboardingState(null);
       syncProfileState(null);
-      syncShadowNotes(null);
+      setShadowNotes(null);
+      setMemoryEnabled(false);
+      setMemoryPreferenceLoading(false);
+      setIsSubscriptionResolved(true);
       await syncSubscriptionState(null);
     };
 
@@ -372,7 +387,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIdentityKey(currentUser.id);
       syncOnboardingState(currentUser.id);
       syncProfileState(currentUser);
-      syncShadowNotes(currentUser);
       restoreCachedSubscriptionState(currentUser);
     };
 
@@ -391,8 +405,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         setUser(refreshedUser);
         syncProfileState(refreshedUser);
-        syncShadowNotes(refreshedUser);
-        await syncSubscriptionState(refreshedUser);
+        await syncSubscriptionState(refreshedUser, { allowStoredNativeFallback: false });
       } catch (error) {
         console.warn("Could not refresh the signed-in user in the background:", error);
       }
@@ -508,6 +521,65 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
+  useEffect(() => {
+    const currentUserId = user?.id || null;
+    const requestVersion = ++memoryRequestVersionRef.current;
+    setShadowNotes(null);
+    setMemoryEnabled(false);
+
+    if (!currentUserId || !isSupabaseConfigured) {
+      setMemoryPreferenceLoading(false);
+      return;
+    }
+
+    setMemoryPreferenceLoading(true);
+    void apiFetch("/api/shadow-notes", {
+      method: "GET",
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    })
+      .then(async (response) => {
+        const data = (await response.json().catch(() => ({}))) as {
+          memoryEnabled?: boolean;
+          shadowNotes?: string | null;
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(data.error || "Could not load memory preference.");
+        }
+        if (
+          requestVersion !== memoryRequestVersionRef.current ||
+          activeMemoryUserIdRef.current !== currentUserId
+        ) {
+          return;
+        }
+
+        const enabled = data.memoryEnabled === true;
+        setMemoryEnabled(enabled);
+        setShadowNotes(
+          enabled && typeof data.shadowNotes === "string"
+            ? data.shadowNotes.trim().slice(0, 2_000) || null
+            : null,
+        );
+      })
+      .catch((error) => {
+        if (
+          requestVersion === memoryRequestVersionRef.current &&
+          activeMemoryUserIdRef.current === currentUserId
+        ) {
+          console.warn("Could not load memory preference:", error);
+        }
+      })
+      .finally(() => {
+        if (
+          requestVersion === memoryRequestVersionRef.current &&
+          activeMemoryUserIdRef.current === currentUserId
+        ) {
+          setMemoryPreferenceLoading(false);
+        }
+      });
+  }, [session?.access_token, user?.id]);
+
   const logout = useCallback(async () => {
     setUser(null);
     setSession(null);
@@ -516,7 +588,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setProfileAvatarUrl(null);
     setHasCompletedOnboarding(false);
     setIsSubscribed(false);
+    setIsSubscriptionResolved(true);
     setShadowNotes(null);
+    setMemoryEnabled(false);
+    setMemoryPreferenceLoading(false);
 
     if (isSupabaseConfigured) {
       await supabase.auth.signOut();
@@ -552,7 +627,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setProfileAvatarUrl(null);
     setHasCompletedOnboarding(false);
     setIsSubscribed(false);
+    setIsSubscriptionResolved(true);
     setShadowNotes(null);
+    setMemoryEnabled(false);
+    setMemoryPreferenceLoading(false);
 
     if (isSupabaseConfigured) {
       await supabase.auth.signOut().catch(() => undefined);
@@ -608,10 +686,80 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setStoredSubscriptionState(id, true);
     setStoredSubscriptionSource(id, source);
     setIsSubscribed(true);
+    setIsSubscriptionResolved(true);
   }, [user?.id]);
+
+  const updateMemoryPreference = useCallback(async (enabled: boolean) => {
+    const currentUserId = user?.id || null;
+    if (!currentUserId) throw new Error("No active profile to update.");
+    if (!isSupabaseConfigured) {
+      throw new Error("Remembered preferences require a server connection.");
+    }
+
+    const requestVersion = ++memoryRequestVersionRef.current;
+    const previousMemoryEnabled = memoryEnabled;
+    const previousShadowNotes = shadowNotes;
+    if (!enabled) {
+      setMemoryEnabled(false);
+      setShadowNotes(null);
+    }
+    setMemoryPreferenceLoading(true);
+    try {
+      const response = await apiFetch("/api/shadow-notes", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-cache",
+        },
+        body: JSON.stringify({ memoryEnabled: enabled }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        memoryEnabled?: boolean;
+        shadowNotes?: string | null;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || "Could not update memory preference.");
+      }
+      if (
+        requestVersion !== memoryRequestVersionRef.current ||
+        activeMemoryUserIdRef.current !== currentUserId
+      ) {
+        return;
+      }
+
+      const confirmedEnabled = data.memoryEnabled === true;
+      setMemoryEnabled(confirmedEnabled);
+      setShadowNotes(
+        confirmedEnabled && typeof data.shadowNotes === "string"
+          ? data.shadowNotes.trim().slice(0, 2_000) || null
+          : null,
+      );
+    } catch (error) {
+      if (
+        requestVersion === memoryRequestVersionRef.current &&
+        activeMemoryUserIdRef.current === currentUserId
+      ) {
+        setMemoryEnabled(previousMemoryEnabled);
+        setShadowNotes(previousShadowNotes);
+      }
+      throw error;
+    } finally {
+      if (
+        requestVersion === memoryRequestVersionRef.current &&
+        activeMemoryUserIdRef.current === currentUserId
+      ) {
+        setMemoryPreferenceLoading(false);
+      }
+    }
+  }, [memoryEnabled, shadowNotes, user?.id]);
 
   const updateShadowNotes = useCallback(async (notes: string) => {
     if (!user) throw new Error("No active profile to update.");
+    if (!memoryEnabled) {
+      setShadowNotes(null);
+      return;
+    }
     const trimmed = notes.trim();
     if (!trimmed) {
       setShadowNotes(null);
@@ -624,27 +772,41 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes: trimmed }),
       });
-      const data = (await response.json().catch(() => ({}))) as { shadowNotes?: string; error?: string };
+      const data = (await response.json().catch(() => ({}))) as {
+        memoryEnabled?: boolean;
+        shadowNotes?: string | null;
+        error?: string;
+      };
       if (!response.ok) {
         throw new Error(data.error || "Could not save shadow notes.");
+      }
+      if (data.memoryEnabled === false) {
+        setMemoryEnabled(false);
+        setShadowNotes(null);
+        return;
       }
       setShadowNotes(data.shadowNotes || trimmed);
       return;
     }
 
     setShadowNotes(trimmed);
-  }, [user]);
+  }, [memoryEnabled, user]);
 
   const acceptPersistedShadowNotes = useCallback((notes: string | null) => {
+    if (!memoryEnabled) {
+      setShadowNotes(null);
+      return;
+    }
     const normalized = notes?.trim().slice(0, 2_000) || null;
     setShadowNotes(normalized);
-  }, []);
+  }, [memoryEnabled]);
 
   const value = useMemo(
     () => ({
       user,
       session,
       isLoading,
+      isSubscriptionResolved,
       identityKey,
       profileName,
       profileAvatarUrl,
@@ -657,6 +819,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       completeOnboarding,
       subscribe,
       shadowNotes,
+      memoryEnabled,
+      memoryPreferenceLoading,
+      updateMemoryPreference,
       updateShadowNotes,
       acceptPersistedShadowNotes,
     }),
@@ -667,6 +832,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       identityKey,
       isLoading,
       isSubscribed,
+      isSubscriptionResolved,
+      memoryEnabled,
+      memoryPreferenceLoading,
       logout,
       profileAvatarUrl,
       profileName,
@@ -676,6 +844,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       updateProfileName,
       user,
       shadowNotes,
+      updateMemoryPreference,
       updateShadowNotes,
       acceptPersistedShadowNotes,
     ],
