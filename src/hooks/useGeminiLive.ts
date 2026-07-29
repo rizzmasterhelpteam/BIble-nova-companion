@@ -9,7 +9,9 @@ import { nativeRecoveryStorage, nativeStorage } from "../lib/native/storage";
 import {
   createIdempotentAsyncAction,
   createInitialHistoryPayload,
+  createVoiceTurnDetectionState,
   getPcm16PeakAmplitude,
+  getPcm16RmsAmplitude,
   getLiveReconnectDelay,
   getLiveSessionDeadlineMs,
   getSafePlaybackGain,
@@ -20,6 +22,7 @@ import {
   shouldResumeListeningAfterPlayback,
   signalAudioStreamEnd,
   toPcmByteView,
+  updateVoiceTurnDetection,
 } from "../lib/liveProtocol";
 import type { ConversationMessage, VoiceState } from "../types/live";
 import {
@@ -115,6 +118,10 @@ const VOICE_AUDIO_FALLBACK_TIMEOUT_MS = 4_000;
 const VOICE_SPEECH_ACTIVITY_NOTICE_MS = 10_000;
 const VOICE_NATIVE_BACKGROUND_GRACE_MS = 10_000;
 const VOICE_SPEECH_ACTIVITY_PEAK = 0.012;
+const VOICE_TURN_SPEECH_START_RMS = 0.009;
+const VOICE_TURN_SPEECH_CONTINUATION_RMS = 0.0045;
+const VOICE_TURN_MINIMUM_VOICED_MS = 180;
+const VOICE_TURN_SILENCE_MS = 1_100;
 const MIC_NO_ACTIVITY_NOTICE =
   "I'm connected, but I have not heard speech yet. Speak near the microphone or check your Android microphone route.";
 const MIC_NO_FRAMES_NOTICE =
@@ -291,6 +298,8 @@ export function useGeminiLive({
   const nativeBackgroundStopTimerRef = useRef<number | null>(null);
   const firstAudioFrameRef = useRef(false);
   const speechActivityDetectedRef = useRef(false);
+  const voiceTurnDetectionRef = useRef(createVoiceTurnDetectionState());
+  const audioPausedAfterTurnRef = useRef(false);
   const providerMessageReceivedRef = useRef(false);
   const realtimeSendFailedRef = useRef(false);
   const legacyRecoveryMigrationStartedRef = useRef(false);
@@ -647,6 +656,8 @@ export function useGeminiLive({
 
   const releaseAudio = useCallback(() => {
     clearAudioHealthTimers();
+    voiceTurnDetectionRef.current = createVoiceTurnDetectionState();
+    audioPausedAfterTurnRef.current = false;
     const processorNode = processorNodeRef.current;
     if (
       processorNode &&
@@ -873,6 +884,8 @@ export function useGeminiLive({
     audioStreamEndedRef.current = true;
     firstAudioFrameRef.current = false;
     speechActivityDetectedRef.current = false;
+    voiceTurnDetectionRef.current = createVoiceTurnDetectionState();
+    audioPausedAfterTurnRef.current = false;
     providerMessageReceivedRef.current = false;
     realtimeSendFailedRef.current = false;
     if (!isReconnect) suppressPlaybackRef.current = false;
@@ -1054,19 +1067,12 @@ export function useGeminiLive({
       let stream: MediaStream;
       try {
         const isNativeAndroid = isNativePlatform() && getNativePlatform() === "android";
-        const audioConstraints: MediaTrackConstraints = isNativeAndroid
-          ? {
-              channelCount: 1,
-              echoCancellation: false,
-              noiseSuppression: false,
-              autoGainControl: false,
-            }
-          : {
-              channelCount: 1,
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-            };
+        const audioConstraints: MediaTrackConstraints = {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        };
         logVoiceDiagnostics("microphone-capture-request", {
           nativeAndroid: isNativeAndroid,
           echoCancellation: audioConstraints.echoCancellation,
@@ -1310,6 +1316,7 @@ export function useGeminiLive({
               userTranscriptRef.current = mergeLiveTranscript(userTranscriptRef.current, inputText);
               setState("user-speaking");
               if (serverContent?.inputTranscription?.finished) {
+                voiceTurnDetectionRef.current = createVoiceTurnDetectionState();
                 finalizeUserTranscript();
                 setState("thinking");
               }
@@ -1328,7 +1335,10 @@ export function useGeminiLive({
             }
 
             const parts = serverContent?.modelTurn?.parts || [];
-            if (parts.length) generationCompleteRef.current = false;
+            if (parts.length) {
+              generationCompleteRef.current = false;
+              voiceTurnDetectionRef.current = createVoiceTurnDetectionState();
+            }
             for (const part of parts) {
               if (
                 part.inlineData?.data &&
@@ -1344,6 +1354,7 @@ export function useGeminiLive({
             if (serverContent?.turnComplete) {
               reconnectAttemptsRef.current = 0;
               suppressPlaybackRef.current = false;
+              voiceTurnDetectionRef.current = createVoiceTurnDetectionState();
               finalizeUserTranscript();
               finalizeAssistantTranscript();
               if (generationCompleteRef.current && playbackSourcesRef.current.size === 0) {
@@ -1437,6 +1448,7 @@ export function useGeminiLive({
         processorMode: "audio-worklet" | "script-processor",
       ) => {
         if (stopRequestedRef.current) return;
+        const rms = getPcm16RmsAmplitude(pcm);
         const shouldMeasurePeak =
           !firstAudioFrameRef.current || !speechActivityDetectedRef.current;
         const peak = shouldMeasurePeak ? getPcm16PeakAmplitude(pcm) : 0;
@@ -1456,6 +1468,30 @@ export function useGeminiLive({
           );
         }
         if (isMutedRef.current) return;
+        const previousTurnDetection = voiceTurnDetectionRef.current;
+        const turnDetection = updateVoiceTurnDetection({
+          state: previousTurnDetection,
+          rms,
+          frameDurationMs: (pcm.byteLength / 2 / INPUT_SAMPLE_RATE) * 1_000,
+          nowMs: performance.now(),
+          speechStartRms: VOICE_TURN_SPEECH_START_RMS,
+          speechContinuationRms: VOICE_TURN_SPEECH_CONTINUATION_RMS,
+          minimumVoicedDurationMs: VOICE_TURN_MINIMUM_VOICED_MS,
+          silenceDurationMs: VOICE_TURN_SILENCE_MS,
+        });
+        voiceTurnDetectionRef.current = turnDetection.state;
+        if (turnDetection.speechStarted) {
+          audioPausedAfterTurnRef.current = false;
+          setState((current) =>
+            current === "ending" || current === "reconnecting"
+              ? current
+              : "user-speaking",
+          );
+          logVoiceDiagnostics("audio-input-turn-started", {
+            mode: processorMode,
+            rms: Number(rms.toFixed(4)),
+          });
+        }
         if (
           !speechActivityDetectedRef.current &&
           peak >= VOICE_SPEECH_ACTIVITY_PEAK
@@ -1477,6 +1513,29 @@ export function useGeminiLive({
             peak: Number(peak.toFixed(4)),
           });
         }
+        if (turnDetection.shouldFlush) {
+          const ended = signalAudioStreamEnd(
+            connectedSession,
+            audioStreamEndedRef.current,
+          );
+          audioStreamEndedRef.current = ended;
+          if (ended) {
+            audioPausedAfterTurnRef.current = true;
+            setState((current) =>
+              current === "assistant-speaking" || current === "ending"
+                ? current
+                : "thinking",
+            );
+            logVoiceDiagnostics("audio-input-turn-flushed", {
+              mode: processorMode,
+              silenceMs: Math.round(turnDetection.silenceMs),
+              voicedDurationMs: Math.round(previousTurnDetection.voicedDurationMs),
+            });
+            return;
+          }
+          voiceTurnDetectionRef.current = previousTurnDetection;
+        }
+        if (audioPausedAfterTurnRef.current && !turnDetection.speechStarted) return;
         audioStreamEndedRef.current = false;
         const data = bytesToBase64(pcm);
         try {
@@ -1774,6 +1833,7 @@ export function useGeminiLive({
   const toggleMute = useCallback(() => {
     setIsMuted((current) => {
       const nextMuted = !current;
+      isMutedRef.current = nextMuted;
       mediaStreamRef.current?.getAudioTracks().forEach((track) => {
         track.enabled = !nextMuted;
       });
@@ -1782,6 +1842,8 @@ export function useGeminiLive({
           sessionRef.current,
           audioStreamEndedRef.current,
         );
+        audioPausedAfterTurnRef.current = audioStreamEndedRef.current;
+        voiceTurnDetectionRef.current = createVoiceTurnDetectionState();
       }
       return nextMuted;
     });

@@ -59,6 +59,10 @@ describe("Gemini Live server configuration", () => {
     });
     expect(config.thinkingConfig).not.toHaveProperty("thinkingBudget");
     expect(config.realtimeInputConfig.automaticActivityDetection).toEqual(GEMINI_LIVE_VAD);
+    expect(config.realtimeInputConfig.automaticActivityDetection).toMatchObject({
+      disabled: false,
+      silenceDurationMs: 700,
+    });
   });
 
   it("locks bounded server shadow context into the system instruction", () => {

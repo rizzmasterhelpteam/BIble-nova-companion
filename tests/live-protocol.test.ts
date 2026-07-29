@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createIdempotentAsyncAction,
   createInitialHistoryPayload,
+  createVoiceTurnDetectionState,
   getPcm16PeakAmplitude,
+  getPcm16RmsAmplitude,
   getSafePlaybackGain,
   getLiveReconnectDelay,
   getLiveSessionDeadlineMs,
@@ -15,6 +17,7 @@ import {
   shouldResumeListeningAfterPlayback,
   signalAudioStreamEnd,
   toPcmByteView,
+  updateVoiceTurnDetection,
 } from "../src/lib/liveProtocol";
 import type { ConversationMessage } from "../src/types/live";
 
@@ -165,5 +168,56 @@ describe("Gemini Live protocol helpers", () => {
 
     expect(getPcm16PeakAmplitude(silence)).toBe(0);
     expect(getPcm16PeakAmplitude(speech)).toBe(1);
+    expect(getPcm16RmsAmplitude(silence)).toBe(0);
+    expect(getPcm16RmsAmplitude(speech)).toBeCloseTo(
+      Math.sqrt((0 + 0.25 ** 2 + 1) / 3),
+    );
+  });
+
+  it("flushes a real speech turn after sustained silence", () => {
+    let state = createVoiceTurnDetectionState();
+    const update = (rms: number, nowMs: number, frameDurationMs = 100) => {
+      const result = updateVoiceTurnDetection({
+        state,
+        rms,
+        frameDurationMs,
+        nowMs,
+        speechStartRms: 0.009,
+        speechContinuationRms: 0.0045,
+        minimumVoicedDurationMs: 180,
+        silenceDurationMs: 1_100,
+      });
+      state = result.state;
+      return result;
+    };
+
+    expect(update(0.03, 0).speechStarted).toBe(true);
+    expect(update(0.025, 100).shouldFlush).toBe(false);
+    expect(update(0.001, 1_100).shouldFlush).toBe(false);
+    expect(update(0.001, 1_201).shouldFlush).toBe(true);
+    expect(state).toEqual(createVoiceTurnDetectionState());
+  });
+
+  it("does not flush ambient silence or a short transient", () => {
+    let state = createVoiceTurnDetectionState();
+    const update = (rms: number, nowMs: number, frameDurationMs = 40) => {
+      const result = updateVoiceTurnDetection({
+        state,
+        rms,
+        frameDurationMs,
+        nowMs,
+        speechStartRms: 0.009,
+        speechContinuationRms: 0.0045,
+        minimumVoicedDurationMs: 180,
+        silenceDurationMs: 1_100,
+      });
+      state = result.state;
+      return result;
+    };
+
+    expect(update(0.002, 0).shouldFlush).toBe(false);
+    expect(update(0.012, 100).speechStarted).toBe(true);
+    expect(update(0.001, 1_250).shouldFlush).toBe(false);
+    expect(state).toEqual(createVoiceTurnDetectionState());
   });
 });
