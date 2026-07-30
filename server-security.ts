@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { normalizeShadowNotes } from "./src/lib/shadowMemory";
+import type { VoiceUsageSummary } from "./src/types/live";
 
 type RequestLike = {
   headers?: Record<string, string | string[] | undefined>;
@@ -192,7 +193,8 @@ export const getSubscriptionAccessStatus = async (
 export const acquireVoiceSessionLease = async (
   userId: string,
   maxMinutes: number,
-  dailyMinutes = 60,
+  dailyMinutes = 20,
+  monthlyMinutes = 180,
   resetOffsetMinutes = 330,
   handleHash = "",
 ) => {
@@ -201,6 +203,7 @@ export const acquireVoiceSessionLease = async (
     p_user_id: userId,
     p_max_minutes: maxMinutes,
     p_daily_minutes: dailyMinutes,
+    p_monthly_minutes: monthlyMinutes,
     p_reset_offset_minutes: resetOffsetMinutes,
     p_handle_hash: handleHash,
   });
@@ -215,16 +218,27 @@ export const acquireVoiceSessionLease = async (
     if (message.includes("daily voice allowance")) {
       throw new HttpError("Your daily Voice allowance has been reached.", 429);
     }
+    if (message.includes("monthly voice allowance")) {
+      throw new HttpError("Your monthly Voice allowance has been reached.", 429);
+    }
     console.error("Voice lease acquisition failed:", error.message);
     throw new HttpError("Voice session protection is temporarily unavailable.", 503);
   }
   const result = Array.isArray(data) ? data[0] : data;
-  if (!result?.lease_id || !result?.lease_expires_at) {
+  const reservedMinutes = Number(result?.leased_minutes);
+  if (
+    !result?.lease_id ||
+    !result?.lease_expires_at ||
+    !Number.isInteger(reservedMinutes) ||
+    reservedMinutes < 1 ||
+    reservedMinutes > maxMinutes
+  ) {
     throw new HttpError("Voice session protection is temporarily unavailable.", 503);
   }
   return {
     leaseId: String(result.lease_id),
     expiresAt: String(result.lease_expires_at),
+    reservedMinutes,
   };
 };
 
@@ -239,12 +253,17 @@ export const hashVoiceReservationHandle = (handle: string | null | undefined) =>
 };
 
 export const getVoiceUsageLimits = (maxMinutes: number) => {
-  const configuredDailyMinutes = Number(process.env.VOICE_DAILY_MAX_MINUTES || 60);
+  const configuredDailyMinutes = Number(process.env.VOICE_DAILY_MAX_MINUTES || 20);
+  const configuredMonthlyMinutes = Number(process.env.VOICE_MONTHLY_MAX_MINUTES || 180);
   const configuredOffset = Number(process.env.VOICE_DAILY_RESET_OFFSET_MINUTES || 330);
+  const dailyMinutes = Number.isFinite(configuredDailyMinutes)
+    ? Math.max(maxMinutes, Math.min(240, Math.floor(configuredDailyMinutes)))
+    : 20;
   return {
-    dailyMinutes: Number.isFinite(configuredDailyMinutes)
-      ? Math.max(maxMinutes, Math.min(240, Math.floor(configuredDailyMinutes)))
-      : 60,
+    dailyMinutes,
+    monthlyMinutes: Number.isFinite(configuredMonthlyMinutes)
+      ? Math.max(dailyMinutes, Math.min(1_440, Math.floor(configuredMonthlyMinutes)))
+      : Math.max(dailyMinutes, 180),
     resetOffsetMinutes: Number.isFinite(configuredOffset)
       ? Math.max(-720, Math.min(840, Math.trunc(configuredOffset)))
       : 330,
@@ -254,15 +273,23 @@ export const getVoiceUsageLimits = (maxMinutes: number) => {
 export type VoiceAvailability = {
   eligible: boolean;
   available: boolean;
-  reason: "available" | "subscription_required" | "session_active" | "daily_limit" | "reservation_resume";
+  reason:
+    | "available"
+    | "subscription_required"
+    | "session_active"
+    | "daily_limit"
+    | "monthly_limit"
+    | "reservation_resume";
   retryAfterSeconds: number | null;
   canRenew: boolean;
+  usage: VoiceUsageSummary | null;
 };
 
 export const getVoiceSessionAvailability = async (
   userId: string,
   maxMinutes: number,
   dailyMinutes: number,
+  monthlyMinutes: number,
   resetOffsetMinutes: number,
   handleHash: string | null,
 ): Promise<VoiceAvailability> => {
@@ -271,6 +298,7 @@ export const getVoiceSessionAvailability = async (
     p_user_id: userId,
     p_max_minutes: maxMinutes,
     p_daily_minutes: dailyMinutes,
+    p_monthly_minutes: monthlyMinutes,
     p_reset_offset_minutes: resetOffsetMinutes,
     p_handle_hash: handleHash,
   });
@@ -282,6 +310,26 @@ export const getVoiceSessionAvailability = async (
   if (!result || typeof result.reason !== "string") {
     throw new HttpError("Voice eligibility is temporarily unavailable.", 503);
   }
+  const monthlyLimitMinutes = Number(result.monthly_limit_minutes);
+  const monthlyUsedMinutes = Number(result.monthly_used_minutes);
+  const monthlyRemainingMinutes = Number(result.monthly_remaining_minutes);
+  const monthlyResetAt = typeof result.monthly_reset_at === "string"
+    && Number.isFinite(Date.parse(result.monthly_reset_at))
+    ? result.monthly_reset_at
+    : null;
+  const usage = Number.isFinite(monthlyLimitMinutes)
+    && monthlyLimitMinutes > 0
+    && Number.isFinite(monthlyUsedMinutes)
+    && monthlyUsedMinutes >= 0
+    && Number.isFinite(monthlyRemainingMinutes)
+    && monthlyRemainingMinutes >= 0
+    ? {
+        monthlyLimitMinutes: Math.floor(monthlyLimitMinutes),
+        monthlyUsedMinutes: Math.floor(monthlyUsedMinutes),
+        monthlyRemainingMinutes: Math.floor(monthlyRemainingMinutes),
+        monthlyResetAt,
+      }
+    : null;
   return {
     eligible: Boolean(result.eligible),
     available: Boolean(result.available),
@@ -290,6 +338,7 @@ export const getVoiceSessionAvailability = async (
       ? null
       : Math.max(1, Number(result.retry_after_seconds)),
     canRenew: Boolean(result.can_renew),
+    usage,
   };
 };
 

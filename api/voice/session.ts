@@ -17,6 +17,7 @@ const RELEASE_REASONS = new Set([
   "user_exit",
   "user_end",
   "session_expired",
+  "idle_timeout",
   "component_unmount",
   "logout",
   "subscription_lost",
@@ -47,6 +48,7 @@ const getBody = (req: any) => {
 const reasonForStatus = (statusCode: number, message: string) => {
   if (statusCode === 403) return "subscription_required";
   if (statusCode === 409) return "session_active";
+  if (statusCode === 429 && message.toLowerCase().includes("monthly")) return "monthly_limit";
   if (statusCode === 429 && message.toLowerCase().includes("daily")) return "daily_limit";
   return "connection_failed";
 };
@@ -132,12 +134,13 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const { maxMinutes } = getVoiceSessionConfig();
-    const { dailyMinutes, resetOffsetMinutes } = getVoiceUsageLimits(maxMinutes);
+    const { maxMinutes, idleTimeoutSeconds } = getVoiceSessionConfig();
+    const { dailyMinutes, monthlyMinutes, resetOffsetMinutes } = getVoiceUsageLimits(maxMinutes);
     const availability = await getVoiceSessionAvailability(
       userId,
       maxMinutes,
       dailyMinutes,
+      monthlyMinutes,
       resetOffsetMinutes,
       mode === "recovery_resume" ? handleHash : null,
     );
@@ -162,6 +165,8 @@ export default async function handler(req: any, res: any) {
         ).toISOString(),
         remainingSeconds: availability.retryAfterSeconds,
         resumed: true,
+        usage: availability.usage,
+        idleTimeoutSeconds,
       });
     }
 
@@ -192,17 +197,22 @@ export default async function handler(req: any, res: any) {
     }
 
     if (!availability.available) {
-      const status = availability.reason === "daily_limit" ? 429 : 409;
+      const usageLimitReached =
+        availability.reason === "daily_limit" || availability.reason === "monthly_limit";
+      const status = usageLimitReached ? 429 : 409;
       if (availability.retryAfterSeconds) {
         res.setHeader?.("Retry-After", String(availability.retryAfterSeconds));
       }
       return res.status(status).json({
         error:
-          availability.reason === "daily_limit"
+          availability.reason === "monthly_limit"
+            ? "Your monthly Voice allowance has been reached."
+            : availability.reason === "daily_limit"
             ? "Your daily Voice allowance has been reached."
             : "A Voice session is already active for this account.",
         reason: availability.reason,
         retryAfterSeconds: availability.retryAfterSeconds,
+        usage: availability.usage,
       });
     }
 
@@ -210,6 +220,7 @@ export default async function handler(req: any, res: any) {
       userId,
       maxMinutes,
       dailyMinutes,
+      monthlyMinutes,
       resetOffsetMinutes,
       handleHash,
     );
@@ -217,6 +228,19 @@ export default async function handler(req: any, res: any) {
       0,
       Math.floor((Date.parse(lease.expiresAt) - Date.now()) / 1_000),
     );
+    const usageAfterReservation = availability.usage
+      ? {
+          ...availability.usage,
+          monthlyUsedMinutes: Math.min(
+            availability.usage.monthlyLimitMinutes,
+            availability.usage.monthlyUsedMinutes + lease.reservedMinutes,
+          ),
+          monthlyRemainingMinutes: Math.max(
+            0,
+            availability.usage.monthlyRemainingMinutes - lease.reservedMinutes,
+          ),
+        }
+      : null;
     console.info("[voice/session] fresh lease acquired", {
       requestId: requestId || "server-generated",
       userHash,
@@ -230,6 +254,8 @@ export default async function handler(req: any, res: any) {
       reservationExpiresAt: lease.expiresAt,
       remainingSeconds,
       resumed: false,
+      usage: usageAfterReservation,
+      idleTimeoutSeconds,
     });
   } catch (error) {
     const details = getHttpErrorDetails(error);

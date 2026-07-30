@@ -35,6 +35,13 @@ export type VoicePlaybackMetadata = {
   audioDurationMs?: number;
 };
 
+export type VoiceUsageSummary = {
+  monthlyLimitMinutes: number;
+  monthlyUsedMinutes: number;
+  monthlyRemainingMinutes: number;
+  monthlyResetAt: string | null;
+};
+
 export type ConversationMessage = {
   id: string;
   role: "user" | "ai";

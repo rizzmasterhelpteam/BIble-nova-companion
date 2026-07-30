@@ -216,16 +216,34 @@ export default function VoiceMode({
   useEffect(() => {
     if (!live.retryUntil) return;
     setCooldownNow(Date.now());
-    const timer = window.setInterval(() => setCooldownNow(Date.now()), 1_000);
+    const timer = window.setInterval(
+      () => setCooldownNow(Date.now()),
+      live.errorCode === "monthly_limit" ? 60_000 : 1_000,
+    );
     return () => window.clearInterval(timer);
-  }, [live.retryUntil]);
+  }, [live.errorCode, live.retryUntil]);
   const cooldownSeconds = live.retryUntil
     ? Math.max(0, Math.ceil((live.retryUntil - cooldownNow) / 1_000))
     : 0;
   const cooldownActive =
-    (live.errorCode === "session_active" || live.errorCode === "daily_limit") &&
+    (live.errorCode === "session_active" ||
+      live.errorCode === "daily_limit" ||
+      live.errorCode === "monthly_limit") &&
     cooldownSeconds > 0;
   const cooldownMinutes = Math.max(1, Math.ceil(cooldownSeconds / 60));
+  const monthlyUsage = live.voiceUsage;
+  const monthlyUsagePercent = monthlyUsage
+    ? Math.min(100, Math.round((monthlyUsage.monthlyUsedMinutes / monthlyUsage.monthlyLimitMinutes) * 100))
+    : 0;
+  const monthlyUsageWarning = monthlyUsagePercent >= 95
+    ? "Almost at your monthly Voice limit."
+    : monthlyUsagePercent >= 80
+      ? "You have used 80% of this month's Voice time."
+      : null;
+  const monthlyResetLabel = monthlyUsage?.monthlyResetAt
+    ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" })
+      .format(new Date(monthlyUsage.monthlyResetAt))
+    : null;
 
   const persistVoiceNotes = useCallback((force = false) => {
     const persistLatestConfirmedMessages = async () => {
@@ -388,6 +406,8 @@ export default function VoiceMode({
 
   const startLabel = premiumRequired
     ? "Recheck premium access"
+    : live.errorCode === "monthly_limit"
+      ? "Monthly Voice limit reached"
     : cooldownActive
       ? `Available in ${cooldownMinutes} min`
       : isCheckingVoiceReady
@@ -493,6 +513,25 @@ export default function VoiceMode({
                 ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                 : <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
               <span>{sessionNotice}</span>
+            </div>
+          )}
+
+          {monthlyUsage && (
+            <div
+              className="voice-usage-summary app-muted mt-3 flex w-full items-center justify-between gap-3 rounded-[1rem] border px-3.5 py-3 text-left text-sm"
+              style={{
+                background: monthlyUsagePercent >= 95 ? "var(--app-danger-soft)" : "var(--app-card-soft)",
+                borderColor: monthlyUsagePercent >= 95
+                  ? "color-mix(in srgb, var(--app-danger) 22%, transparent)"
+                  : "var(--app-card-border)",
+              }}
+            >
+              <span className="font-medium">Voice this month</span>
+              <span className="text-right">
+                {monthlyUsage.monthlyRemainingMinutes} of {monthlyUsage.monthlyLimitMinutes} min left
+                {monthlyUsageWarning ? ` · ${monthlyUsageWarning}` : ""}
+                {monthlyResetLabel ? ` Resets ${monthlyResetLabel}.` : ""}
+              </span>
             </div>
           )}
 

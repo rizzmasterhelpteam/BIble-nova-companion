@@ -19,6 +19,7 @@ import {
   assertStringLength,
   enforceRateLimits,
   getRateLimitStorageKey,
+  getVoiceUsageLimits,
   HttpError,
   requireAuthenticatedRequest,
 } from "../server-security";
@@ -152,9 +153,10 @@ describe("server security", () => {
     ["Active premium subscription required", 403],
     ["Voice session already active", 409],
     ["Daily voice allowance reached", 429],
+    ["Monthly voice allowance reached", 429],
   ])("maps protected Voice lease rejection '%s' to HTTP %i", async (message, statusCode) => {
     rpcMock.mockResolvedValueOnce({ data: null, error: { message } });
-    await expect(acquireVoiceSessionLease("user-1", 10, 60, 330)).rejects.toMatchObject({
+    await expect(acquireVoiceSessionLease("user-1", 10, 60, 180, 330)).rejects.toMatchObject({
       statusCode,
     });
   });
@@ -164,17 +166,43 @@ describe("server security", () => {
       data: [{
         lease_id: "11111111-1111-4111-8111-111111111111",
         lease_expires_at: "2026-07-23T12:00:00.000Z",
+        leased_minutes: 10,
       }],
       error: null,
     });
-    await acquireVoiceSessionLease("user-1", 10, 60, 330, "a".repeat(64));
+    await acquireVoiceSessionLease("user-1", 10, 60, 180, 330, "a".repeat(64));
     expect(rpcMock).toHaveBeenCalledWith("acquire_voice_session_lease", {
       p_user_id: "user-1",
       p_max_minutes: 10,
       p_daily_minutes: 60,
+      p_monthly_minutes: 180,
       p_reset_offset_minutes: 330,
       p_handle_hash: "a".repeat(64),
     });
+  });
+
+  it("keeps monthly Voice limits server-configurable and never below daily minutes", () => {
+    const previousDaily = process.env.VOICE_DAILY_MAX_MINUTES;
+    const previousMonthly = process.env.VOICE_MONTHLY_MAX_MINUTES;
+    try {
+      process.env.VOICE_DAILY_MAX_MINUTES = "20";
+      process.env.VOICE_MONTHLY_MAX_MINUTES = "180";
+      expect(getVoiceUsageLimits(10)).toMatchObject({
+        dailyMinutes: 20,
+        monthlyMinutes: 180,
+      });
+
+      process.env.VOICE_MONTHLY_MAX_MINUTES = "5";
+      expect(getVoiceUsageLimits(10)).toMatchObject({
+        dailyMinutes: 20,
+        monthlyMinutes: 20,
+      });
+    } finally {
+      if (previousDaily === undefined) delete process.env.VOICE_DAILY_MAX_MINUTES;
+      else process.env.VOICE_DAILY_MAX_MINUTES = previousDaily;
+      if (previousMonthly === undefined) delete process.env.VOICE_MONTHLY_MAX_MINUTES;
+      else process.env.VOICE_MONTHLY_MAX_MINUTES = previousMonthly;
+    }
   });
 
   it("rejects oversized input with a client-safe HTTP error", () => {

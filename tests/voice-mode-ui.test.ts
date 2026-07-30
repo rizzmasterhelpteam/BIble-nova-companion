@@ -163,6 +163,15 @@ describe("Voice mode interface", () => {
     expect(voiceHookSource).toContain("voiceLanguage: voiceLanguageRef.current");
   });
 
+  it("shows server-calculated monthly Voice time and clearly handles its limit", () => {
+    expect(voiceModeSource).toContain("Voice this month");
+    expect(voiceModeSource).toContain("monthlyUsagePercent >= 80");
+    expect(voiceModeSource).toContain("monthlyUsagePercent >= 95");
+    expect(voiceModeSource).toContain("Monthly Voice limit reached");
+    expect(voiceHookSource).toContain('"monthly_limit"');
+    expect(voiceHookSource).toContain("idle_timeout");
+  });
+
   it("restarts cleanly after a no-speech timeout instead of sending empty audio", () => {
     expect(voiceHookSource).toContain("NO_SPEECH_TIMEOUT_MS");
     expect(voiceHookSource).toContain("I'm still listening—start whenever you're ready.");

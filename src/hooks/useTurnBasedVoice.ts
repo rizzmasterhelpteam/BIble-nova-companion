@@ -45,6 +45,7 @@ import type {
   ConversationMessage,
   VoicePlaybackMetadata,
   VoiceState,
+  VoiceUsageSummary,
 } from "../types/live";
 
 export type VoiceStartMode = "fresh_start" | "recovery_resume";
@@ -53,6 +54,7 @@ type VoiceErrorCode =
   | "subscription_required"
   | "session_active"
   | "daily_limit"
+  | "monthly_limit"
   | "recovery_unavailable"
   | "permission_denied"
   | "connection_failed"
@@ -83,6 +85,7 @@ type ApiErrorBody = {
   error?: string;
   reason?: Exclude<VoiceErrorCode, null>;
   retryAfterSeconds?: number | null;
+  usage?: VoiceUsageSummary | null;
   httpStatus?: number;
 };
 
@@ -180,6 +183,7 @@ const parseApiResponse = async <T,>(response: Response): Promise<T> => {
     ) as Error & ApiErrorBody;
     error.reason = data.reason;
     error.retryAfterSeconds = data.retryAfterSeconds;
+    error.usage = data.usage;
     error.httpStatus = response.status;
     throw error;
   }
@@ -361,6 +365,7 @@ export function useTurnBasedVoice({
   const [retryUntil, setRetryUntil] = useState<number | null>(null);
   const [retryPhase, setRetryPhase] = useState<VoiceTurnPhase | null>(null);
   const [inputLevel, setInputLevel] = useState(0);
+  const [voiceUsage, setVoiceUsage] = useState<VoiceUsageSummary | null>(null);
 
   const stateRef = useRef<VoiceState>("idle");
   const historyRef = useRef(history);
@@ -411,6 +416,7 @@ export function useTurnBasedVoice({
   const retryCheckpointRef = useRef<VoiceTurnCheckpoint | null>(null);
   const retryDiagnosticsRef = useRef<VoiceTurnDiagnostics | null>(null);
   const microphonePermissionKnownRef = useRef(false);
+  const idleTimeoutSecondsRef = useRef(45);
 
   useEffect(() => {
     historyRef.current = history;
@@ -778,6 +784,21 @@ export function useTurnBasedVoice({
   useEffect(() => {
     stopRef.current = stop;
   }, [stop]);
+
+  const refreshIdleTimeout = useCallback((sessionGeneration: number) => {
+    const idleTimeoutSeconds = idleTimeoutSecondsRef.current;
+    return lifecycleRef.current!.scheduleIdleTimeout(
+      sessionGeneration,
+      idleTimeoutSeconds,
+      (expiredGeneration) => {
+        if (currentSessionGenerationRef.current !== expiredGeneration) return;
+        setSessionNotice(
+          `Voice session ended after ${idleTimeoutSeconds} seconds of inactivity.`,
+        );
+        void stopRef.current("ended", "idle_timeout");
+      },
+    );
+  }, []);
 
   const beginRecordingRef = useRef<
     (
@@ -1247,9 +1268,10 @@ export function useTurnBasedVoice({
       return;
     }
 
+    refreshIdleTimeout(diagnostics.sessionGeneration);
     const checkpoint: VoiceTurnCheckpoint = { blob };
     await processCheckpoint(checkpoint, operation, diagnostics);
-  }, [processCheckpoint]);
+  }, [processCheckpoint, refreshIdleTimeout]);
 
   const finishTurn = useCallback(() => {
     const recorder = recorderRef.current;
@@ -1841,7 +1863,17 @@ export function useTurnBasedVoice({
         reservationExpiresAt: string;
         remainingSeconds: number;
         resumed: boolean;
+        usage?: VoiceUsageSummary | null;
+        idleTimeoutSeconds?: number;
       }>(response);
+      if (session.usage) setVoiceUsage(session.usage);
+      const requestedIdleTimeoutSeconds = Number(session.idleTimeoutSeconds);
+      idleTimeoutSecondsRef.current =
+        Number.isFinite(requestedIdleTimeoutSeconds) &&
+        requestedIdleTimeoutSeconds >= 15 &&
+        requestedIdleTimeoutSeconds <= 300
+          ? Math.floor(requestedIdleTimeoutSeconds)
+          : 45;
       logVoiceEvent("session_response", {
         sessionGeneration,
         mode,
@@ -1900,6 +1932,9 @@ export function useTurnBasedVoice({
       if (!timerInstalled) {
         throw new Error("The Voice session timer could not be started.");
       }
+      if (!refreshIdleTimeout(sessionGeneration)) {
+        throw new Error("The Voice idle timer could not be started.");
+      }
 
       setSessionNotice(null);
       await beginRecording();
@@ -1912,6 +1947,7 @@ export function useTurnBasedVoice({
       }
 
       const apiError = caught as Error & ApiErrorBody;
+      if (apiError.usage) setVoiceUsage(apiError.usage);
       activeRef.current = false;
       setIsSessionActive(false);
       lifecycleRef.current!.invalidate(sessionGeneration);
@@ -1963,6 +1999,7 @@ export function useTurnBasedVoice({
     liveReady,
     onReservationChange,
     primeAudioForUserGesture,
+    refreshIdleTimeout,
     releaseReservation,
     transition,
     userId,
@@ -2199,6 +2236,7 @@ export function useTurnBasedVoice({
     sessionNotice,
     isMuted,
     inputLevel,
+    voiceUsage,
     isSessionActive,
     canRecover,
     retryUntil,
