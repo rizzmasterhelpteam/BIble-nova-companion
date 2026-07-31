@@ -221,7 +221,8 @@ describe("server security", () => {
     expect(getApiStatus().nativeSubscriptionSyncReady).toBe(false);
   });
 
-  it("reports turn-based Voice readiness only when Groq and Google TTS are configured", () => {
+  it("reports Gemini Live readiness independently from chat, STT, and TTS", () => {
+    process.env.GEMINI_API_KEY = "test-gemini-key";
     process.env.GROQ_API_KEY = "test-groq-key";
     process.env.GOOGLE_TTS_SERVICE_ACCOUNT_JSON = JSON.stringify({
       client_email: "tts@example.iam.gserviceaccount.com",
@@ -235,7 +236,9 @@ describe("server security", () => {
     });
 
     delete process.env.GOOGLE_TTS_SERVICE_ACCOUNT_JSON;
-    expect(getApiStatus()).toMatchObject({ ttsReady: false, voiceReady: false });
+    expect(getApiStatus()).toMatchObject({ ttsReady: false, voiceReady: true });
+    delete process.env.GEMINI_API_KEY;
+    expect(getApiStatus()).toMatchObject({ voiceReady: false });
     delete process.env.GROQ_API_KEY;
   });
 

@@ -15,6 +15,7 @@ import shadowNotesHandler from "./api/shadow-notes";
 import transcriptionHandler from "./api/transcribe";
 import voiceShadowNotesHandler from "./api/voice/shadow-notes";
 import voiceSessionHandler from "./api/voice/session";
+import voiceLiveTokenHandler from "./api/voice/live-token";
 import textToSpeechHandler from "./api/tts";
 import {
   assertStringLength,
@@ -38,6 +39,8 @@ app.get("/api/status", (_req, res) => {
 
 app.post("/api/voice/session", voiceSessionHandler);
 app.options("/api/voice/session", voiceSessionHandler);
+app.post("/api/voice/live-token", voiceLiveTokenHandler);
+app.options("/api/voice/live-token", voiceLiveTokenHandler);
 app.post("/api/voice/respond", chatHandler);
 app.options("/api/voice/respond", chatHandler);
 app.post("/api/chat", chatHandler);
