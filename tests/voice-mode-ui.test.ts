@@ -15,7 +15,8 @@ describe("Voice mode interface", () => {
   it("uses Gemini Live only for immersive Voice", () => {
     expect(voiceModeSource).toContain("useGeminiLiveVoice");
     expect(voiceModeSource).not.toContain("useTurnBasedVoice");
-    expect(voiceHookSource).toContain('apiFetch("/api/voice/live-token"');
+    expect(voiceHookSource).toContain('apiFetch("/api/voice/session"');
+    expect(voiceHookSource).toContain('action: "live-token"');
     expect(voiceHookSource).toContain("sendRealtimeInput({");
     expect(voiceHookSource).toContain("audio/pcm;rate=${GEMINI_INPUT_SAMPLE_RATE}");
     expect(voiceHookSource).not.toContain('apiFetch("/api/transcribe"');
@@ -64,7 +65,7 @@ describe("Voice mode interface", () => {
 
   it("reserves premium Voice time before minting a Live token", () => {
     expect(voiceHookSource).toContain('apiFetch("/api/voice/session"');
-    expect(voiceHookSource).toContain('apiFetch("/api/voice/live-token"');
+    expect(voiceHookSource).toContain('action: "live-token"');
     expect(voiceHookSource).toContain("await provisionAndConnect(null)");
     expect(voiceHookSource).toContain("createVoiceReservation");
     expect(voiceSessionSource).toContain('availability.reason === "reservation_resume"');

@@ -7,7 +7,7 @@ import {
 } from "../gemini-live-config";
 
 const endpointSource = readFileSync(
-  new URL("../api/voice/live-token.ts", import.meta.url),
+  new URL("../api/voice/session.ts", import.meta.url),
   "utf8",
 );
 

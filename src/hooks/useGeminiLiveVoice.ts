@@ -484,10 +484,10 @@ export function useGeminiLiveVoice(options: Options) {
   const provisionAndConnect = useCallback(async (resumptionHandle?: string | null) => {
     const current = reservationRef.current;
     if (!current) throw new Error("Voice reservation is missing.");
-    const response = await apiFetch("/api/voice/live-token", {
+    const response = await apiFetch("/api/voice/session", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Client-Request-Id": crypto.randomUUID() },
-      body: JSON.stringify({ reservationHandle: current.handle }),
+      body: JSON.stringify({ action: "live-token", reservationHandle: current.handle }),
     });
     const token = await parseResponse<TokenResponse>(response);
     tokenRef.current = token.token;
