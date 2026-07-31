@@ -31,6 +31,7 @@ Set these in Vercel for the environments you deploy to:
 - `GROQ_TRANSCRIBE_MODEL` optional Groq speech model; defaults to `whisper-large-v3-turbo`
 - `GEMINI_API_KEY` required server-only key for Gemini 3.1 Flash Live Voice Mode
 - `GEMINI_LIVE_VOICE` optional server-owned Live voice; defaults to `Charon`
+- `VOICE_WEB_PAYMENT_BYPASS=true` and `VOICE_WEB_TEST_ORIGIN=https://…` temporarily allow authenticated browser testing of Voice without a premium entitlement; leave both unset in normal deployments
 - `GOOGLE_TTS_SERVICE_ACCOUNT_JSON` required server-only Google Cloud service-account JSON with Text-to-Speech access
 - `GOOGLE_TTS_LANGUAGE_CODE` optional language code; defaults to `en-AU`
 - `GOOGLE_TTS_VOICE_NAME` optional voice; defaults to `en-AU-Chirp3-HD-Algenib`

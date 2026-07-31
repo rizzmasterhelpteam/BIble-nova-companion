@@ -100,6 +100,7 @@ describe("turn-based Voice session API", () => {
       180,
       330,
       null,
+      false,
     );
     expect(acquireVoiceSessionLease).toHaveBeenCalledWith(
       "user-1",
@@ -108,6 +109,7 @@ describe("turn-based Voice session API", () => {
       180,
       330,
       "r".repeat(64),
+      false,
     );
     expect(response.body).toMatchObject({
       reservationHandle: "r".repeat(43),
@@ -145,6 +147,7 @@ describe("turn-based Voice session API", () => {
       180,
       330,
       "h".repeat(64),
+      false,
     );
     expect(response.body).toMatchObject({ reservationHandle: "h".repeat(43) });
   });

@@ -178,6 +178,7 @@ describe("server security", () => {
       p_monthly_minutes: 180,
       p_reset_offset_minutes: 330,
       p_handle_hash: "a".repeat(64),
+      p_allow_payment_bypass: false,
     });
   });
 

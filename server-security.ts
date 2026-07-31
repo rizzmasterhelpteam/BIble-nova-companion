@@ -197,6 +197,7 @@ export const acquireVoiceSessionLease = async (
   monthlyMinutes = 180,
   resetOffsetMinutes = 330,
   handleHash = "",
+  allowPaymentBypass = false,
 ) => {
   const client = getSupabaseAdminClient();
   const { data, error } = await client.rpc("acquire_voice_session_lease", {
@@ -206,6 +207,7 @@ export const acquireVoiceSessionLease = async (
     p_monthly_minutes: monthlyMinutes,
     p_reset_offset_minutes: resetOffsetMinutes,
     p_handle_hash: handleHash,
+    p_allow_payment_bypass: allowPaymentBypass,
   });
   if (error) {
     const message = error.message.toLowerCase();
@@ -292,6 +294,7 @@ export const getVoiceSessionAvailability = async (
   monthlyMinutes: number,
   resetOffsetMinutes: number,
   handleHash: string | null,
+  allowPaymentBypass = false,
 ): Promise<VoiceAvailability> => {
   const client = getSupabaseAdminClient();
   const { data, error } = await client.rpc("get_voice_session_availability", {
@@ -301,6 +304,7 @@ export const getVoiceSessionAvailability = async (
     p_monthly_minutes: monthlyMinutes,
     p_reset_offset_minutes: resetOffsetMinutes,
     p_handle_hash: handleHash,
+    p_allow_payment_bypass: allowPaymentBypass,
   });
   if (error) {
     console.error("Voice availability check failed:", error.message);

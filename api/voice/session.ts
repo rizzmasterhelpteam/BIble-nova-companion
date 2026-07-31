@@ -56,6 +56,13 @@ const reasonForStatus = (statusCode: number, message: string) => {
 const hashUserId = (userId: string) =>
   createHash("sha256").update(userId).digest("hex").slice(0, 12);
 
+const isWebPaymentBypassRequest = (req: any) => {
+  const allowedOrigin = process.env.VOICE_WEB_TEST_ORIGIN?.trim().replace(/\/$/, "");
+  return process.env.VOICE_WEB_PAYMENT_BYPASS === "true" &&
+    Boolean(allowedOrigin) &&
+    String(req.headers?.origin || "").replace(/\/$/, "") === allowedOrigin;
+};
+
 export default async function handler(req: any, res: any) {
   const requestId = String(req.headers?.["x-client-request-id"] || "").slice(0, 80);
   const startedAt = Date.now();
@@ -72,6 +79,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
+    const allowPaymentBypass = isWebPaymentBypassRequest(req);
     userHash = hashUserId(userId);
     await enforceRateLimits([
       { key: `voice-session:user:${userId}`, limit: 20 },
@@ -143,6 +151,7 @@ export default async function handler(req: any, res: any) {
       monthlyMinutes,
       resetOffsetMinutes,
       mode === "recovery_resume" ? handleHash : null,
+      allowPaymentBypass,
     );
 
     if (
@@ -223,6 +232,7 @@ export default async function handler(req: any, res: any) {
       monthlyMinutes,
       resetOffsetMinutes,
       handleHash,
+      allowPaymentBypass,
     );
     const remainingSeconds = Math.max(
       0,
