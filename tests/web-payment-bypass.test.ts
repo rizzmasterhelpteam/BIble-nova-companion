@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+const paywallSource = readFileSync(new URL("../src/pages/Paywall.tsx", import.meta.url), "utf8");
 
 describe("temporary web payment bypass", () => {
   it("skips client paywall and subscription-loading gates only outside Capacitor", () => {
@@ -9,5 +10,6 @@ describe("temporary web payment bypass", () => {
     expect(appSource).toContain("!bypassPaymentOnWeb &&");
     expect(appSource).toContain("hasCompletedOnboarding: !bypassPaymentOnWeb && hasCompletedOnboarding");
     expect(appSource).toContain("isSubscribed || bypassPaymentOnWeb");
+    expect(paywallSource).toContain("if (isNativePlatform() && !isSubscribed) return;");
   });
 });
