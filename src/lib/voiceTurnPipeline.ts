@@ -22,8 +22,32 @@ export const TINY_UTTERANCE_SILENCE_MS = 1_050;
 export const SHORT_UTTERANCE_SILENCE_MS = 900;
 export const NORMAL_SILENCE_MS = 750;
 export const LONG_UTTERANCE_SILENCE_MS = 650;
-export const MIN_INTENTIONAL_SPEECH_MS = 140;
+export const MIN_INTENTIONAL_SPEECH_MS = 180;
+export const SHORT_INTENTIONAL_SPEECH_MS = 300;
+export const SHORT_SPEECH_PEAK_MULTIPLIER = 1.5;
 export const NO_SPEECH_TIMEOUT_MS = 9_000;
+
+const VAD_START_FLOOR = 0.009;
+const VAD_CONTINUE_FLOOR = 0.007;
+const VAD_NOISE_MULTIPLIER = 1.45;
+const VAD_CONTINUE_MULTIPLIER = 0.72;
+
+export const getVoiceVadThresholds = (ambientRms: number) => {
+  const safeAmbientRms = Number.isFinite(ambientRms) && ambientRms > 0
+    ? ambientRms
+    : 0;
+  const speechStartThreshold = Math.max(
+    VAD_START_FLOOR,
+    safeAmbientRms * VAD_NOISE_MULTIPLIER,
+  );
+  return {
+    speechStartThreshold,
+    speechContinueThreshold: Math.max(
+      VAD_CONTINUE_FLOOR,
+      speechStartThreshold * VAD_CONTINUE_MULTIPLIER,
+    ),
+  };
+};
 
 export const getAdaptiveSilenceMs = (speechDurationMs: number) => {
   if (speechDurationMs < 300) return TINY_UTTERANCE_SILENCE_MS;
@@ -32,8 +56,19 @@ export const getAdaptiveSilenceMs = (speechDurationMs: number) => {
   return NORMAL_SILENCE_MS;
 };
 
-export const isIntentionalVoiceSpeech = (speechDurationMs: number) =>
-  speechDurationMs >= MIN_INTENTIONAL_SPEECH_MS;
+export const isIntentionalVoiceSpeech = (
+  speechDurationMs: number,
+  speechPeakRms = Number.POSITIVE_INFINITY,
+  speechStartThreshold = 0,
+) => {
+  if (speechDurationMs < MIN_INTENTIONAL_SPEECH_MS) return false;
+  // Very short replies need a clearer signal so handling noise does not
+  // become a Whisper request, while quiet normal speech still gets through.
+  if (speechDurationMs < SHORT_INTENTIONAL_SPEECH_MS) {
+    return speechPeakRms >= speechStartThreshold * SHORT_SPEECH_PEAK_MULTIPLIER;
+  }
+  return true;
+};
 
 export class VoiceTurnPipelineError extends Error {
   readonly phase: VoiceTurnPhase;

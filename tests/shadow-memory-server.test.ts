@@ -23,6 +23,7 @@ vi.mock("@supabase/supabase-js", () => ({
 
 import {
   createReflectionResponse,
+  loadShadowMemoryProfile,
   saveShadowNotes,
   setShadowMemoryPreference,
 } from "../server-api";
@@ -97,6 +98,42 @@ describe("shadow memory database boundary", () => {
       expect.objectContaining({ notes: normalizeShadowNotes("Updated context") }),
     );
     expect(database.query.eq).toHaveBeenCalledWith("memory_enabled", true);
+  });
+
+  it("enables memory by default when a user has no preference row yet", async () => {
+    database.query.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
+
+    await expect(loadShadowMemoryProfile("user-1")).resolves.toEqual({
+      memoryEnabled: true,
+      shadowNotes: null,
+    });
+  });
+
+  it("creates an enabled row for a new user's first saved memory", async () => {
+    database.query.maybeSingle
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({
+        data: { memory_enabled: true, notes: "User memory:\n- Preferred tone: warm" },
+        error: null,
+      });
+
+    await expect(saveShadowNotes("user-1", "User memory:\n- Preferred tone: warm")).resolves.toContain(
+      "Preferred tone: warm",
+    );
+    expect(database.query.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: "user-1", memory_enabled: true }),
+      { onConflict: "user_id", ignoreDuplicates: true },
+    );
+  });
+
+  it("does not recreate notes after an explicit memory opt-out", async () => {
+    database.query.maybeSingle
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: { memory_enabled: false }, error: null });
+
+    await expect(saveShadowNotes("user-1", "Do not save this.")).resolves.toBeNull();
+    expect(database.query.upsert).not.toHaveBeenCalled();
   });
 
   it("trims oversized memory before the database write", async () => {

@@ -507,7 +507,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const currentUserId = user?.id || null;
     const requestVersion = ++memoryRequestVersionRef.current;
     setShadowNotes(null);
-    setMemoryEnabled(false);
+    // New accounts remember preferences by default. A confirmed server-side
+    // opt-out replaces this optimistic default as soon as it is loaded.
+    setMemoryEnabled(Boolean(currentUserId && isSupabaseConfigured));
 
     if (!currentUserId || !isSupabaseConfigured) {
       setMemoryPreferenceLoading(false);

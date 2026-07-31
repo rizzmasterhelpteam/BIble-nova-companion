@@ -54,6 +54,9 @@ export async function scheduleDailyReflectionReminder(hour = 8, minute = 0, days
     schedule: {
       on: { weekday: day, hour, minute },
       repeats: true,
+      // Android otherwise defers scheduled work aggressively while a phone is
+      // idle. The plugin falls back safely when exact alarms are unavailable.
+      allowWhileIdle: true,
     },
   }));
 

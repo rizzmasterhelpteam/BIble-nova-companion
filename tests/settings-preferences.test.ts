@@ -37,4 +37,8 @@ describe("Settings preferences", () => {
       "memoryProfile.memoryEnabled ? memoryProfile.shadowNotes : null",
     );
   });
+
+  it("defaults remembered preferences to on until the server confirms an opt-out", () => {
+    expect(authSource).toContain("setMemoryEnabled(Boolean(currentUserId && isSupabaseConfigured))");
+  });
 });

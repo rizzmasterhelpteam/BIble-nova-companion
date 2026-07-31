@@ -60,11 +60,19 @@ describe("native daily reminder scheduling", () => {
       notifications: [
         expect.objectContaining({
           id: 1002,
-          schedule: { on: { weekday: 2, hour: 7, minute: 30 }, repeats: true },
+          schedule: {
+            on: { weekday: 2, hour: 7, minute: 30 },
+            repeats: true,
+            allowWhileIdle: true,
+          },
         }),
         expect.objectContaining({
           id: 1006,
-          schedule: { on: { weekday: 6, hour: 7, minute: 30 }, repeats: true },
+          schedule: {
+            on: { weekday: 6, hour: 7, minute: 30 },
+            repeats: true,
+            allowWhileIdle: true,
+          },
         }),
       ],
     });

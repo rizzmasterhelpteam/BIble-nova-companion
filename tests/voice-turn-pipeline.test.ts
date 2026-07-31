@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   getAdaptiveSilenceMs,
+  getVoiceVadThresholds,
   isIntentionalVoiceSpeech,
   NO_SPEECH_TIMEOUT_MS,
   runVoiceTurn,
@@ -158,12 +159,24 @@ describe("Voice turn pipeline", () => {
   });
 
   it("accepts short intentional speech with extra silence while keeping normal turns quick", () => {
-    expect(isIntentionalVoiceSpeech(139)).toBe(false);
-    expect(isIntentionalVoiceSpeech(140)).toBe(true);
+    expect(isIntentionalVoiceSpeech(179)).toBe(false);
+    expect(isIntentionalVoiceSpeech(180, 0.02, 0.015)).toBe(false);
+    expect(isIntentionalVoiceSpeech(180, 0.024, 0.015)).toBe(true);
+    expect(isIntentionalVoiceSpeech(320, 0.016, 0.015)).toBe(true);
     expect(getAdaptiveSilenceMs(200)).toBe(1_050);
     expect(getAdaptiveSilenceMs(900)).toBe(900);
     expect(getAdaptiveSilenceMs(3_000)).toBe(750);
     expect(getAdaptiveSilenceMs(7_000)).toBe(650);
     expect(NO_SPEECH_TIMEOUT_MS).toBe(9_000);
+  });
+
+  it("uses a bounded adaptive threshold so quiet speech is not rejected by a fixed floor", () => {
+    expect(getVoiceVadThresholds(0.004)).toEqual({
+      speechStartThreshold: 0.009,
+      speechContinueThreshold: 0.007,
+    });
+    expect(getVoiceVadThresholds(0.01).speechStartThreshold).toBeCloseTo(0.0145);
+    expect(getVoiceVadThresholds(0.01).speechContinueThreshold).toBeCloseTo(0.01044);
+    expect(getVoiceVadThresholds(0.03).speechStartThreshold).toBeCloseTo(0.0435);
   });
 });

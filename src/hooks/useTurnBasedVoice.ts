@@ -15,6 +15,7 @@ import {
 } from "../lib/voiceSessionLifecycle";
 import {
   getAdaptiveSilenceMs,
+  getVoiceVadThresholds,
   isIntentionalVoiceSpeech,
   NO_SPEECH_TIMEOUT_MS,
   runVoiceTurn,
@@ -121,6 +122,12 @@ type VoiceTurnDiagnostics = {
   marks: Partial<Record<VoiceTimingKey, number>>;
   decodeMs?: number;
   serverTimings: Record<string, Record<string, number>>;
+  vad?: {
+    ambientRms: number;
+    speechPeakRms: number;
+    speechStartThreshold: number;
+    noSpeechTimeoutTriggered?: boolean;
+  };
 };
 
 type VoicePlaybackStopReason =
@@ -151,9 +158,6 @@ const RECORDING_MIME_TYPES = [
   "audio/ogg;codecs=opus",
 ];
 const MAX_RECORDING_MS = 45_000;
-const SPEECH_RMS_THRESHOLD = 0.022;
-const SPEECH_START_HYSTERESIS_MULTIPLIER = 1.15;
-const SPEECH_STOP_HYSTERESIS_MULTIPLIER = 0.72;
 const INPUT_LEVEL_UPDATE_INTERVAL_MS = 90;
 
 const getRecordingMimeType = () => {
@@ -275,6 +279,11 @@ const logTurnMetrics = (diagnostics: VoiceTurnDiagnostics) => {
       "speech_finished_at",
       "recording_stop_requested_at",
     ),
+    speech_end_to_recording_stop_ms: durationBetween(
+      diagnostics,
+      "speech_finished_at",
+      "recording_stop_requested_at",
+    ),
     recorder_stop_to_blob_ready_ms: durationBetween(
       diagnostics,
       "recording_stop_requested_at",
@@ -295,12 +304,27 @@ const logTurnMetrics = (diagnostics: VoiceTurnDiagnostics) => {
       "transcription_request_sent_at",
       "transcription_response_received_at",
     ),
+    transcription_total_ms: durationBetween(
+      diagnostics,
+      "transcription_request_sent_at",
+      "transcription_finished_at",
+    ),
     llm_ms: durationBetween(
       diagnostics,
       "llm_started_at",
       "llm_finished_at",
     ),
+    response_total_ms: durationBetween(
+      diagnostics,
+      "llm_started_at",
+      "llm_finished_at",
+    ),
     tts_ms: durationBetween(
+      diagnostics,
+      "tts_started_at",
+      "tts_finished_at",
+    ),
+    tts_total_ms: durationBetween(
       diagnostics,
       "tts_started_at",
       "tts_finished_at",
@@ -328,7 +352,19 @@ const logTurnMetrics = (diagnostics: VoiceTurnDiagnostics) => {
         : "playback_finished_at",
       "recording_restarted_at",
     ),
+    playback_end_to_listening_ms: durationBetween(
+      diagnostics,
+      diagnostics.marks.playback_stopped_at
+        ? "playback_stopped_at"
+        : "playback_finished_at",
+      "recording_restarted_at",
+    ),
     barge_in_stop_latency_ms: durationBetween(
+      diagnostics,
+      "barge_in_detected_at",
+      "playback_stopped_at",
+    ),
+    barge_in_detect_to_playback_stop_ms: durationBetween(
       diagnostics,
       "barge_in_detected_at",
       "playback_stopped_at",
@@ -339,6 +375,10 @@ const logTurnMetrics = (diagnostics: VoiceTurnDiagnostics) => {
       "recording_restarted_at",
     ),
     ...serverTimingMetrics,
+    ambient_rms: diagnostics.vad?.ambientRms ?? null,
+    speech_peak_rms: diagnostics.vad?.speechPeakRms ?? null,
+    speech_start_threshold: diagnostics.vad?.speechStartThreshold ?? null,
+    no_speech_timeout_triggered: diagnostics.vad?.noSpeechTimeoutTriggered ?? false,
   });
 };
 
@@ -394,6 +434,7 @@ export function useTurnBasedVoice({
   const recordingStartedAtRef = useRef(0);
   const speechStartedAtRef = useRef<number | null>(null);
   const lastSpeechAtRef = useRef<number | null>(null);
+  const speechPeakRmsRef = useRef(0);
   const vadFrameRef = useRef<number | null>(null);
   const recordingTimerRef = useRef<number | null>(null);
   const recordingTimerOperationRef = useRef<number | null>(null);
@@ -1493,6 +1534,7 @@ export function useTurnBasedVoice({
       ? preRollCapture!.startedAt
       : null;
     lastSpeechAtRef.current = canPromotePreRoll ? performance.now() : null;
+    speechPeakRmsRef.current = 0;
     if (canPromotePreRoll) {
       markTimingAt(
         diagnostics,
@@ -1584,20 +1626,26 @@ export function useTurnBasedVoice({
         const rms = calculateVoiceRms(samples);
         publishInputLevel(rms);
         const now = performance.now();
-        const baseSpeechThreshold = Math.max(
-          SPEECH_RMS_THRESHOLD,
-          bargeInDetectorRef.current.getNoiseFloor() * 1.8,
-        );
+        const ambientRms = bargeInDetectorRef.current.getNoiseFloor();
+        const { speechStartThreshold, speechContinueThreshold } =
+          getVoiceVadThresholds(ambientRms);
         const speechThreshold = speechStartedAtRef.current === null
-          ? baseSpeechThreshold * SPEECH_START_HYSTERESIS_MULTIPLIER
-          : baseSpeechThreshold * SPEECH_STOP_HYSTERESIS_MULTIPLIER;
+          ? speechStartThreshold
+          : speechContinueThreshold;
         if (rms >= speechThreshold) {
           if (speechStartedAtRef.current === null) {
             speechStartedAtRef.current = now;
             markTimingAt(diagnostics, "speech_started_at", now);
+            diagnostics.vad = {
+              ambientRms,
+              speechPeakRms: rms,
+              speechStartThreshold,
+            };
             transition("user-speaking");
             if (fromBargeIn) bargeInFalseTriggerCountRef.current = 0;
           }
+          speechPeakRmsRef.current = Math.max(speechPeakRmsRef.current, rms);
+          if (diagnostics.vad) diagnostics.vad.speechPeakRms = speechPeakRmsRef.current;
           lastSpeechAtRef.current = now;
         } else if (speechStartedAtRef.current !== null) {
           const speechDuration = Math.max(
@@ -1607,7 +1655,11 @@ export function useTurnBasedVoice({
           const silenceDuration = now - (lastSpeechAtRef.current || now);
           const requiredSilence = getAdaptiveSilenceMs(speechDuration);
           if (
-            isIntentionalVoiceSpeech(speechDuration) &&
+            isIntentionalVoiceSpeech(
+              speechDuration,
+              speechPeakRmsRef.current,
+              diagnostics.vad?.speechStartThreshold ?? speechStartThreshold,
+            ) &&
             silenceDuration >= requiredSilence
           ) {
             finishTurn();
@@ -1651,6 +1703,19 @@ export function useTurnBasedVoice({
             return;
           }
           if (speechStartedAtRef.current === null) {
+            const ambientRms = bargeInDetectorRef.current.getNoiseFloor();
+            const { speechStartThreshold } = getVoiceVadThresholds(ambientRms);
+            diagnostics.vad = {
+              ambientRms,
+              speechPeakRms: 0,
+              speechStartThreshold,
+              noSpeechTimeoutTriggered: true,
+            };
+            logVoiceEvent("no_speech_timeout", {
+              turnId: diagnostics.turnId,
+              ambientRms: Number(ambientRms.toFixed(4)),
+              speechStartThreshold: Number(speechStartThreshold.toFixed(4)),
+            });
             if (fromBargeIn) {
               bargeInFalseTriggerCountRef.current += 1;
               if (bargeInFalseTriggerCountRef.current >= 2) {

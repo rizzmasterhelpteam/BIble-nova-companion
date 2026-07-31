@@ -153,12 +153,25 @@ describe("Voice mode interface", () => {
     expect(voiceHookSource).toContain("decodeAudioData");
     expect(voiceHookSource).toContain("source.start()");
     expect(voiceHookSource).toContain("getAdaptiveSilenceMs");
+    expect(voiceHookSource).toContain("getVoiceVadThresholds");
     expect(voiceModeSource).toContain("Done speaking");
   });
 
-  it("supports Auto, English, Hindi, and Hinglish without forcing Whisper to English", () => {
-    expect(voiceModeSource).toContain("Voice language");
-    expect(voiceModeSource).toContain("VOICE_LANGUAGE_OPTIONS");
+  it("records perceived Voice latency without recording private speech content", () => {
+    expect(voiceHookSource).toContain("speech_end_to_first_audio_ms");
+    expect(voiceHookSource).toContain("speech_end_to_recording_stop_ms");
+    expect(voiceHookSource).toContain("transcription_total_ms");
+    expect(voiceHookSource).toContain("response_total_ms");
+    expect(voiceHookSource).toContain("tts_total_ms");
+    expect(voiceHookSource).toContain("playback_end_to_listening_ms");
+    expect(voiceHookSource).toContain("barge_in_detect_to_playback_stop_ms");
+    expect(voiceHookSource).not.toMatch(/logVoiceEvent\([^\n]*(?:transcript|shadowNotes|audioData)/i);
+  });
+
+  it("uses automatic language detection without a Voice Mode language selector", () => {
+    expect(voiceModeSource).not.toContain("Voice language");
+    expect(voiceModeSource).not.toContain("VOICE_LANGUAGE_OPTIONS");
+    expect(voiceModeSource).toContain('voiceLanguage: "auto"');
     expect(voiceHookSource).toContain("getWhisperLanguage(selectedVoiceLanguage)");
     expect(voiceHookSource).toContain("voiceLanguage: voiceLanguageRef.current");
   });

@@ -411,7 +411,9 @@ export async function loadShadowMemoryProfile(userId: string): Promise<ShadowMem
     return { memoryEnabled: false, shadowNotes: null };
   }
 
-  const memoryEnabled = data?.memory_enabled === true;
+  // A row is created only after notes are first saved or the user explicitly
+  // changes this setting. Until then, memory is enabled by default.
+  const memoryEnabled = data?.memory_enabled !== false;
   return {
     memoryEnabled,
     shadowNotes: memoryEnabled
@@ -442,7 +444,36 @@ export async function saveShadowNotes(userId: string, notes: string) {
     throw new Error(error.message);
   }
 
-  return normalizeShadowNotes(data?.notes);
+  if (data) return normalizeShadowNotes(data.notes);
+
+  // New users have no row until their first meaningful memory update. Check
+  // again before creating one so an explicit opt-out is never overwritten.
+  const { data: profile, error: profileError } = await adminClient
+    .from(SHADOW_NOTES_TABLE)
+    .select("memory_enabled")
+    .eq("user_id", userId)
+    .maybeSingle<{ memory_enabled: boolean }>();
+  if (profileError) throw new Error(profileError.message);
+  if (profile?.memory_enabled === false) return null;
+
+  const { data: inserted, error: insertError } = await adminClient
+    .from(SHADOW_NOTES_TABLE)
+    .upsert(
+      {
+        user_id: userId,
+        memory_enabled: true,
+        notes: normalizedNotes,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id", ignoreDuplicates: true },
+    )
+    .select("memory_enabled, notes")
+    .maybeSingle<{ memory_enabled: boolean; notes: string | null }>();
+  if (insertError) throw new Error(insertError.message);
+
+  return inserted?.memory_enabled === true
+    ? normalizeShadowNotes(inserted.notes)
+    : null;
 }
 
 export async function setShadowMemoryPreference(
