@@ -28,6 +28,7 @@ import {
   parseGoogleTtsPitch,
   parseGoogleTtsSpeakingRate,
 } from "./src/lib/voiceSpeechFormatter.js";
+import { hasGeminiLiveConfig } from "./gemini-live-config.js";
 export {
   createReflection,
   getClientErrorMessage,
@@ -144,7 +145,9 @@ export const getApiStatus = () => ({
   prayerReady: hasPrayerApiKey(),
   speechReady: hasSpeechApiKey(),
   ttsReady: hasTextToSpeechConfig(),
-  voiceReady: hasChatApiKey() && hasSpeechApiKey() && hasTextToSpeechConfig(),
+  // Immersive Voice uses Gemini Live. Speech/TTS readiness remains separate
+  // because Chat dictation and older clients still use those endpoints.
+  voiceReady: hasGeminiLiveConfig(),
   nativeSubscriptionSyncReady: hasNativeSubscriptionSyncConfig(),
 });
 

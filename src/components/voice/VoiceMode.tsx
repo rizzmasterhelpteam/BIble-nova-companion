@@ -18,9 +18,9 @@ import { isNativePlatform } from "../../lib/native/platform";
 import { cn } from "../../lib/utils";
 import { useMobileViewport } from "../../context/MobileViewportContext";
 import {
-  useTurnBasedVoice,
+  useGeminiLiveVoice,
   type VoiceStartMode,
-} from "../../hooks/useTurnBasedVoice";
+} from "../../hooks/useGeminiLiveVoice";
 import { usePerformanceMode } from "../../hooks/usePerformanceMode";
 import type { VoiceReservation } from "../../lib/voiceReservation";
 import type {
@@ -159,7 +159,7 @@ export default function VoiceMode({
     return onAppendAssistantMessage(text, playback);
   }, [onAppendAssistantMessage]);
 
-  const live = useTurnBasedVoice({
+  const live = useGeminiLiveVoice({
     userId,
     history: messages,
     shadowNotes,
@@ -171,8 +171,6 @@ export default function VoiceMode({
     liveReady: voiceReady,
     apiStatusConnectionError,
     enableInputLevel: !isPerformanceMode,
-    // Keep recognition and responses in automatic language-detection mode.
-    voiceLanguage: "auto",
   });
   const stopLive = live.stop;
   const premiumRequired = live.errorCode === "subscription_required";
