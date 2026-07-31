@@ -29,6 +29,9 @@ Set these in Vercel for the environments you deploy to:
 - `GROQ_MODEL` required for production; use a currently supported provider model and do not rely on a deprecated fallback
 - `GROQ_FALLBACK_MODEL` optional secondary Groq chat model
 - `GROQ_TRANSCRIBE_MODEL` optional Groq speech model; defaults to `whisper-large-v3-turbo`
+- `GEMINI_API_KEY` required server-only key for Gemini 3.1 Flash Live Voice Mode
+- `GEMINI_LIVE_VOICE` optional server-owned Live voice; defaults to `Charon`
+- `VOICE_WEB_PAYMENT_BYPASS=true` and `VOICE_WEB_TEST_ORIGIN=https://…` temporarily allow authenticated browser testing of Voice without a premium entitlement; leave both unset in normal deployments
 - `GOOGLE_TTS_SERVICE_ACCOUNT_JSON` required server-only Google Cloud service-account JSON with Text-to-Speech access
 - `GOOGLE_TTS_LANGUAGE_CODE` optional language code; defaults to `en-AU`
 - `GOOGLE_TTS_VOICE_NAME` optional voice; defaults to `en-AU-Chirp3-HD-Algenib`
@@ -42,8 +45,8 @@ Set these in Vercel for the environments you deploy to:
 - `VITE_IAP_MONTHLY_PRODUCT_ID` and `VITE_IAP_YEARLY_PRODUCT_ID` required for native subscription IAP
 - `VITE_IAP_MONTHLY_BASE_PLAN_ID` and `VITE_IAP_YEARLY_BASE_PLAN_ID` required for Android subscription IAP (Google Play base plans)
 
-`VITE_` variables are embedded into the browser bundle. Keep `GROQ_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `GOOGLE_TTS_SERVICE_ACCOUNT_JSON` server-only.
-Keep `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` server-only as well; the native subscription endpoint fails closed when Google Play verification or server persistence is not configured. Active Voice Mode records one turn at a time, transcribes it with Groq Whisper Large V3 Turbo, generates the response with Groq GPT-OSS 120B, and plays Google Cloud Text-to-Speech audio. No provider credential is bundled into Android.
+`VITE_` variables are embedded into the browser bundle. Keep `GEMINI_API_KEY`, `GROQ_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `GOOGLE_TTS_SERVICE_ACCOUNT_JSON` server-only.
+Keep `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` server-only as well; the native subscription endpoint fails closed when Google Play verification or server persistence is not configured. Immersive Voice Mode streams PCM audio directly between the client and Gemini 3.1 Flash Live using a short-lived, one-use token minted only after authentication, premium eligibility, rate-limit, and active-session checks. The Gemini API key is never bundled into Android. Text chat, chat microphone dictation, and text-to-speech remain on their existing providers.
 
 ## Production Database Migration
 

@@ -18,20 +18,33 @@ import { isNativePlatform } from "../../lib/native/platform";
 import { cn } from "../../lib/utils";
 import { useMobileViewport } from "../../context/MobileViewportContext";
 import {
-  useTurnBasedVoice,
+  useGeminiLiveVoice,
   type VoiceStartMode,
-} from "../../hooks/useTurnBasedVoice";
+} from "../../hooks/useGeminiLiveVoice";
 import { usePerformanceMode } from "../../hooks/usePerformanceMode";
 import type { VoiceReservation } from "../../lib/voiceReservation";
-import type { ConversationMessage, VoiceState } from "../../types/live";
+import type {
+  ConversationMessage,
+  VoicePlaybackMetadata,
+  VoiceState,
+} from "../../types/live";
+import { VoiceOrb } from "./VoiceOrb";
 
 type VoiceModeProps = {
   userId: string;
   messages: ConversationMessage[];
   shadowNotes: string | null;
+  memoryEnabled: boolean;
   isTyping: boolean;
   onAppendUserMessage: (content: string, source?: "voice" | "chat") => void;
-  onAppendAssistantMessage: (content: string) => void;
+  onAppendAssistantMessage: (
+    content: string,
+    playback: VoicePlaybackMetadata,
+  ) => string;
+  onUpdateAssistantVoicePlayback: (
+    messageId: string,
+    playback: VoicePlaybackMetadata,
+  ) => void;
   onAcceptShadowNotes: (notes: string | null) => void;
   onExitVoice: () => void;
   onSessionActiveChange: (active: boolean) => void;
@@ -93,15 +106,17 @@ const STATE_DESCRIPTIONS: Record<VoiceState, string> = {
 
 const isVoiceMessage = (message: ConversationMessage) => message.source === "voice";
 const SHADOW_NOTE_PERSIST_INTERVAL_MS = 70_000;
-const SHADOW_NOTE_TIMEOUT_MS = 2_500;
+const SHADOW_NOTE_TIMEOUT_MS = 10_000;
 
 export default function VoiceMode({
   userId,
   messages,
   shadowNotes,
+  memoryEnabled,
   isTyping,
   onAppendUserMessage,
   onAppendAssistantMessage,
+  onUpdateAssistantVoicePlayback,
   onAcceptShadowNotes,
   onExitVoice,
   onSessionActiveChange,
@@ -124,7 +139,6 @@ export default function VoiceMode({
   const sessionVoiceBaselineRef = useRef(0);
   const lastPersistAttemptAtRef = useRef(0);
   const persistenceBaselineInitializedRef = useRef(false);
-
   useEffect(() => {
     messagesRef.current = messages;
     if (!persistenceBaselineInitializedRef.current) {
@@ -138,39 +152,63 @@ export default function VoiceMode({
     onAppendUserMessage(text, "voice");
   }, [onAppendUserMessage]);
 
-  const handleAssistantTranscript = useCallback((text: string) => {
-    onAppendAssistantMessage(text);
+  const handleAssistantTranscript = useCallback((
+    text: string,
+    playback: VoicePlaybackMetadata,
+  ) => {
+    return onAppendAssistantMessage(text, playback);
   }, [onAppendAssistantMessage]);
 
-  const live = useTurnBasedVoice({
+  const live = useGeminiLiveVoice({
     userId,
     history: messages,
     shadowNotes,
     onUserTranscript: handleUserTranscript,
     onAssistantTranscript: handleAssistantTranscript,
+    onAssistantPlaybackStatusChange: onUpdateAssistantVoicePlayback,
     reservation,
     onReservationChange,
     liveReady: voiceReady,
     apiStatusConnectionError,
+    enableInputLevel: !isPerformanceMode,
   });
   const stopLive = live.stop;
   const premiumRequired = live.errorCode === "subscription_required";
   useEffect(() => {
     if (!live.retryUntil) return;
     setCooldownNow(Date.now());
-    const timer = window.setInterval(() => setCooldownNow(Date.now()), 1_000);
+    const timer = window.setInterval(
+      () => setCooldownNow(Date.now()),
+      live.errorCode === "monthly_limit" ? 60_000 : 1_000,
+    );
     return () => window.clearInterval(timer);
-  }, [live.retryUntil]);
+  }, [live.errorCode, live.retryUntil]);
   const cooldownSeconds = live.retryUntil
     ? Math.max(0, Math.ceil((live.retryUntil - cooldownNow) / 1_000))
     : 0;
   const cooldownActive =
-    (live.errorCode === "session_active" || live.errorCode === "daily_limit") &&
+    (live.errorCode === "session_active" ||
+      live.errorCode === "daily_limit" ||
+      live.errorCode === "monthly_limit") &&
     cooldownSeconds > 0;
   const cooldownMinutes = Math.max(1, Math.ceil(cooldownSeconds / 60));
+  const monthlyUsage = live.voiceUsage;
+  const monthlyUsagePercent = monthlyUsage
+    ? Math.min(100, Math.round((monthlyUsage.monthlyUsedMinutes / monthlyUsage.monthlyLimitMinutes) * 100))
+    : 0;
+  const monthlyUsageWarning = monthlyUsagePercent >= 95
+    ? "Almost at your monthly Voice limit."
+    : monthlyUsagePercent >= 80
+      ? "You have used 80% of this month's Voice time."
+      : null;
+  const monthlyResetLabel = monthlyUsage?.monthlyResetAt
+    ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" })
+      .format(new Date(monthlyUsage.monthlyResetAt))
+    : null;
 
   const persistVoiceNotes = useCallback((force = false) => {
     const persistLatestConfirmedMessages = async () => {
+      if (!memoryEnabled) return;
       const voiceMessages = messagesRef.current.filter(isVoiceMessage);
       if (!voiceMessages.length || voiceMessages.length === lastPersistedVoiceCountRef.current) return;
       const voiceMessageCount = voiceMessages.length;
@@ -195,9 +233,12 @@ export default function VoiceMode({
             shadowNotes,
           }),
         });
-        const data = (await response.json().catch(() => ({}))) as { shadowNotes?: string | null };
+        const data = (await response.json().catch(() => ({}))) as {
+          memoryEnabled?: boolean;
+          shadowNotes?: string | null;
+        };
         if (response.ok) {
-          if (typeof data.shadowNotes === "string" && data.shadowNotes.trim()) {
+          if (data.memoryEnabled !== false && typeof data.shadowNotes === "string" && data.shadowNotes.trim()) {
             onAcceptShadowNotes(data.shadowNotes);
           }
           lastPersistedVoiceCountRef.current = voiceMessageCount;
@@ -214,13 +255,14 @@ export default function VoiceMode({
       .then(persistLatestConfirmedMessages);
     persistQueueRef.current = queuedPersistence;
     return queuedPersistence;
-  }, [onAcceptShadowNotes, shadowNotes]);
+  }, [memoryEnabled, onAcceptShadowNotes, shadowNotes]);
   const latestPersistVoiceNotesRef = useRef(persistVoiceNotes);
   useEffect(() => {
     latestPersistVoiceNotesRef.current = persistVoiceNotes;
   }, [persistVoiceNotes]);
 
   useEffect(() => {
+    if (!memoryEnabled) return;
     const voiceMessageCount = messages.filter(isVoiceMessage).length;
     const sessionVoiceMessageCount = voiceMessageCount - sessionVoiceBaselineRef.current;
     if (
@@ -241,7 +283,7 @@ export default function VoiceMode({
         persistTimerRef.current = null;
       }
     };
-  }, [messages, persistVoiceNotes]);
+  }, [memoryEnabled, messages, persistVoiceNotes]);
 
   useEffect(() => () => {
     if (persistTimerRef.current !== null) window.clearTimeout(persistTimerRef.current);
@@ -253,12 +295,6 @@ export default function VoiceMode({
     onSessionActiveChange(active);
   }, [active, onSessionActiveChange]);
   useEffect(() => () => onSessionActiveChange(false), [onSessionActiveChange]);
-
-  const presenceShouldMove = !isPerformanceMode && active && live.state !== "ending";
-  const isSpeaking =
-    live.state === "user-speaking" ||
-    live.state === "assistant-speaking" ||
-    live.state === "barge-in-listening";
 
   const handleEnd = useCallback(async () => {
     await stopLive("ended", "user_end");
@@ -331,6 +367,8 @@ export default function VoiceMode({
 
   const startLabel = premiumRequired
     ? "Recheck premium access"
+    : live.errorCode === "monthly_limit"
+      ? "Monthly Voice limit reached"
     : cooldownActive
       ? `Available in ${cooldownMinutes} min`
       : isCheckingVoiceReady
@@ -394,55 +432,30 @@ export default function VoiceMode({
             isShortPhone ? "py-2" : "py-6 sm:py-10",
           )}>
             <div className="flex flex-col items-center text-center" aria-live="polite">
-              <div
-                className="voice-privacy-pill mb-5 inline-flex min-h-8 items-center gap-2 rounded-pill border px-3 py-1.5 text-xs font-medium"
-                style={{
-                  color: "var(--app-text-muted)",
-                  background: "var(--app-surface-muted)",
-                  borderColor: "var(--app-card-border)",
-                }}
+              <VoiceOrb
+                state={live.state}
+                inputLevel={live.inputLevel}
+                isPerformanceMode={isPerformanceMode}
+                compact={isShortPhone}
+                className="mb-5"
+              />
+
+              <motion.div
+                key={live.state}
+                className="voice-status-copy flex flex-col items-center"
+                initial={isPerformanceMode ? false : { opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={isPerformanceMode
+                  ? { duration: 0 }
+                  : { duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
               >
-                <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Saved to Chat; continuity notes stay private to your account</span>
-              </div>
-
-              <div className={cn(
-                "voice-presence relative mb-5 flex items-center justify-center",
-                isShortPhone ? "h-[128px] w-[128px]" : "h-36 w-36 sm:h-40 sm:w-40",
-              )}>
-                {presenceShouldMove && (
-                  <motion.div
-                    aria-hidden="true"
-                    className="voice-presence-ring absolute inset-0 rounded-full border"
-                    animate={{ scale: [1, 1.035, 1], opacity: [0.45, 0.88, 0.45] }}
-                    transition={{ duration: live.state === "assistant-speaking" ? 1.2 : 2.8, repeat: Infinity, ease: "easeInOut" }}
-                  />
-                )}
-                <div
-                  className="voice-presence-core relative flex h-24 w-24 items-center justify-center rounded-full border sm:h-28 sm:w-28"
-                >
-                  <Mic className="h-10 w-10 sm:h-12 sm:w-12" strokeWidth={1.5} aria-hidden="true" />
-                </div>
-                {isSpeaking && (
-                  <div className="absolute -bottom-1 flex h-4 items-end gap-1" aria-hidden="true">
-                    {[0, 1, 2].map((bar) => (
-                      <motion.span
-                        key={bar}
-                        className="voice-audio-bar w-1 rounded-pill"
-                        animate={isPerformanceMode ? { height: 8 } : { height: [6, 14, 8, 6] }}
-                        transition={isPerformanceMode ? { duration: 0 } : { duration: 0.8, delay: bar * 0.12, repeat: Infinity, ease: "easeInOut" }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <h2 className="voice-state-title app-heading max-w-[20ch] font-serif text-[clamp(2rem,10vw,2.375rem)] font-semibold leading-tight tracking-[-0.02em] sm:text-[48px]">
-                {STATE_HEADLINES[live.state]}
-              </h2>
-              <p className="voice-state-description app-muted mt-2 max-w-md text-[15px] leading-relaxed sm:text-[17px]">
-                {STATE_DESCRIPTIONS[live.state]}
-              </p>
+                <h2 className="voice-state-title app-heading max-w-[20ch] font-serif text-[clamp(2rem,10vw,2.375rem)] font-semibold leading-tight tracking-[-0.02em] sm:text-[48px]">
+                  {STATE_HEADLINES[live.state]}
+                </h2>
+                <p className="voice-state-description app-muted mt-2 max-w-md text-[15px] leading-relaxed sm:text-[17px]">
+                  {STATE_DESCRIPTIONS[live.state]}
+                </p>
+              </motion.div>
             </div>
           </div>
 
@@ -461,6 +474,25 @@ export default function VoiceMode({
                 ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                 : <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
               <span>{sessionNotice}</span>
+            </div>
+          )}
+
+          {monthlyUsage && (
+            <div
+              className="voice-usage-summary app-muted mt-3 flex w-full items-center justify-between gap-3 rounded-[1rem] border px-3.5 py-3 text-left text-sm"
+              style={{
+                background: monthlyUsagePercent >= 95 ? "var(--app-danger-soft)" : "var(--app-card-soft)",
+                borderColor: monthlyUsagePercent >= 95
+                  ? "color-mix(in srgb, var(--app-danger) 22%, transparent)"
+                  : "var(--app-card-border)",
+              }}
+            >
+              <span className="font-medium">Voice this month</span>
+              <span className="text-right">
+                {monthlyUsage.monthlyRemainingMinutes} of {monthlyUsage.monthlyLimitMinutes} min left
+                {monthlyUsageWarning ? ` · ${monthlyUsageWarning}` : ""}
+                {monthlyResetLabel ? ` Resets ${monthlyResetLabel}.` : ""}
+              </span>
             </div>
           )}
 

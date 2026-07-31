@@ -1,4 +1,11 @@
 import { createHash } from "node:crypto";
+import { GoogleGenAI } from "@google/genai";
+import {
+  GEMINI_LIVE_API_VERSION,
+  GEMINI_LIVE_MODEL,
+  getGeminiLiveConnectConfig,
+  hasGeminiLiveConfig,
+} from "../../gemini-live-config.js";
 import {
   acquireVoiceSessionLease,
   createVoiceReservationHandle,
@@ -13,10 +20,13 @@ import {
 import { getVoiceSessionConfig } from "../../voice-config.js";
 
 const MIN_RECOVERY_REMAINING_SECONDS = 2 * 60;
+const LIVE_TOKEN_NEW_SESSION_WINDOW_MS = 60_000;
+const LIVE_TOKEN_EXPIRY_MARGIN_MS = 60_000;
 const RELEASE_REASONS = new Set([
   "user_exit",
   "user_end",
   "session_expired",
+  "idle_timeout",
   "component_unmount",
   "logout",
   "subscription_lost",
@@ -47,12 +57,20 @@ const getBody = (req: any) => {
 const reasonForStatus = (statusCode: number, message: string) => {
   if (statusCode === 403) return "subscription_required";
   if (statusCode === 409) return "session_active";
+  if (statusCode === 429 && message.toLowerCase().includes("monthly")) return "monthly_limit";
   if (statusCode === 429 && message.toLowerCase().includes("daily")) return "daily_limit";
   return "connection_failed";
 };
 
 const hashUserId = (userId: string) =>
   createHash("sha256").update(userId).digest("hex").slice(0, 12);
+
+const isWebPaymentBypassRequest = (req: any) => {
+  const allowedOrigin = process.env.VOICE_WEB_TEST_ORIGIN?.trim().replace(/\/$/, "");
+  return process.env.VOICE_WEB_PAYMENT_BYPASS === "true" &&
+    Boolean(allowedOrigin) &&
+    String(req.headers?.origin || "").replace(/\/$/, "") === allowedOrigin;
+};
 
 export default async function handler(req: any, res: any) {
   const requestId = String(req.headers?.["x-client-request-id"] || "").slice(0, 80);
@@ -70,6 +88,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
+    const allowPaymentBypass = isWebPaymentBypassRequest(req);
     userHash = hashUserId(userId);
     await enforceRateLimits([
       { key: `voice-session:user:${userId}`, limit: 20 },
@@ -77,7 +96,9 @@ export default async function handler(req: any, res: any) {
     ]);
 
     const body = getBody(req);
-    action = body.action === "release" ? "release" : "start";
+    action = body.action === "release" || body.action === "live-token"
+      ? body.action
+      : "start";
     if (action === "release") {
       const handleHash = hashVoiceReservationHandle(body.reservationHandle);
       if (!handleHash) {
@@ -95,6 +116,74 @@ export default async function handler(req: any, res: any) {
         durationMs: Date.now() - startedAt,
       });
       return res.status(204).end();
+    }
+
+    if (action === "live-token") {
+      await enforceRateLimits([
+        { key: `voice-live-token:user:${userId}`, limit: 12 },
+        { key: `voice-live-token:ip:${ip}`, limit: 24 },
+      ]);
+      if (!hasGeminiLiveConfig()) {
+        return res.status(503).json({ error: "Voice streaming is not configured." });
+      }
+      const handleHash = hashVoiceReservationHandle(body.reservationHandle);
+      if (!handleHash) {
+        return res.status(400).json({ error: "This Voice reservation is invalid." });
+      }
+      const { maxMinutes } = getVoiceSessionConfig();
+      const { dailyMinutes, monthlyMinutes, resetOffsetMinutes } = getVoiceUsageLimits(maxMinutes);
+      const availability = await getVoiceSessionAvailability(
+        userId,
+        maxMinutes,
+        dailyMinutes,
+        monthlyMinutes,
+        resetOffsetMinutes,
+        handleHash,
+        allowPaymentBypass,
+      );
+      if (!availability.eligible) {
+        return res.status(403).json({
+          error: "An active premium subscription is required for Voice mode.",
+          reason: "subscription_required",
+        });
+      }
+      if (
+        availability.reason !== "reservation_resume" ||
+        !availability.retryAfterSeconds ||
+        availability.retryAfterSeconds < 10
+      ) {
+        return res.status(409).json({
+          error: "This Voice reservation is no longer active.",
+          reason: "reservation_invalid",
+        });
+      }
+      const now = Date.now();
+      const reservationExpiresAt = new Date(now + availability.retryAfterSeconds * 1_000).toISOString();
+      const expiresAt = new Date(
+        now + availability.retryAfterSeconds * 1_000 + LIVE_TOKEN_EXPIRY_MARGIN_MS,
+      ).toISOString();
+      const newSessionExpiresAt = new Date(now + LIVE_TOKEN_NEW_SESSION_WINDOW_MS).toISOString();
+      const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY!.trim() });
+      const token = await client.authTokens.create({
+        config: {
+          httpOptions: { apiVersion: GEMINI_LIVE_API_VERSION },
+          uses: 1,
+          expireTime: expiresAt,
+          newSessionExpireTime: newSessionExpiresAt,
+          liveConnectConstraints: {
+            model: GEMINI_LIVE_MODEL,
+            config: getGeminiLiveConnectConfig(),
+          },
+        },
+      });
+      if (!token.name) throw new Error("Gemini returned an empty ephemeral token.");
+      console.info("[voice/session] live token created", {
+        requestId: requestId || "server-generated",
+        userHash,
+        reservationValidated: true,
+        durationMs: Date.now() - startedAt,
+      });
+      return res.status(200).json({ token: token.name, expiresAt, newSessionExpiresAt, reservationExpiresAt });
     }
 
     const requestedMode =
@@ -132,14 +221,16 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const { maxMinutes } = getVoiceSessionConfig();
-    const { dailyMinutes, resetOffsetMinutes } = getVoiceUsageLimits(maxMinutes);
+    const { maxMinutes, idleTimeoutSeconds } = getVoiceSessionConfig();
+    const { dailyMinutes, monthlyMinutes, resetOffsetMinutes } = getVoiceUsageLimits(maxMinutes);
     const availability = await getVoiceSessionAvailability(
       userId,
       maxMinutes,
       dailyMinutes,
+      monthlyMinutes,
       resetOffsetMinutes,
       mode === "recovery_resume" ? handleHash : null,
+      allowPaymentBypass,
     );
 
     if (
@@ -162,6 +253,8 @@ export default async function handler(req: any, res: any) {
         ).toISOString(),
         remainingSeconds: availability.retryAfterSeconds,
         resumed: true,
+        usage: availability.usage,
+        idleTimeoutSeconds,
       });
     }
 
@@ -192,17 +285,22 @@ export default async function handler(req: any, res: any) {
     }
 
     if (!availability.available) {
-      const status = availability.reason === "daily_limit" ? 429 : 409;
+      const usageLimitReached =
+        availability.reason === "daily_limit" || availability.reason === "monthly_limit";
+      const status = usageLimitReached ? 429 : 409;
       if (availability.retryAfterSeconds) {
         res.setHeader?.("Retry-After", String(availability.retryAfterSeconds));
       }
       return res.status(status).json({
         error:
-          availability.reason === "daily_limit"
+          availability.reason === "monthly_limit"
+            ? "Your monthly Voice allowance has been reached."
+            : availability.reason === "daily_limit"
             ? "Your daily Voice allowance has been reached."
             : "A Voice session is already active for this account.",
         reason: availability.reason,
         retryAfterSeconds: availability.retryAfterSeconds,
+        usage: availability.usage,
       });
     }
 
@@ -210,13 +308,28 @@ export default async function handler(req: any, res: any) {
       userId,
       maxMinutes,
       dailyMinutes,
+      monthlyMinutes,
       resetOffsetMinutes,
       handleHash,
+      allowPaymentBypass,
     );
     const remainingSeconds = Math.max(
       0,
       Math.floor((Date.parse(lease.expiresAt) - Date.now()) / 1_000),
     );
+    const usageAfterReservation = availability.usage
+      ? {
+          ...availability.usage,
+          monthlyUsedMinutes: Math.min(
+            availability.usage.monthlyLimitMinutes,
+            availability.usage.monthlyUsedMinutes + lease.reservedMinutes,
+          ),
+          monthlyRemainingMinutes: Math.max(
+            0,
+            availability.usage.monthlyRemainingMinutes - lease.reservedMinutes,
+          ),
+        }
+      : null;
     console.info("[voice/session] fresh lease acquired", {
       requestId: requestId || "server-generated",
       userHash,
@@ -230,6 +343,8 @@ export default async function handler(req: any, res: any) {
       reservationExpiresAt: lease.expiresAt,
       remainingSeconds,
       resumed: false,
+      usage: usageAfterReservation,
+      idleTimeoutSeconds,
     });
   } catch (error) {
     const details = getHttpErrorDetails(error);

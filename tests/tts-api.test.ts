@@ -2,17 +2,25 @@ import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const synthesizeSpeech = vi.hoisted(() => vi.fn());
+const getGoogleTtsOptionsForVoiceLanguage = vi.hoisted(() => vi.fn(() => ({})));
 const enforceRateLimits = vi.hoisted(() => vi.fn());
 const requireAuthenticatedRequest = vi.hoisted(() => vi.fn());
 
-vi.mock("../server-api", () => ({ synthesizeSpeech }));
+vi.mock("../server-api", () => ({
+  synthesizeSpeech,
+  getGoogleTtsOptionsForVoiceLanguage,
+}));
 vi.mock("../server-security", () => ({
   assertStringLength: vi.fn(),
   enforceRateLimits,
+  formatServerTiming: (timings: Record<string, number>) =>
+    Object.keys(timings).map((key) => `${key};dur=1`).join(", "),
   getHttpErrorDetails: (error: Error & { statusCode?: number }) => ({
     statusCode: error.statusCode || 500,
     message: error.message,
   }),
+  getVoiceRateLimit: () => 60,
+  getVoiceRateLimitWindowMs: () => 600_000,
   requireAuthenticatedRequest,
 }));
 
@@ -67,7 +75,7 @@ describe("Text-to-Speech API", () => {
     await ttsHandler({ method: "POST", body: { text: "You matter." } }, response);
 
     expect(response.statusCode).toBe(200);
-    expect(synthesizeSpeech).toHaveBeenCalledWith("You matter.");
+    expect(synthesizeSpeech).toHaveBeenCalledWith("You matter.", {});
     expect(response.body).toMatchObject({
       audioContent: "base64-audio",
       voiceName: "en-AU-Chirp3-HD-Algenib",

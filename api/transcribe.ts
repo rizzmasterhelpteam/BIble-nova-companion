@@ -3,7 +3,10 @@ import { transcribeAudio } from "../server-api.js";
 import {
   assertStringLength,
   enforceRateLimits,
+  formatServerTiming,
   getHttpErrorDetails,
+  getVoiceRateLimit,
+  getVoiceRateLimitWindowMs,
   HttpError,
   requireAuthenticatedRequest,
 } from "../server-security.js";
@@ -12,6 +15,7 @@ import {
   MAX_VOICE_AUDIO_BYTES,
   normalizeVoiceAudioMimeType,
 } from "../src/lib/voiceTranscription.js";
+import { normalizeVoiceLanguage } from "../src/lib/voiceLanguage.js";
 
 const API_BUILD_ID = "2026-07-29-multipart-transcription";
 const MAX_MULTIPART_BODY_BYTES = MAX_VOICE_AUDIO_BYTES + 128 * 1024;
@@ -97,9 +101,11 @@ const parseMultipartBody = async (req: any, contentType: string) => {
   const languageValue = formData.get("language");
   const language = typeof languageValue === "string" ? languageValue.trim() : "";
   if (language) assertStringLength(language, 32, "Language");
+  const voiceLanguage = normalizeVoiceLanguage(formData.get("voiceLanguage"));
   return {
     audio: file,
     language: language || undefined,
+    voiceLanguage,
     mimeType: normalizeVoiceAudioMimeType(file.type),
     audioBytes: file.size,
     uploadMode: "multipart",
@@ -112,7 +118,7 @@ const parseTranscriptionRequest = async (req: any) => {
     return parseMultipartBody(req, contentType);
   }
 
-  const { audio, language } = getBody(req);
+  const { audio, language, voiceLanguage: requestedVoiceLanguage } = getBody(req);
   assertStringLength(audio, 8 * 1024 * 1024, "Audio");
   if (language !== undefined && language !== null) {
     assertStringLength(language, 32, "Language");
@@ -133,6 +139,7 @@ const parseTranscriptionRequest = async (req: any) => {
   return {
     audio: audio as string,
     language: typeof language === "string" ? language : undefined,
+    voiceLanguage: normalizeVoiceLanguage(requestedVoiceLanguage),
     mimeType,
     audioBytes,
     uploadMode: "base64-compatibility",
@@ -156,6 +163,11 @@ const getClientErrorMessage = (error: unknown) => {
 export default async function handler(req: any, res: any) {
   const requestId = String(req.headers?.["x-client-request-id"] || "").slice(0, 80);
   const startedAt = Date.now();
+  const timings: Record<string, number | undefined> = {};
+  const setTimingHeader = () => {
+    timings.total = Date.now() - startedAt;
+    res.setHeader?.("Server-Timing", formatServerTiming(timings));
+  };
   setCorsHeaders(res);
   res.setHeader?.("X-Bible-Nova-Api-Build", API_BUILD_ID);
   res.setHeader?.("Cache-Control", "private, no-store");
@@ -172,32 +184,44 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const authStartedAt = Date.now();
     const { userId, ip } = await requireAuthenticatedRequest(req);
+    timings.auth = Date.now() - authStartedAt;
     const userHash = createHash("sha256").update(userId).digest("hex").slice(0, 12);
+    const rateLimitStartedAt = Date.now();
     await enforceRateLimits([
-      { key: `transcribe:user:${userId}`, limit: 30 },
-      { key: `transcribe:ip:${ip}`, limit: 60 },
-    ]);
+      { key: `transcribe:user:${userId}`, limit: getVoiceRateLimit("VOICE_TRANSCRIBE_RATE_LIMIT") },
+      { key: `transcribe:ip:${ip}`, limit: getVoiceRateLimit("VOICE_TRANSCRIBE_RATE_LIMIT") },
+    ], getVoiceRateLimitWindowMs());
+    timings["rate-limit"] = Date.now() - rateLimitStartedAt;
+    const parseStartedAt = Date.now();
     const {
       audio,
       language,
+      voiceLanguage,
       mimeType,
       audioBytes,
       uploadMode,
     } = await parseTranscriptionRequest(req);
+    timings.parse = Date.now() - parseStartedAt;
     console.info("[voice/transcribe] started", {
       requestId: requestId || "server-generated",
       userHash,
       mimeType,
       audioBytes,
       uploadMode,
+      vercelRegion: process.env.VERCEL_REGION || null,
+      supabaseRegion: process.env.SUPABASE_REGION || null,
     });
-    const text = await transcribeAudio(audio, language);
+    const providerStartedAt = Date.now();
+    const text = await transcribeAudio(audio, language, voiceLanguage);
+    timings.provider = Date.now() - providerStartedAt;
     console.info("[voice/transcribe] completed", {
       requestId: requestId || "server-generated",
       userHash,
       durationMs: Date.now() - startedAt,
     });
+    setTimingHeader();
     res.status(200).json({ text });
   } catch (error) {
     console.error("[voice/transcribe] failed", {
@@ -209,6 +233,7 @@ export default async function handler(req: any, res: any) {
     if (details.retryAfterSeconds) {
       res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
     }
+    setTimingHeader();
     res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
   }
 }

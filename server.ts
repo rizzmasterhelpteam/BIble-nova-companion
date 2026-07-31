@@ -8,14 +8,14 @@ import {
   generatePrayer,
   getApiStatus,
   getClientErrorMessage,
-  saveShadowNotes,
   syncNativeSubscription,
 } from "./server-api";
 import chatHandler from "./api/chat";
+import shadowNotesHandler from "./api/shadow-notes";
 import transcriptionHandler from "./api/transcribe";
+import voiceShadowNotesHandler from "./api/voice/shadow-notes";
 import voiceSessionHandler from "./api/voice/session";
 import textToSpeechHandler from "./api/tts";
-import { createShadowNotes, type ChatMessage } from "./chat-api";
 import {
   assertStringLength,
   enforceRateLimits,
@@ -46,70 +46,12 @@ app.post("/api/tts", textToSpeechHandler);
 app.options("/api/tts", textToSpeechHandler);
 app.post("/api/transcribe", transcriptionHandler);
 app.options("/api/transcribe", transcriptionHandler);
-
-app.post("/api/voice/shadow-notes", async (req, res) => {
-  try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
-    await enforceRateLimits([
-      { key: `voice-shadow-notes:user:${userId}`, limit: 10 },
-      { key: `voice-shadow-notes:ip:${ip}`, limit: 20 },
-    ]);
-    const messages = Array.isArray(req.body?.messages) ? req.body.messages.slice(-12) : [];
-    const normalizedMessages = messages
-      .map((message: any) => {
-        const content = typeof message?.content === "string" ? message.content.trim() : "";
-        if (!content) return null;
-        assertStringLength(content, 2_000, "Voice transcript");
-        return {
-          role: message?.role === "ai" ? "ai" : "user",
-          content,
-        } satisfies ChatMessage;
-      })
-      .filter((message: ChatMessage | null): message is ChatMessage => Boolean(message));
-    const existingShadowNotes = typeof req.body?.shadowNotes === "string" ? req.body.shadowNotes.trim() : "";
-    assertStringLength(existingShadowNotes, 2_000, "Shadow notes");
-
-    if (!normalizedMessages.length) {
-      res.json({ shadowNotes: existingShadowNotes || null });
-      return;
-    }
-
-    const generatedShadowNotes = await createShadowNotes(normalizedMessages, existingShadowNotes || null);
-    const shadowNotes = generatedShadowNotes
-      ? await saveShadowNotes(userId, generatedShadowNotes)
-      : null;
-    res.json({ shadowNotes });
-  } catch (error) {
-    console.error("Voice shadow-note request failed:", error instanceof Error ? error.message : error);
-    const details = getHttpErrorDetails(error);
-    if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
-    res.status(details.statusCode).json({
-      error: details.statusCode === 500
-        ? "Voice notes could not be updated. Your conversation is still safe."
-        : details.message,
-    });
-  }
-});
-
-app.post("/api/shadow-notes", async (req, res) => {
-  try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
-    await enforceRateLimits([
-      { key: `shadow-notes:user:${userId}`, limit: 20 },
-      { key: `shadow-notes:ip:${ip}`, limit: 40 },
-    ]);
-    const { notes } = req.body;
-    assertStringLength(notes, 2_000, "Shadow notes");
-    const shadowNotes = await saveShadowNotes(userId, notes);
-    res.json({ shadowNotes });
-  } catch (error) {
-    console.error("Shadow notes error:", error);
-    const details = getHttpErrorDetails(error);
-    if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
-    res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
-  }
-});
-
+app.post("/api/voice/shadow-notes", voiceShadowNotesHandler);
+app.options("/api/voice/shadow-notes", voiceShadowNotesHandler);
+app.get("/api/shadow-notes", shadowNotesHandler);
+app.put("/api/shadow-notes", shadowNotesHandler);
+app.post("/api/shadow-notes", shadowNotesHandler);
+app.options("/api/shadow-notes", shadowNotesHandler);
 app.delete("/api/account", async (req, res) => {
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);

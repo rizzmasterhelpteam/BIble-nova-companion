@@ -18,14 +18,14 @@ vi.mock("../server-security", () => ({
     message: error.message,
   }),
   getVoiceSessionAvailability,
-  getVoiceUsageLimits: () => ({ dailyMinutes: 60, resetOffsetMinutes: 330 }),
+  getVoiceUsageLimits: () => ({ dailyMinutes: 60, monthlyMinutes: 180, resetOffsetMinutes: 330 }),
   hashVoiceReservationHandle: (handle?: string) =>
     handle && handle.length >= 32 ? handle[0].repeat(64) : null,
   releaseVoiceSessionLease,
   requireAuthenticatedRequest,
 }));
 vi.mock("../voice-config", () => ({
-  getVoiceSessionConfig: () => ({ maxMinutes: 10 }),
+  getVoiceSessionConfig: () => ({ maxMinutes: 10, idleTimeoutSeconds: 45 }),
 }));
 
 import voiceSessionHandler from "../api/voice/session";
@@ -67,10 +67,17 @@ describe("turn-based Voice session API", () => {
       reason: "available",
       retryAfterSeconds: null,
       canRenew: false,
+      usage: {
+        monthlyLimitMinutes: 180,
+        monthlyUsedMinutes: 20,
+        monthlyRemainingMinutes: 160,
+        monthlyResetAt: "2026-08-01T00:00:00.000Z",
+      },
     });
     acquireVoiceSessionLease.mockResolvedValue({
       leaseId: "lease-1",
       expiresAt: "2026-07-29T12:10:00.000Z",
+      reservedMinutes: 10,
     });
     const response = createResponse();
 
@@ -90,19 +97,25 @@ describe("turn-based Voice session API", () => {
       "user-1",
       10,
       60,
+      180,
       330,
       null,
+      false,
     );
     expect(acquireVoiceSessionLease).toHaveBeenCalledWith(
       "user-1",
       10,
       60,
+      180,
       330,
       "r".repeat(64),
+      false,
     );
     expect(response.body).toMatchObject({
       reservationHandle: "r".repeat(43),
       resumed: false,
+      idleTimeoutSeconds: 45,
+      usage: expect.objectContaining({ monthlyRemainingMinutes: 150 }),
     });
   });
 
@@ -117,6 +130,7 @@ describe("turn-based Voice session API", () => {
     acquireVoiceSessionLease.mockResolvedValue({
       leaseId: "lease-1",
       expiresAt: "2026-07-29T12:10:00.000Z",
+      reservedMinutes: 10,
     });
     const response = createResponse();
 
@@ -130,8 +144,10 @@ describe("turn-based Voice session API", () => {
       "user-1",
       10,
       60,
+      180,
       330,
       "h".repeat(64),
+      false,
     );
     expect(response.body).toMatchObject({ reservationHandle: "h".repeat(43) });
   });
@@ -209,6 +225,36 @@ describe("turn-based Voice session API", () => {
 
     expect(response.statusCode).toBe(403);
     expect(response.body).toMatchObject({ reason: "subscription_required" });
+  });
+
+  it("returns a retryable monthly limit with server-calculated remaining minutes", async () => {
+    getVoiceSessionAvailability.mockResolvedValue({
+      eligible: true,
+      available: false,
+      reason: "monthly_limit",
+      retryAfterSeconds: 86_400,
+      canRenew: false,
+      usage: {
+        monthlyLimitMinutes: 180,
+        monthlyUsedMinutes: 180,
+        monthlyRemainingMinutes: 0,
+        monthlyResetAt: "2026-08-01T00:00:00.000Z",
+      },
+    });
+    const response = createResponse();
+
+    await voiceSessionHandler({
+      method: "POST",
+      body: { action: "start", mode: "fresh_start", reservationHandle: "r".repeat(43) },
+    }, response);
+
+    expect(response.statusCode).toBe(429);
+    expect(response.body).toMatchObject({
+      reason: "monthly_limit",
+      usage: { monthlyRemainingMinutes: 0 },
+    });
+    expect(response.setHeader).toHaveBeenCalledWith("Retry-After", "86400");
+    expect(acquireVoiceSessionLease).not.toHaveBeenCalled();
   });
 
   it("allows the request id header used by Android voice requests", async () => {

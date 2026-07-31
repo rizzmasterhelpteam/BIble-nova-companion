@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import type { ChatMessage } from "../chat-api.js";
-import { getClientErrorMessage } from "../chat-api.js";
+import {
+  getClientErrorMessage,
+  MAX_SHADOW_NOTES_CHARS,
+} from "../chat-api.js";
 import {
   createReflectionResponse,
   createVoiceReflectionResponse,
@@ -8,9 +11,13 @@ import {
 import {
   assertStringLength,
   enforceRateLimits,
+  formatServerTiming,
   getHttpErrorDetails,
+  getVoiceRateLimit,
+  getVoiceRateLimitWindowMs,
   requireAuthenticatedRequest,
 } from "../server-security.js";
+import { normalizeVoiceLanguage } from "../src/lib/voiceLanguage.js";
 
 const API_BUILD_ID = "2026-07-29-fast-voice-respond";
 
@@ -65,6 +72,11 @@ const hashUserId = (userId: string) =>
 export default async function handler(req: any, res: any) {
   const requestId = String(req.headers?.["x-client-request-id"] || "").slice(0, 80);
   const startedAt = Date.now();
+  const timings: Record<string, number | undefined> = {};
+  const setTimingHeader = () => {
+    timings.total = Date.now() - startedAt;
+    res.setHeader?.("Server-Timing", formatServerTiming(timings));
+  };
   let voiceMode = false;
   let userHash = "unverified";
   setCorsHeaders(res);
@@ -83,7 +95,9 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    const authStartedAt = Date.now();
     const { userId, ip } = await requireAuthenticatedRequest(req);
+    timings.auth = Date.now() - authStartedAt;
     userHash = hashUserId(userId);
     const body = getBody(req);
     const requestPath = String(req.url || "").split("?", 1)[0];
@@ -91,45 +105,58 @@ export default async function handler(req: any, res: any) {
       body.mode === "voice" ||
       req.query?.mode === "voice" ||
       requestPath === "/api/voice/respond";
+    const rateLimitStartedAt = Date.now();
     await enforceRateLimits([
       {
         key: `${voiceMode ? "voice-respond" : "chat"}:user:${userId}`,
-        limit: 30,
+        limit: voiceMode ? getVoiceRateLimit("VOICE_RESPOND_RATE_LIMIT") : 30,
       },
       {
         key: `${voiceMode ? "voice-respond" : "chat"}:ip:${ip}`,
-        limit: 60,
+        limit: voiceMode ? getVoiceRateLimit("VOICE_RESPOND_RATE_LIMIT") : 60,
       },
-    ]);
+    ], voiceMode ? getVoiceRateLimitWindowMs() : undefined);
+    timings["rate-limit"] = Date.now() - rateLimitStartedAt;
 
     const { messages, shadowNotes } = body;
     if (shadowNotes !== undefined && shadowNotes !== null) {
-      assertStringLength(shadowNotes, 2_000, "Shadow notes");
+      assertStringLength(shadowNotes, MAX_SHADOW_NOTES_CHARS, "Shadow notes");
     }
 
     if (voiceMode) {
       const normalizedMessages = normalizeVoiceMessages(messages);
       if (!normalizedMessages.length) throw new Error("Voice messages are required.");
+      const voiceLanguage = normalizeVoiceLanguage(body.voiceLanguage);
       console.info("[voice/respond] started", {
         requestId: requestId || "server-generated",
         userHash,
         messageCount: normalizedMessages.length,
+        vercelRegion: process.env.VERCEL_REGION || null,
+        supabaseRegion: process.env.SUPABASE_REGION || null,
       });
+      const providerStartedAt = Date.now();
       const result = await createVoiceReflectionResponse(
         userId,
         normalizedMessages,
         typeof shadowNotes === "string" ? shadowNotes : null,
+        voiceLanguage,
       );
+      timings.provider = Date.now() - providerStartedAt;
       console.info("[voice/respond] completed", {
         requestId: requestId || "server-generated",
         userHash,
         durationMs: Date.now() - startedAt,
         providerStatus: 200,
+        responseCharacters: result.message.length,
       });
+      setTimingHeader();
       return res.status(200).json(result);
     }
 
+    const providerStartedAt = Date.now();
     const result = await createReflectionResponse(userId, messages, shadowNotes);
+    timings.provider = Date.now() - providerStartedAt;
+    setTimingHeader();
     return res.status(200).json(result);
   } catch (error) {
     const details = getHttpErrorDetails(error);
@@ -158,6 +185,7 @@ export default async function handler(req: any, res: any) {
     if (details.retryAfterSeconds) {
       res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
     }
+    setTimingHeader();
     return res.status(statusCode).json({
       error: statusCode === 500 ? getClientErrorMessage(error) : details.message,
     });

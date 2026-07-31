@@ -50,6 +50,22 @@ describe("Voice session lifecycle guard", () => {
     expect(expireNew).toHaveBeenCalledWith(newSession);
   });
 
+  it("refreshes idle expiry for a completed Voice turn without changing session expiry", async () => {
+    const lifecycle = new VoiceSessionLifecycle();
+    const onIdle = vi.fn();
+    const session = lifecycle.begin();
+
+    lifecycle.scheduleIdleTimeout(session, 45, onIdle);
+    await vi.advanceTimersByTimeAsync(30_000);
+    lifecycle.scheduleIdleTimeout(session, 45, onIdle);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(onIdle).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(onIdle).toHaveBeenCalledWith(session);
+  });
+
   it("coalesces repeated cleanup calls into one release request", async () => {
     const releaseOnce = createReleaseOnce();
     const release = vi.fn().mockResolvedValue(undefined);

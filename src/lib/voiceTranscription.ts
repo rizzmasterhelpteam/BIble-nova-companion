@@ -27,10 +27,12 @@ export const getVoiceAudioFilename = (mimeType: string) => {
 
 export const createVoiceTranscriptionFormData = (
   blob: Blob,
-  language = "en",
+  language?: string,
+  voiceLanguage?: string,
 ) => {
   const formData = new FormData();
   formData.append("file", blob, getVoiceAudioFilename(blob.type));
-  formData.append("language", language);
+  if (language) formData.append("language", language);
+  if (voiceLanguage) formData.append("voiceLanguage", voiceLanguage);
   return formData;
 };

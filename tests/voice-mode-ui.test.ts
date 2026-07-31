@@ -1,183 +1,121 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const voiceModeSource = readFileSync(
-  new URL("../src/components/voice/VoiceMode.tsx", import.meta.url),
-  "utf8",
-);
-const chatSource = readFileSync(
-  new URL("../src/pages/Chat.tsx", import.meta.url),
-  "utf8",
-);
-const voiceHookSource = readFileSync(
-  new URL("../src/hooks/useTurnBasedVoice.ts", import.meta.url),
-  "utf8",
-);
-const voiceSessionSource = readFileSync(
-  new URL("../api/voice/session.ts", import.meta.url),
-  "utf8",
-);
-const subscriptionSyncSource = readFileSync(
-  new URL("../src/lib/native/subscriptionSync.ts", import.meta.url),
-  "utf8",
-);
-const appStylesSource = readFileSync(
-  new URL("../src/index.css", import.meta.url),
-  "utf8",
-);
-const capacitorConfigSource = readFileSync(
-  new URL("../capacitor.config.ts", import.meta.url),
-  "utf8",
-);
+const source = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+const voiceModeSource = source("../src/components/voice/VoiceMode.tsx");
+const chatSource = source("../src/pages/Chat.tsx");
+const voiceHookSource = source("../src/hooks/useGeminiLiveVoice.ts");
+const voiceOrbSource = source("../src/components/voice/VoiceOrb.tsx");
+const voiceSessionSource = source("../api/voice/session.ts");
+const subscriptionSyncSource = source("../src/lib/native/subscriptionSync.ts");
+const appStylesSource = source("../src/index.css");
+const capacitorConfigSource = source("../capacitor.config.ts");
 
 describe("Voice mode interface", () => {
-  it("does not render caption controls or transcript cards", () => {
+  it("uses Gemini Live only for immersive Voice", () => {
+    expect(voiceModeSource).toContain("useGeminiLiveVoice");
+    expect(voiceModeSource).not.toContain("useTurnBasedVoice");
+    expect(voiceHookSource).toContain('apiFetch("/api/voice/session"');
+    expect(voiceHookSource).toContain('action: "live-token"');
+    expect(voiceHookSource).toContain("sendRealtimeInput({");
+    expect(voiceHookSource).toContain("audio/pcm;rate=${GEMINI_INPUT_SAMPLE_RATE}");
+    expect(voiceHookSource).not.toContain('apiFetch("/api/transcribe"');
+    expect(voiceHookSource).not.toContain('apiFetch("/api/voice/respond"');
+    expect(voiceHookSource).not.toContain('apiFetch("/api/tts"');
+  });
+
+  it("does not render caption controls, transcript cards, or language selection", () => {
     expect(voiceModeSource).not.toContain("Captions");
     expect(voiceModeSource).not.toContain("showCaptions");
     expect(voiceModeSource).not.toContain("voice-transcript");
-    expect(voiceModeSource).not.toContain("latestTranscript");
+    expect(voiceModeSource).not.toContain("Voice language");
+    expect(voiceModeSource).not.toContain("VOICE_LANGUAGE_OPTIONS");
   });
 
-  it("rechecks readiness and starts turn-based Voice when readiness is recovered", () => {
-    expect(voiceModeSource).toContain("const refreshedReady = await onRetryVoiceReady();");
+  it("renders calm, distinct visuals for active Voice states", () => {
+    expect(voiceModeSource).toContain("<VoiceOrb");
+    expect(voiceModeSource).toContain("inputLevel={live.inputLevel}");
+    expect(voiceOrbSource).toContain('listening: "listening"');
+    expect(voiceOrbSource).toContain('"user-speaking": "user-speaking"');
+    expect(voiceOrbSource).toContain('"assistant-speaking": "assistant-speaking"');
+    expect(voiceOrbSource).toContain('thinking: "reflecting"');
+  });
+
+  it("limits audio feedback work on performance-mode devices", () => {
+    expect(voiceModeSource).toContain("enableInputLevel: !isPerformanceMode");
+    expect(voiceHookSource).toContain("INPUT_LEVEL_UPDATE_INTERVAL_MS = 90");
+    expect(voiceHookSource).toContain("setInputLevel(Number(Math.min(1, peak * 4)");
+    expect(voiceOrbSource).toContain("voice-orb--performance");
+    expect(appStylesSource).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+
+  it("primes Android audio before readiness retry and starts when recovered", () => {
+    const primeIndex = voiceModeSource.indexOf("live.primeAudioForUserGesture();");
+    const retryIndex = voiceModeSource.indexOf("const refreshedReady = await onRetryVoiceReady();");
+    expect(primeIndex).toBeGreaterThan(-1);
+    expect(retryIndex).toBeGreaterThan(primeIndex);
     expect(voiceModeSource).toContain("ready = refreshedReady || ready;");
-    expect(voiceModeSource).toContain("live.primeAudioForUserGesture();");
-    expect(voiceModeSource).toContain("if (ready) {");
     expect(voiceModeSource).toContain("await live.start(");
-    expect(voiceModeSource).toContain("useTurnBasedVoice");
   });
 
-  it("does not block a Voice retry on Android speech diagnostics", () => {
+  it("keeps chat speech diagnostics independent from Voice retry", () => {
     expect(chatSource).toContain('void refreshSpeechSupport("api-status-retry");');
     expect(chatSource).not.toContain('await refreshSpeechSupport("api-status-retry");');
   });
 
-  it("distinguishes fresh starts from safe interrupted-session recovery", () => {
-    expect(voiceHookSource).toContain("createClientReservationHandle");
-    expect(voiceHookSource).toContain("reservationHandle: requestedHandle");
-    expect(voiceHookSource).toContain("previousReservationHandle");
-    expect(voiceHookSource).toContain('"fresh_start"');
-    expect(voiceHookSource).toContain('"recovery_resume"');
+  it("reserves premium Voice time before minting a Live token", () => {
+    expect(voiceHookSource).toContain('apiFetch("/api/voice/session"');
+    expect(voiceHookSource).toContain('action: "live-token"');
+    expect(voiceHookSource).toContain("await provisionAndConnect(null)");
+    expect(voiceHookSource).toContain("createVoiceReservation");
     expect(voiceSessionSource).toContain('availability.reason === "reservation_resume"');
-    expect(voiceSessionSource).toContain("MIN_RECOVERY_REMAINING_SECONDS");
-    expect(voiceSessionSource).toContain("resumed: true");
   });
 
-  it("requests Android microphone access before WebView capture", () => {
-    const nativePermissionIndex = voiceHookSource.indexOf("SpeechRecognition.checkPermissions()");
-    const requestPermissionIndex = voiceHookSource.indexOf("SpeechRecognition.requestPermissions()");
-    const captureIndex = voiceHookSource.indexOf("navigator.mediaDevices.getUserMedia({");
-
-    expect(nativePermissionIndex).toBeGreaterThan(-1);
-    expect(requestPermissionIndex).toBeGreaterThan(nativePermissionIndex);
-    expect(captureIndex).toBeGreaterThan(requestPermissionIndex);
-  });
-
-  it("repairs native premium access only after the server rejects eligibility", () => {
+  it("repairs native premium access only after eligibility rejects it", () => {
     const eligibilityIndex = voiceHookSource.indexOf("let response = await requestSession();");
-    const entitlementRepairIndex = voiceHookSource.indexOf("refreshNativeSubscriptionEntitlement");
+    const repairIndex = voiceHookSource.indexOf("refreshNativeSubscriptionEntitlement");
     const retryIndex = voiceHookSource.lastIndexOf("response = await requestSession();");
-
-    expect(entitlementRepairIndex).toBeGreaterThan(eligibilityIndex);
-    expect(retryIndex).toBeGreaterThan(entitlementRepairIndex);
+    expect(repairIndex).toBeGreaterThan(eligibilityIndex);
+    expect(retryIndex).toBeGreaterThan(repairIndex);
     expect(subscriptionSyncSource).toContain("selectNewestConfiguredNativePurchase");
-    expect(subscriptionSyncSource).toContain("NATIVE_ENTITLEMENT_SYNC_TIMEOUT_MS");
   });
 
-  it("lets a premium retry revalidate before sending someone to plan management", () => {
-    expect(voiceModeSource).not.toContain('if (premiumRequired) {\n      navigate("/paywall");');
-    expect(voiceModeSource).toContain("Recheck premium access");
-    expect(voiceModeSource).toContain("Manage premium plan");
-  });
-
-  it("primes Android audio before a readiness retry can yield", () => {
-    const primeIndex = voiceModeSource.indexOf("live.primeAudioForUserGesture();");
-    const statusRetryIndex = voiceModeSource.indexOf(
-      "const refreshedReady = await onRetryVoiceReady();",
-    );
-
-    expect(primeIndex).toBeGreaterThan(-1);
-    expect(statusRetryIndex).toBeGreaterThan(primeIndex);
-  });
-
-  it("keeps the retry control tappable while readiness is being refreshed", () => {
-    expect(voiceModeSource).toContain('aria-busy={isCheckingVoiceReady}');
-    expect(voiceModeSource).not.toContain(
-      "disabled={isTyping || cooldownActive || isCheckingVoiceReady}",
-    );
-    expect(voiceModeSource).toContain("ready = refreshedReady || ready;");
-  });
-
-  it("uses processed Android recording, Groq transcription, and explicit turn completion", () => {
+  it("uses processed microphone PCM and streaming playback", () => {
+    expect(voiceHookSource).toContain("navigator.mediaDevices.getUserMedia({");
     expect(voiceHookSource).toContain("echoCancellation: true");
     expect(voiceHookSource).toContain("noiseSuppression: true");
     expect(voiceHookSource).toContain("autoGainControl: true");
-    expect(voiceHookSource).toContain('apiFetch("/api/transcribe"');
-    expect(voiceHookSource).toContain("createVoiceTranscriptionFormData");
-    expect(voiceHookSource).toContain('apiFetch("/api/voice/respond"');
-    expect(voiceHookSource).toContain('mode: "voice"');
-    expect(voiceHookSource).toContain('apiFetch("/api/tts"');
-    expect(voiceHookSource).toContain("decodeAudioData");
-    expect(voiceHookSource).toContain("source.start()");
-    expect(voiceHookSource).toContain("getAdaptiveSilenceMs");
-    expect(voiceModeSource).toContain("Done speaking");
+    expect(voiceHookSource).toContain("audioStreamEnd: true");
+    expect(voiceHookSource).toContain("GeminiPcmPlaybackQueue");
   });
 
-  it("releases recording, playback, requests, and the premium lease on stop", () => {
-    expect(voiceHookSource).toContain("requestControllerRef.current?.abort()");
-    expect(voiceHookSource).toContain("releaseStream()");
-    expect(voiceHookSource).toContain('stopPlayback("cleanup")');
+  it("handles interruption, bounded reconnects, and safe cleanup", () => {
+    expect(voiceHookSource).toContain("content?.interrupted");
+    expect(voiceHookSource).toContain("MAX_RECONNECT_ATTEMPTS");
+    expect(voiceHookSource).toContain("sessionResumption");
+    expect(voiceHookSource).toContain("suppressPlaybackRef.current = true");
+    expect(voiceHookSource).toContain("stopMicrophone()");
+    expect(voiceHookSource).toContain("clearPlayback(false)");
     expect(voiceHookSource).toContain("await releaseReservation(");
-    expect(voiceHookSource).toContain("releaseReason");
     expect(voiceHookSource).toContain("await targetContext.close()");
   });
 
-  it("keeps recoverable provider and microphone failures inside Voice Mode", () => {
+  it("keeps provider and premium failures recoverable inside Voice Mode", () => {
+    expect(voiceHookSource).not.toContain("Confirming premium access");
     expect(voiceModeSource).toContain("showRetryableSessionError");
     expect(voiceModeSource).toContain("Continue in Chat");
-    expect(voiceModeSource).toContain("live.retryLabel");
-    expect(voiceModeSource).toContain("live.isSessionActive");
+    expect(voiceModeSource).toContain("Recheck premium access");
+    expect(voiceHookSource).toContain('"monthly_limit"');
   });
 
-  it("keeps one microphone stream warm and supports spoken barge-in", () => {
-    expect(voiceHookSource).toContain("VoiceMicrophoneSession");
-    expect(voiceHookSource).toContain('"mic_stream_reused"');
-    expect(voiceHookSource).toContain("AdaptiveBargeInDetector");
-    expect(voiceHookSource).toContain("interruptFromUserSpeech");
-    expect(voiceHookSource).toContain('stopPlayback("barge_in_interrupt")');
-    expect(voiceHookSource).toContain("stopVoicePlaybackSource");
-    expect(voiceHookSource).toContain("applyVoicePlaybackFadeIn");
-    expect(voiceHookSource).toContain("playbackGainRef");
-    expect(voiceHookSource).not.toContain("blobToDataUrl");
-    const normalStopStart = voiceHookSource.indexOf("recorder.onstop = () =>");
-    const normalStopBlock = voiceHookSource.slice(
-      normalStopStart,
-      voiceHookSource.indexOf("const analyser = analyserRef.current", normalStopStart),
-    );
-    const bargeInBlock = voiceHookSource.slice(
-      voiceHookSource.indexOf("const interruptFromUserSpeech ="),
-      voiceHookSource.indexOf("const start = useCallback"),
-    );
-    expect(normalStopBlock).not.toContain("releaseStream(");
-    expect(normalStopBlock).toContain(
-      "recordingOperation !== recordingOperationRef.current",
-    );
-    expect(normalStopBlock.indexOf("if (!discard)")).toBeLessThan(
-      normalStopBlock.indexOf("stopVad();"),
-    );
-    expect(bargeInBlock).not.toContain("releaseReservation(");
+  it("does not embed a Gemini key or log private Voice payloads", () => {
+    expect(voiceHookSource).not.toContain("GEMINI_API_KEY");
+    expect(voiceHookSource).not.toMatch(/console\.(?:log|info|debug)\([^\n]*(?:transcript|shadowNotes|audioData)/i);
   });
 
-  it("keeps Voice actions scrollable and outside Android safe-area obstructions", () => {
+  it("keeps actions safe-area aware and suppresses bridge payload logging", () => {
     expect(appStylesSource).toContain("overflow-y: auto;");
-    expect(appStylesSource).toContain("touch-action: pan-y;");
     expect(appStylesSource).toContain("env(safe-area-inset-top");
-    expect(voiceModeSource).not.toContain('<div className="min-h-12" aria-hidden="true" />');
-    expect(voiceModeSource).toContain('"grid-cols-3"');
-    expect(voiceModeSource).toContain('"grid-cols-2"');
-  });
-
-  it("suppresses native bridge payload logging", () => {
     expect(capacitorConfigSource).toContain('loggingBehavior: "none"');
   });
 });

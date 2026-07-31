@@ -85,6 +85,10 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
     isSubscriptionResolved,
   } = useAuth();
   const location = useLocation();
+  // Temporary browser testing mode: keep subscription enforcement in the
+  // installed Capacitor apps, while letting signed-in web users exercise the
+  // main interface without being trapped by the native billing paywall.
+  const bypassPaymentOnWeb = !isNativePlatform();
   const hasActiveIdentity = Boolean(user);
   
   if (isLoading) {
@@ -100,6 +104,7 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (
+    !bypassPaymentOnWeb &&
     shouldWaitForSubscriptionResolution({
       hasCompletedOnboarding,
       isSubscriptionResolved,
@@ -111,7 +116,7 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   // Every completed-onboarding account must have a verified server entitlement
   // before entering the main experience. Billing is still completed on Android.
   if (shouldRedirectToPaywall({
-    hasCompletedOnboarding,
+    hasCompletedOnboarding: !bypassPaymentOnWeb && hasCompletedOnboarding,
     isSubscribed,
     pathname: location.pathname,
   })) {
@@ -121,7 +126,7 @@ const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   if (
     hasCompletedOnboarding &&
     (location.pathname === "/onboarding" ||
-      (location.pathname === "/paywall" && isSubscribed))
+      (location.pathname === "/paywall" && (isSubscribed || bypassPaymentOnWeb)))
   ) {
     return <Navigate to="/" replace />;
   }
