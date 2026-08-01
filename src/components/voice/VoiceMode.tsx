@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
+  Captions,
   CircleStop,
   LockKeyhole,
   Mic,
@@ -107,6 +108,7 @@ const STATE_DESCRIPTIONS: Record<VoiceState, string> = {
 const isVoiceMessage = (message: ConversationMessage) => message.source === "voice";
 const SHADOW_NOTE_PERSIST_INTERVAL_MS = 70_000;
 const SHADOW_NOTE_TIMEOUT_MS = 10_000;
+const VOICE_CAPTIONS_PREFERENCE_KEY = "bible-nova-voice-captions";
 
 export default function VoiceMode({
   userId,
@@ -131,6 +133,13 @@ export default function VoiceMode({
   const navigate = useNavigate();
   const isPerformanceMode = usePerformanceMode();
   const [cooldownNow, setCooldownNow] = useState(() => Date.now());
+  const [showCaptions, setShowCaptions] = useState(() => {
+    try {
+      return window.localStorage.getItem(VOICE_CAPTIONS_PREFERENCE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
   const persistTimerRef = useRef<number | null>(null);
   const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
   const exitPromiseRef = useRef<Promise<void> | null>(null);
@@ -411,6 +420,13 @@ export default function VoiceMode({
       ? apiStatusConnectionError || "Voice mode is temporarily unavailable. You can retry the connection or continue in Chat."
     : live.error || live.sessionNotice;
   const sessionNoticeIsError = Boolean(live.error) || (!isCheckingVoiceReady && !voiceReady);
+  const toggleCaptions = useCallback(() => {
+    setShowCaptions((visible) => {
+      const next = !visible;
+      try { window.localStorage.setItem(VOICE_CAPTIONS_PREFERENCE_KEY, String(next)); } catch { /* optional preference */ }
+      return next;
+    });
+  }, []);
 
   return (
     <div className="voice-mode relative flex min-h-0 flex-1 overflow-hidden bg-transparent">
@@ -459,6 +475,18 @@ export default function VoiceMode({
                   {STATE_DESCRIPTIONS[live.state]}
                 </p>
               </motion.div>
+
+              {showCaptions && live.caption?.text && (
+                <div
+                  className="voice-transcript mt-4 w-full max-w-[32rem] rounded-2xl border px-4 py-3 text-left"
+                  aria-live="polite"
+                >
+                  <p className="app-muted mb-1 text-[11px] font-semibold uppercase tracking-[0.12em]">
+                    {live.caption.speaker}
+                  </p>
+                  <p className="text-sm leading-relaxed sm:text-[15px]">{live.caption.text}</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -500,6 +528,17 @@ export default function VoiceMode({
           )}
 
           <div className={cn("voice-actions mt-4 w-full pb-safe", isShortPhone ? "pt-1" : "pt-2")}>
+            <div className="mb-2 flex justify-end">
+              <button
+                type="button"
+                onClick={toggleCaptions}
+                aria-pressed={showCaptions}
+                className="voice-captions-toggle touch-target app-secondary-button inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
+              >
+                <Captions className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>{showCaptions ? "Captions on" : "Captions"}</span>
+              </button>
+            </div>
             {showStartButton ? (
               <div className="flex w-full flex-col gap-2">
                 <button

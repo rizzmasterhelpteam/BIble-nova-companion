@@ -24,10 +24,11 @@ describe("Voice mode interface", () => {
     expect(voiceHookSource).not.toContain('apiFetch("/api/tts"');
   });
 
-  it("does not render caption controls, transcript cards, or language selection", () => {
-    expect(voiceModeSource).not.toContain("Captions");
-    expect(voiceModeSource).not.toContain("showCaptions");
-    expect(voiceModeSource).not.toContain("voice-transcript");
+  it("renders an optional, remembered caption control without language selection", () => {
+    expect(voiceModeSource).toContain("Captions");
+    expect(voiceModeSource).toContain("showCaptions");
+    expect(voiceModeSource).toContain("voice-transcript");
+    expect(voiceModeSource).toContain("bible-nova-voice-captions");
     expect(voiceModeSource).not.toContain("Voice language");
     expect(voiceModeSource).not.toContain("VOICE_LANGUAGE_OPTIONS");
   });

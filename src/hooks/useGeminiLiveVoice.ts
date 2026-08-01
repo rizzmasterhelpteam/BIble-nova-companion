@@ -144,6 +144,7 @@ export function useGeminiLiveVoice(options: Options) {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [inputLevel, setInputLevel] = useState(0);
   const [voiceUsage, setVoiceUsage] = useState<VoiceUsageSummary | null>(null);
+  const [caption, setCaption] = useState<{ speaker: "You" | "Bible Nova"; text: string } | null>(null);
   const [retryUntil, setRetryUntil] = useState<number | null>(null);
 
   const stateRef = useRef<VoiceState>("idle");
@@ -383,14 +384,16 @@ export function useGeminiLiveVoice(options: Options) {
           const inputText = content?.inputTranscription?.text || "";
           const outputText = content?.outputTranscription?.text || "";
           if (inputText) {
-            userTranscriptRef.current.append(inputText);
+            setCaption({ speaker: "You", text: userTranscriptRef.current.append(inputText) });
             transition("user-speaking");
             if (content?.inputTranscription?.finished) {
               finalizeUser();
               transition("thinking");
             }
           }
-          if (outputText) assistantTranscriptRef.current.append(outputText);
+          if (outputText) {
+            setCaption({ speaker: "Bible Nova", text: assistantTranscriptRef.current.append(outputText) });
+          }
           if (content?.interrupted) {
             suppressPlaybackRef.current = true;
             clearPlayback(true);
@@ -513,6 +516,7 @@ export function useGeminiLiveVoice(options: Options) {
       setError(null);
       setErrorCode(null);
       setRetryUntil(null);
+      setCaption(null);
       releasePromiseRef.current = null;
       transition("requesting-permission");
       try {
@@ -669,6 +673,7 @@ export function useGeminiLiveVoice(options: Options) {
     isSessionActive,
     inputLevel,
     voiceUsage,
+    caption,
     retryUntil,
     retryLabel: "Retry Voice",
     canRecover: isVoiceReservationRecoverable(reservation, userId),
