@@ -5,6 +5,7 @@ const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim().replace(/
 const shouldUseConfiguredApiBaseUrl = Boolean(configuredApiBaseUrl) && isNativePlatform();
 const NATIVE_API_CONFIGURATION_ERROR =
   "Server connection is not configured for this app build. Android builds require VITE_API_BASE_URL.";
+export const API_REQUEST_TIMEOUT_MS = 30_000;
 let cachedAccessToken: string | null | undefined;
 let accessTokenRequest: Promise<string | null> | null = null;
 
@@ -61,8 +62,25 @@ export const apiFetch = async (path: string, init: RequestInit = {}) => {
     }
   }
 
-  return fetch(getApiUrl(path), {
-    ...init,
-    headers,
-  });
+  const controller = new AbortController();
+  const callerSignal = init.signal;
+  const forwardAbort = () => controller.abort(callerSignal?.reason);
+  if (callerSignal) {
+    if (callerSignal.aborted) forwardAbort();
+    else callerSignal.addEventListener("abort", forwardAbort, { once: true });
+  }
+  const timeoutId = globalThis.setTimeout(() => {
+    controller.abort(new Error("The server request timed out."));
+  }, API_REQUEST_TIMEOUT_MS);
+
+  try {
+    return await fetch(getApiUrl(path), {
+      ...init,
+      signal: controller.signal,
+      headers,
+    });
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+    callerSignal?.removeEventListener("abort", forwardAbort);
+  }
 };

@@ -5,15 +5,10 @@ import {
   getSubscriptionAccessStatus,
   requireAuthenticatedRequest,
 } from "../../server-security.js";
-
-const setCorsHeaders = (res: any) => {
-  res.setHeader?.("Access-Control-Allow-Origin", "*");
-  res.setHeader?.("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization");
-};
+import { setApiCorsHeaders } from "../../server-cors.js";
 
 export default async function handler(req: any, res: any) {
-  setCorsHeaders(res);
+  if (!setApiCorsHeaders(req, res, "GET, POST, OPTIONS", "Content-Type, Authorization")) return;
   res.setHeader?.("Cache-Control", "private, no-store, no-cache, max-age=0");
   res.setHeader?.("Pragma", "no-cache");
 

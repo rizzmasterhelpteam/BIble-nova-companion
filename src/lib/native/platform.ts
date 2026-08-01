@@ -1,5 +1,7 @@
-import { Capacitor } from "@capacitor/core";
+import { platform } from "../../platform";
 
-export const isNativePlatform = () => Capacitor.isNativePlatform();
+export const isNativePlatform = () => platform.isNative;
 
-export const getNativePlatform = () => Capacitor.getPlatform();
+export const getNativePlatform = () => platform.kind;
+
+export const getPlatformAdapter = () => platform;

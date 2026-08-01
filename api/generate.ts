@@ -1,11 +1,6 @@
 import { generatePrayer } from "../server-api.js";
 import { assertStringLength, enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../server-security.js";
-
-const setCorsHeaders = (res: any) => {
-  res.setHeader?.("Access-Control-Allow-Origin", "*");
-  res.setHeader?.("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization");
-};
+import { setApiCorsHeaders } from "../server-cors.js";
 
 const getBody = (req: any) => {
   if (typeof req.body === "string") {
@@ -30,7 +25,7 @@ const getClientErrorMessage = (error: unknown) => {
 };
 
 export default async function handler(req: any, res: any) {
-  setCorsHeaders(res);
+  if (!setApiCorsHeaders(req, res, "POST, OPTIONS", "Content-Type, Authorization")) return;
 
   if (req.method === "OPTIONS") {
     res.status(204).end();

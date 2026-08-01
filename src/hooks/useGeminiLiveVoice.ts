@@ -6,7 +6,7 @@ import {
   getGeminiLiveConnectConfig,
 } from "../../gemini-live-config";
 import { apiFetch } from "../lib/apiClient";
-import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
+import { getNativePlatform, getPlatformAdapter } from "../lib/native/platform";
 import {
   createVoiceReservation,
   isVoiceReservationRecoverable,
@@ -692,7 +692,7 @@ export function useGeminiLiveVoice(options: Options) {
           "Voice session request timed out.",
         );
         let response = await requestSession();
-        if (response.status === 403 && isNativePlatform() && getNativePlatform() === "android") {
+        if (response.status === 403 && getPlatformAdapter().isNative && getNativePlatform() === "android") {
           const { refreshNativeSubscriptionEntitlement } = await import("../lib/native/subscriptionSync");
           if (await refreshNativeSubscriptionEntitlement().catch(() => false)) {
             response = await requestSession();
@@ -779,46 +779,35 @@ export function useGeminiLiveVoice(options: Options) {
   }, [provisionAndConnect, start, stop, transition, userId]);
 
   useEffect(() => {
-    if (!isNativePlatform()) return;
-    let disposed = false;
-    let listener: { remove: () => Promise<void> } | null = null;
-    void import("@capacitor/app")
-      .then(({ App }) => App.addListener("appStateChange", ({ isActive }) => {
-        appActiveRef.current = isActive;
-        if (!activeRef.current) return;
-        if (!isActive) {
-          mutedRef.current = true;
-          sessionRef.current?.sendRealtimeInput({ audioStreamEnd: true });
-          stopMicrophone();
-          void contextRef.current?.suspend();
-          return;
-        }
-        void (async () => {
-          await contextRef.current?.resume();
-          const stream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-          });
-          streamRef.current = stream;
-          mutedRef.current = false;
-          setIsMuted(false);
-          transition("reconnecting");
-          await provisionAndConnect(providerHandleRef.current);
-          refreshIdleTimeout();
-        })().catch(async () => {
-          setError("Voice could not resume after the app returned.");
-          setErrorCode("connection_failed");
-          await stop("error", "fatal_error");
+    const platform = getPlatformAdapter();
+    if (!platform.isNative) return;
+    return platform.appState.subscribe(({ active: isActive }) => {
+      appActiveRef.current = isActive;
+      if (!activeRef.current) return;
+      if (!isActive) {
+        mutedRef.current = true;
+        sessionRef.current?.sendRealtimeInput({ audioStreamEnd: true });
+        stopMicrophone();
+        void contextRef.current?.suspend();
+        return;
+      }
+      void (async () => {
+        await contextRef.current?.resume();
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
         });
-      }))
-      .then((handle) => {
-        if (disposed) void handle.remove();
-        else listener = handle;
-      })
-      .catch(() => undefined);
-    return () => {
-      disposed = true;
-      if (listener) void listener.remove();
-    };
+        streamRef.current = stream;
+        mutedRef.current = false;
+        setIsMuted(false);
+        transition("reconnecting");
+        await provisionAndConnect(providerHandleRef.current);
+        refreshIdleTimeout();
+      })().catch(async () => {
+        setError("Voice could not resume after the app returned.");
+        setErrorCode("connection_failed");
+        await stop("error", "fatal_error");
+      });
+    });
   }, [provisionAndConnect, refreshIdleTimeout, stop, stopMicrophone, transition]);
 
   useEffect(() => () => { void stop("ended", "component_unmount"); }, [stop]);

@@ -16,15 +16,10 @@ import {
   normalizeVoiceAudioMimeType,
 } from "../src/lib/voiceTranscription.js";
 import { normalizeVoiceLanguage } from "../src/lib/voiceLanguage.js";
+import { setApiCorsHeaders } from "../server-cors.js";
 
 const API_BUILD_ID = "2026-07-29-multipart-transcription";
 const MAX_MULTIPART_BODY_BYTES = MAX_VOICE_AUDIO_BYTES + 128 * 1024;
-
-const setCorsHeaders = (res: any) => {
-  res.setHeader?.("Access-Control-Allow-Origin", "*");
-  res.setHeader?.("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Request-Id");
-};
 
 const getBody = (req: any) => {
   if (typeof req.body === "string") {
@@ -168,7 +163,7 @@ export default async function handler(req: any, res: any) {
     timings.total = Date.now() - startedAt;
     res.setHeader?.("Server-Timing", formatServerTiming(timings));
   };
-  setCorsHeaders(res);
+  if (!setApiCorsHeaders(req, res, "POST, OPTIONS", "Content-Type, Authorization, X-Client-Request-Id")) return;
   res.setHeader?.("X-Bible-Nova-Api-Build", API_BUILD_ID);
   res.setHeader?.("Cache-Control", "private, no-store");
   if (requestId) res.setHeader?.("X-Client-Request-Id", requestId);

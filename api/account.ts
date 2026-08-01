@@ -1,11 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../server-security.js";
-
-const setCorsHeaders = (res: any) => {
-  res.setHeader?.("Access-Control-Allow-Origin", "*");
-  res.setHeader?.("Access-Control-Allow-Methods", "DELETE, OPTIONS");
-  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization");
-};
+import { setApiCorsHeaders } from "../server-cors.js";
 
 const getClientErrorMessage = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
@@ -61,7 +56,7 @@ const deleteSupabaseAccount = async (authorizationHeader?: string) => {
 };
 
 export default async function handler(req: any, res: any) {
-  setCorsHeaders(res);
+  if (!setApiCorsHeaders(req, res, "DELETE, OPTIONS", "Content-Type, Authorization")) return;
 
   if (req.method === "OPTIONS") {
     res.status(204).end();

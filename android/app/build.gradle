@@ -7,7 +7,7 @@ android {
         applicationId "com.biblenovacompanion.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // Increment for every Android distribution so devices receive the
+        // Increment for Android distribution changes so devices receive the
         // bundled Capacitor web changes as an app update.
         versionCode 11
         versionName "1.1.8"

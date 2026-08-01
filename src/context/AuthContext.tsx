@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import type { Session, User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { apiFetch, setApiAccessToken } from "../lib/apiClient";
-import { isNativePlatform } from "../lib/native/platform";
+import { getPlatformAdapter } from "../lib/native/platform";
 import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
 import { startup } from "../lib/startup";
 import { normalizeShadowNotes } from "../lib/shadowMemory";
@@ -293,7 +293,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.warn("Could not verify authoritative subscription access:", error);
       }
 
-      if (!hasEntitlement && isNativePlatform()) {
+      if (!hasEntitlement && getPlatformAdapter().isNative) {
         try {
           const { refreshNativeSubscriptionEntitlement } = await import(
             "../lib/native/subscriptionSync"
@@ -463,9 +463,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     let removeAppStateListener: (() => void) | undefined;
-    if (isNativePlatform()) {
-      void import("@capacitor/app").then(({ App }) => App.addListener("appStateChange", ({ isActive }) => {
-        if (!isActive) return;
+    if (getPlatformAdapter().isNative) {
+      removeAppStateListener = getPlatformAdapter().appState.subscribe(({ active }) => {
+        if (!active) return;
 
         void supabase.auth
           .getSession()
@@ -481,17 +481,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           .catch((error) => {
             console.warn("Could not refresh session while syncing subscriptions:", error);
           });
-      })).then((listener) => {
-        if (isDisposed) {
-          void listener.remove();
-          return;
-        }
-
-        removeAppStateListener = () => {
-          void listener.remove();
-        };
-      }).catch((error) => {
-        console.warn("Could not register the native session listener:", error);
       });
     }
 

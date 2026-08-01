@@ -4,8 +4,10 @@ import App from './App.tsx';
 import './index.css';
 import { restoreWebStorageFromPreferences } from './lib/webStorage';
 import { startup } from './lib/startup';
+import { registerWebApp } from './lib/webApp';
 
 startup.mark("main-evaluated");
+registerWebApp();
 
 const renderApp = () => {
   const rootElement = document.getElementById('root');

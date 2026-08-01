@@ -1,0 +1,19 @@
+{
+  "name": "Bible Nova Companion",
+  "short_name": "Bible Nova",
+  "description": "A warm, practical AI companion for reflection, prayer, and everyday support.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#05070b",
+  "theme_color": "#05070b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

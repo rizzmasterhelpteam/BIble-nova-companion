@@ -18,6 +18,7 @@ import {
   requireAuthenticatedRequest,
 } from "../../server-security.js";
 import { getVoiceSessionConfig } from "../../voice-config.js";
+import { setApiCorsHeaders } from "../../server-cors.js";
 
 const MIN_RECOVERY_REMAINING_SECONDS = 2 * 60;
 const LIVE_TOKEN_NEW_SESSION_WINDOW_MS = 60_000;
@@ -33,15 +34,6 @@ const RELEASE_REASONS = new Set([
   "fatal_error",
   "stale_recovery",
 ]);
-
-const setCorsHeaders = (res: any) => {
-  res.setHeader?.("Access-Control-Allow-Origin", "*");
-  res.setHeader?.("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader?.(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-Client-Request-Id",
-  );
-};
 
 const getBody = (req: any) => {
   if (typeof req.body === "string") {
@@ -73,7 +65,7 @@ const hashUserId = (userId: string) =>
 export default async function handler(req: any, res: any) {
   const requestId = String(req.headers?.["x-client-request-id"] || "").slice(0, 80);
   const startedAt = Date.now();
-  setCorsHeaders(res);
+  if (!setApiCorsHeaders(req, res, "POST, OPTIONS", "Content-Type, Authorization, X-Client-Request-Id")) return;
   res.setHeader?.("Cache-Control", "private, no-store");
   if (requestId) res.setHeader?.("X-Client-Request-Id", requestId);
 

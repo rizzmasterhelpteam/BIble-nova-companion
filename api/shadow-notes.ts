@@ -14,17 +14,9 @@ import {
   HttpError,
   requireAuthenticatedRequest,
 } from "../server-security.js";
+import { setApiCorsHeaders } from "../server-cors.js";
 
 const API_BUILD_ID = "2026-07-29-shadow-memory-consent";
-
-const setCorsHeaders = (res: any) => {
-  res.setHeader?.("Access-Control-Allow-Origin", "*");
-  res.setHeader?.("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
-  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control");
-  res.setHeader?.("Cache-Control", "private, no-store, no-cache, max-age=0, must-revalidate");
-  res.setHeader?.("Pragma", "no-cache");
-  res.setHeader?.("Expires", "0");
-};
 
 const getBody = (req: any) => {
   if (typeof req.body === "string") {
@@ -39,7 +31,10 @@ const getBody = (req: any) => {
 };
 
 export default async function handler(req: any, res: any) {
-  setCorsHeaders(res);
+  if (!setApiCorsHeaders(req, res, "GET, POST, PUT, OPTIONS", "Content-Type, Authorization, Cache-Control")) return;
+  res.setHeader?.("Cache-Control", "private, no-store, no-cache, max-age=0, must-revalidate");
+  res.setHeader?.("Pragma", "no-cache");
+  res.setHeader?.("Expires", "0");
   res.setHeader?.("X-Bible-Nova-Api-Build", API_BUILD_ID);
 
   if (req.method === "OPTIONS") {

@@ -1,10 +1,5 @@
 import { getApiStatus } from "../server-api.js";
-
-const setCorsHeaders = (res: any) => {
-  res.setHeader?.("Access-Control-Allow-Origin", "*");
-  res.setHeader?.("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization, Cache-Control");
-};
+import { setApiCorsHeaders } from "../server-cors.js";
 
 const setStatusHeaders = (res: any) => {
   res.setHeader?.("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -13,7 +8,7 @@ const setStatusHeaders = (res: any) => {
 };
 
 export default function handler(req: any, res: any) {
-  setCorsHeaders(res);
+  if (!setApiCorsHeaders(req, res, "GET, OPTIONS", "Content-Type, Authorization, Cache-Control")) return;
   setStatusHeaders(res);
 
   if (req.method === "OPTIONS") {

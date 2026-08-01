@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { isNativePlatform } from "../lib/native/platform";
+import { getPlatformAdapter } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
 import { storageGet, storageSet } from "../lib/webStorage";
 
@@ -38,10 +38,8 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
     if (now - lastHapticAtRef.current < HAPTIC_THROTTLE_MS) return;
     lastHapticAtRef.current = now;
 
-    if (isNativePlatform()) {
-      void import("@capacitor/haptics")
-        .then(({ Haptics, ImpactStyle }) => Haptics.impact({ style: ImpactStyle.Light }))
-        .catch(() => undefined);
+    if (getPlatformAdapter().isNative) {
+      void getPlatformAdapter().haptics.impact("LIGHT").catch(() => undefined);
       return;
     }
 
@@ -53,10 +51,8 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
     void nativeStorage.set(STORAGE_KEY, String(enabled)).catch(() => undefined);
     setHapticsEnabledState(enabled);
     if (enabled) {
-      if (isNativePlatform()) {
-        void import("@capacitor/haptics")
-          .then(({ Haptics, ImpactStyle }) => Haptics.impact({ style: ImpactStyle.Light }))
-          .catch(() => undefined);
+      if (getPlatformAdapter().isNative) {
+        void getPlatformAdapter().haptics.impact("LIGHT").catch(() => undefined);
       } else if (canVibrate()) {
         navigator.vibrate(12);
       }
@@ -64,7 +60,7 @@ export function HapticsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!isNativePlatform()) return;
+    if (!getPlatformAdapter().isNative) return;
     nativeStorage
       .get(STORAGE_KEY)
       .then((stored) => {
