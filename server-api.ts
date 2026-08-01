@@ -9,7 +9,7 @@ import {
 } from "./chat-api.js";
 import {
   normalizeShadowNotes,
-} from "./src/lib/shadowMemory";
+} from "./src/lib/shadowMemory.js";
 import {
   getVoiceAudioFilename,
   isSupportedVoiceAudioMimeType,

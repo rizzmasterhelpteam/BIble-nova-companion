@@ -2,12 +2,12 @@ import {
   MAX_SHADOW_NOTES_CHARS,
   normalizeShadowNotes,
   SHADOW_MEMORY_SECTIONS,
-} from "./src/lib/shadowMemory";
+} from "./src/lib/shadowMemory.js";
 import {
   getVoiceLanguageInstruction,
   normalizeVoiceLanguage,
   type VoiceLanguage,
-} from "./src/lib/voiceLanguage";
+} from "./src/lib/voiceLanguage.js";
 
 export type ChatMessage = {
   role: "user" | "assistant" | "ai" | "model" | "system";
@@ -23,7 +23,7 @@ export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
 export const DEFAULT_GROQ_FALLBACK_MODEL = "openai/gpt-oss-20b";
 const MAX_CONTEXT_MESSAGES = 12;
 const MAX_MESSAGE_CHARS = 2_000;
-export { MAX_SHADOW_NOTES_CHARS, normalizeShadowNotes } from "./src/lib/shadowMemory";
+export { MAX_SHADOW_NOTES_CHARS, normalizeShadowNotes } from "./src/lib/shadowMemory.js";
 const CHAT_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_TOKENS = 420;
 const VOICE_RESPONSE_BUDGETS = {

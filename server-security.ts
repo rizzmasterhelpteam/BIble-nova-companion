@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { normalizeShadowNotes } from "./src/lib/shadowMemory";
-import type { VoiceUsageSummary } from "./src/types/live";
+import { normalizeShadowNotes } from "./src/lib/shadowMemory.js";
+import type { VoiceUsageSummary } from "./src/types/live.js";
 
 type RequestLike = {
   headers?: Record<string, string | string[] | undefined>;
