@@ -29,6 +29,7 @@ describe("Voice mode interface", () => {
     expect(voiceModeSource).toContain("showCaptions");
     expect(voiceModeSource).toContain("voice-transcript");
     expect(voiceModeSource).toContain("bible-nova-voice-captions");
+    expect(voiceModeSource).toContain("truncate whitespace-nowrap");
     expect(voiceModeSource).not.toContain("Voice language");
     expect(voiceModeSource).not.toContain("VOICE_LANGUAGE_OPTIONS");
   });

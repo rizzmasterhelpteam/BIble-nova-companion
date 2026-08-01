@@ -478,13 +478,15 @@ export default function VoiceMode({
 
               {showCaptions && live.caption?.text && (
                 <div
-                  className="voice-transcript mt-4 w-full max-w-[32rem] rounded-2xl border px-4 py-3 text-left"
+                  className="voice-transcript mt-4 flex w-full max-w-[32rem] items-center gap-2 rounded-xl border px-3 py-2 text-left"
                   aria-live="polite"
                 >
-                  <p className="app-muted mb-1 text-[11px] font-semibold uppercase tracking-[0.12em]">
+                  <span className="app-muted shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em]">
                     {live.caption.speaker}
+                  </span>
+                  <p className="min-w-0 truncate whitespace-nowrap text-sm leading-5 sm:text-[15px]">
+                    {live.caption.text}
                   </p>
-                  <p className="text-sm leading-relaxed sm:text-[15px]">{live.caption.text}</p>
                 </div>
               )}
             </div>

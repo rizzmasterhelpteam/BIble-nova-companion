@@ -76,6 +76,8 @@ type TokenResponse = {
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_DELAYS_MS = [400, 1_000, 2_200];
 const INPUT_LEVEL_UPDATE_INTERVAL_MS = 90;
+const SPEECH_PEAK_THRESHOLD = 0.015;
+const LOCAL_SILENCE_TURN_END_MS = 1_100;
 
 const safeError = (error: unknown) => {
   if (error instanceof DOMException && error.name === "NotAllowedError") {
@@ -165,6 +167,9 @@ export function useGeminiLiveVoice(options: Options) {
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const providerHandleRef = useRef<string | null>(null);
+  const lastSpeechAtRef = useRef(0);
+  const speechSeenRef = useRef(false);
+  const localTurnEndedRef = useRef(false);
   const connectionGenerationRef = useRef(0);
   const tokenRef = useRef<string | null>(null);
   const assistantMessageIdRef = useRef<string | null>(null);
@@ -318,6 +323,23 @@ export function useGeminiLiveVoice(options: Options) {
       connectedSession.sendRealtimeInput({
         audio: { data: bytesToBase64(bytes), mimeType: `audio/pcm;rate=${GEMINI_INPUT_SAMPLE_RATE}` },
       });
+
+      const now = performance.now();
+      if (peak >= SPEECH_PEAK_THRESHOLD) {
+        speechSeenRef.current = true;
+        localTurnEndedRef.current = false;
+        lastSpeechAtRef.current = now;
+      } else if (
+        speechSeenRef.current &&
+        !localTurnEndedRef.current &&
+        now - lastSpeechAtRef.current >= LOCAL_SILENCE_TURN_END_MS
+      ) {
+        // Gemini VAD normally closes the turn. This local fallback prevents a
+        // silent Android/WebView stream from leaving the assistant waiting.
+        localTurnEndedRef.current = true;
+        connectedSession.sendRealtimeInput({ audioStreamEnd: true });
+        transition("thinking");
+      }
     };
 
     let processor: AudioWorkletNode | ScriptProcessorNode | null = null;
@@ -387,6 +409,7 @@ export function useGeminiLiveVoice(options: Options) {
             setCaption({ speaker: "You", text: userTranscriptRef.current.append(inputText) });
             transition("user-speaking");
             if (content?.inputTranscription?.finished) {
+              localTurnEndedRef.current = true;
               finalizeUser();
               transition("thinking");
             }
@@ -517,6 +540,9 @@ export function useGeminiLiveVoice(options: Options) {
       setErrorCode(null);
       setRetryUntil(null);
       setCaption(null);
+      speechSeenRef.current = false;
+      localTurnEndedRef.current = false;
+      lastSpeechAtRef.current = 0;
       releasePromiseRef.current = null;
       transition("requesting-permission");
       try {
@@ -598,6 +624,7 @@ export function useGeminiLiveVoice(options: Options) {
   }, [transition]);
 
   const finishTurn = useCallback(() => {
+    localTurnEndedRef.current = true;
     sessionRef.current?.sendRealtimeInput({ audioStreamEnd: true });
     finalizeUser();
     transition("thinking");
