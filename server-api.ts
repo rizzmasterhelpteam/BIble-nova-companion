@@ -1,4 +1,10 @@
 import { createHash } from "node:crypto";
+import {
+  mapGooglePlaySubscriptionState,
+  selectAllowedGooglePlayLineItem,
+  stateUnlocksPremium,
+  type EntitlementState,
+} from "./server-subscription-security.js";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { JWT } from "google-auth-library";
 import {
@@ -160,13 +166,16 @@ type UserSubscriptionMetadata = {
   orderId?: string;
   linkedAt?: string;
   platform?: "android" | "ios";
+  accessActive?: boolean;
 };
 
 type VerifiedGooglePlaySubscription = {
   productId: string;
   planId?: string;
+  offerId?: string;
   orderId?: string;
-  expiryTime: string;
+  expiryTime?: string;
+  status: EntitlementState;
 };
 
 type GooglePlayErrorResponse = {
@@ -246,9 +255,8 @@ const verifyGooglePlaySubscription = async (
   payload: NativeSubscriptionSyncPayload,
 ): Promise<VerifiedGooglePlaySubscription> => {
   const purchaseToken = normalizeOptionalString(payload.purchaseToken);
-  const productId = normalizeOptionalString(payload.productId);
-  if (!purchaseToken || !productId) {
-    throw new Error("A Google Play purchase token and product ID are required for verification.");
+  if (!purchaseToken) {
+    throw new Error("A Google Play purchase token is required for verification.");
   }
 
   const credentials = getGooglePlayServiceAccount();
@@ -273,7 +281,7 @@ const verifyGooglePlaySubscription = async (
       productId?: string;
       expiryTime?: string;
       latestSuccessfulOrderId?: string;
-      offerDetails?: { basePlanId?: string };
+      offerDetails?: { basePlanId?: string; offerId?: string };
     }>;
   } & GooglePlayErrorResponse;
 
@@ -285,7 +293,7 @@ const verifyGooglePlaySubscription = async (
       reason,
       message: data.error?.message?.slice(0, 240),
       packageName: GOOGLE_PLAY_PACKAGE_NAME,
-      productId,
+      clientProductHintPresent: Boolean(normalizeOptionalString(payload.productId)),
     });
 
     if (response.status === 401 || response.status === 403) {
@@ -300,14 +308,14 @@ const verifyGooglePlaySubscription = async (
     throw new Error("Google Play rejected this purchase during verification.");
   }
 
-  const lineItem = data.lineItems?.find((item) => item.productId === productId);
+  const lineItem = selectAllowedGooglePlayLineItem(data.lineItems || []);
+  const productId = lineItem.productId!;
   const expiryTime = lineItem?.expiryTime;
   const expiry = expiryTime ? Date.parse(expiryTime) : NaN;
-  const allowedState =
-    data.subscriptionState === "SUBSCRIPTION_STATE_ACTIVE" ||
-    data.subscriptionState === "SUBSCRIPTION_STATE_IN_GRACE_PERIOD";
+  const status = mapGooglePlaySubscriptionState(data.subscriptionState);
 
-  if (!lineItem || !expiryTime || !Number.isFinite(expiry) || expiry <= Date.now() || !allowedState) {
+  if ((status === "active" || status === "grace_period" || status === "canceled") &&
+    (!expiryTime || !Number.isFinite(expiry) || expiry <= Date.now())) {
     throw new Error("This Google Play subscription is not active.");
   }
 
@@ -357,8 +365,10 @@ const verifyGooglePlaySubscription = async (
   return {
     productId,
     planId: verifiedPlanId,
+    offerId: lineItem.offerDetails?.offerId,
     orderId: verifiedOrderId,
     expiryTime,
+    status,
   };
 };
 
@@ -925,10 +935,6 @@ export async function syncNativeSubscription(
   const purchaseToken = normalizeOptionalString(payload.purchaseToken);
   const platform = payload.platform === "ios" ? "ios" : "android";
 
-  if (!productId) {
-    throw new Error("Native subscription sync requires a product ID.");
-  }
-
   if (!purchaseToken) {
     throw new Error("Native subscription sync requires a purchase token.");
   }
@@ -969,7 +975,7 @@ export async function syncNativeSubscription(
 
   const linkedAt = new Date().toISOString();
   const nextSubscription: UserSubscriptionMetadata = {
-    status: "active",
+    status: verifiedPurchase.status,
     source: "native_google_play",
     productId: verifiedPurchase.productId,
     planId: verifiedPurchase.planId,
@@ -977,14 +983,15 @@ export async function syncNativeSubscription(
     linkedAt,
     platform,
     trialEndsAt: verifiedPurchase.expiryTime,
+    accessActive: stateUnlocksPremium(verifiedPurchase.status, verifiedPurchase.expiryTime),
   };
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const purchaseTokenHash = createHash("sha256").update(purchaseToken).digest("hex");
-  const { data: entitlementLinked, error: entitlementError } = await adminClient.rpc(
-    "link_subscription_entitlement",
+  const { data: entitlementResult, error: entitlementError } = await adminClient.rpc(
+    "link_subscription_entitlement_authoritative",
     {
       p_user_id: data.user.id,
       p_platform: platform,
@@ -992,28 +999,38 @@ export async function syncNativeSubscription(
       p_base_plan_id: verifiedPurchase.planId || "",
       p_order_id: verifiedPurchase.orderId || "",
       p_purchase_token_hash: purchaseTokenHash,
-      p_status: "active",
+      p_status: verifiedPurchase.status,
       p_expiry_time: verifiedPurchase.expiryTime,
       p_verified_at: linkedAt,
     },
   );
 
-  if (entitlementError || entitlementLinked !== true) {
+  const entitlement = Array.isArray(entitlementResult) ? entitlementResult[0] : entitlementResult;
+  if (entitlementError || !entitlement?.status) {
     throw new Error(entitlementError?.message || "Could not persist the verified subscription entitlement.");
   }
+
+  const authoritativeSubscription: UserSubscriptionMetadata = {
+    ...nextSubscription,
+    status: entitlement.status,
+    productId: entitlement.product_id,
+    planId: entitlement.base_plan_id || undefined,
+    orderId: entitlement.order_id || undefined,
+    trialEndsAt: entitlement.expiry_time || undefined,
+    accessActive: stateUnlocksPremium(entitlement.status, entitlement.expiry_time),
+  };
 
   const { error: updateError } = await adminClient.auth.admin.updateUserById(data.user.id, {
     app_metadata: {
       ...(data.user.app_metadata || {}),
-      subscription: nextSubscription,
+      subscription: authoritativeSubscription,
     },
   });
 
-  if (updateError) {
-    throw new Error(updateError.message);
-  }
-
-  return nextSubscription;
+  return {
+    ...authoritativeSubscription,
+    ...(updateError ? { metadataWarning: "Entitlement linked; profile metadata refresh is pending." } : {}),
+  };
 }
 
 export function getNativeSubscriptionClientErrorMessage(error: unknown) {

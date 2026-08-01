@@ -65,7 +65,7 @@ describe("native subscription entitlement sync", () => {
       },
     ] as never);
     vi.mocked(apiFetch).mockResolvedValue(
-      new Response(JSON.stringify({ subscription: { status: "active" } }), { status: 200 }),
+      new Response(JSON.stringify({ subscription: { accessActive: true } }), { status: 200 }),
     );
 
     await expect(refreshNativeSubscriptionEntitlement()).resolves.toBe(true);
@@ -93,5 +93,17 @@ describe("native subscription entitlement sync", () => {
       "No active subscriptions were found to restore.",
     );
     expect(apiFetch).not.toHaveBeenCalled();
+  });
+
+  it("does not report premium repair for an authoritative non-active state", async () => {
+    vi.mocked(restorePurchases).mockResolvedValue([{
+      productIdentifier: "biblenova",
+      purchaseToken: "held-purchase-token",
+    }] as never);
+    vi.mocked(apiFetch).mockResolvedValue(new Response(JSON.stringify({
+      subscription: { accessActive: false },
+    }), { status: 200 }));
+
+    await expect(refreshNativeSubscriptionEntitlement()).resolves.toBe(false);
   });
 });
