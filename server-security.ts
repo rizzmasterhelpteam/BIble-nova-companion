@@ -200,15 +200,16 @@ export const acquireVoiceSessionLease = async (
   allowPaymentBypass = false,
 ) => {
   const client = getSupabaseAdminClient();
-  const { data, error } = await client.rpc("acquire_voice_session_lease", {
+  const params = {
     p_user_id: userId,
     p_max_minutes: maxMinutes,
     p_daily_minutes: dailyMinutes,
     p_monthly_minutes: monthlyMinutes,
     p_reset_offset_minutes: resetOffsetMinutes,
     p_handle_hash: handleHash,
-    p_allow_payment_bypass: allowPaymentBypass,
-  });
+    ...(allowPaymentBypass ? { p_allow_payment_bypass: true } : {}),
+  };
+  const { data, error } = await client.rpc("acquire_voice_session_lease", params);
   if (error) {
     const message = error.message.toLowerCase();
     if (message.includes("premium subscription")) {
@@ -297,15 +298,16 @@ export const getVoiceSessionAvailability = async (
   allowPaymentBypass = false,
 ): Promise<VoiceAvailability> => {
   const client = getSupabaseAdminClient();
-  const { data, error } = await client.rpc("get_voice_session_availability", {
+  const params = {
     p_user_id: userId,
     p_max_minutes: maxMinutes,
     p_daily_minutes: dailyMinutes,
     p_monthly_minutes: monthlyMinutes,
     p_reset_offset_minutes: resetOffsetMinutes,
     p_handle_hash: handleHash,
-    p_allow_payment_bypass: allowPaymentBypass,
-  });
+    ...(allowPaymentBypass ? { p_allow_payment_bypass: true } : {}),
+  };
+  const { data, error } = await client.rpc("get_voice_session_availability", params);
   if (error) {
     console.error("Voice availability check failed:", error.message);
     throw new HttpError("Voice eligibility is temporarily unavailable.", 503);
