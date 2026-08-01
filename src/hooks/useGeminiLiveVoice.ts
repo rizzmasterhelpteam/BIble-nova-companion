@@ -20,7 +20,11 @@ import {
   resampleFloat32,
 } from "../lib/geminiLiveAudio";
 import { LiveCaptionController, type LiveCaption } from "../lib/geminiLiveCaptions";
-import { createCurrentSessionRouter, withOperationTimeout } from "../lib/voiceConnectionUtils";
+import {
+  closeLateSession,
+  createCurrentSessionRouter,
+  withOperationTimeout,
+} from "../lib/voiceConnectionUtils";
 import type {
   ConversationMessage,
   VoicePlaybackMetadata,
@@ -494,8 +498,7 @@ export function useGeminiLiveVoice(options: Options) {
           const update = message.sessionResumptionUpdate;
           if (update?.newHandle) providerHandleRef.current = update.newHandle;
           if (message.goAway) {
-            transition("reconnecting");
-            try { sessionRef.current?.close(); } catch { /* reconnect below */ }
+            scheduleReconnect();
             return;
           }
           const content = message.serverContent;
@@ -574,12 +577,31 @@ export function useGeminiLiveVoice(options: Options) {
         },
       },
     });
-    const connectedSession = await withOperationTimeout(
-      connectOperation,
-      LIVE_CONNECT_TIMEOUT_MS,
-      "Voice connection timed out.",
-    );
+    let timedOutOrCancelled = false;
+    void connectOperation.then((lateSession) => {
+      closeLateSession(lateSession, () => (
+        !timedOutOrCancelled &&
+        activeRef.current &&
+        connectionGeneration === connectionGenerationRef.current
+      ));
+    }).catch(() => undefined);
+
+    let connectedSession: Session;
+    try {
+      connectedSession = await withOperationTimeout(
+        connectOperation,
+        LIVE_CONNECT_TIMEOUT_MS,
+        "Voice connection timed out.",
+      );
+    } catch (error) {
+      timedOutOrCancelled = true;
+      if (connectionGeneration === connectionGenerationRef.current) {
+        connectionGenerationRef.current += 1;
+      }
+      throw error;
+    }
     if (!opened || !activeRef.current || connectionGeneration !== connectionGenerationRef.current) {
+      timedOutOrCancelled = true;
       connectedSession.close();
       throw new Error("Voice connection did not open.");
     }

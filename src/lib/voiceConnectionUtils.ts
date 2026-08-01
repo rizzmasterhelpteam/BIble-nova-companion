@@ -17,6 +17,15 @@ export const createCurrentSessionRouter = <T extends RealtimeInputSession>(
   },
 });
 
+export const closeLateSession = <T extends { close: () => void }>(
+  session: T,
+  isStillCurrent: () => boolean,
+) => {
+  if (isStillCurrent()) return false;
+  try { session.close(); } catch { /* already closed */ }
+  return true;
+};
+
 export const withOperationTimeout = async <T>(
   operation: Promise<T>,
   timeoutMs: number,

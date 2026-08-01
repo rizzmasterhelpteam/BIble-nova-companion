@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCurrentSessionRouter, withOperationTimeout } from "../src/lib/voiceConnectionUtils";
+import {
+  closeLateSession,
+  createCurrentSessionRouter,
+  withOperationTimeout,
+} from "../src/lib/voiceConnectionUtils";
 
 describe("Voice connection utilities", () => {
   it("sends microphone packets to session B after session A is replaced", () => {
@@ -24,5 +28,17 @@ describe("Voice connection utilities", () => {
   it("fails a hanging operation within its configured timeout", async () => {
     await expect(withOperationTimeout(new Promise<never>(() => undefined), 1, "timed out"))
       .rejects.toThrow("timed out");
+  });
+
+  it("closes a late connection after its generation has become stale", () => {
+    const session = { close: vi.fn() };
+    expect(closeLateSession(session, () => false)).toBe(true);
+    expect(session.close).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the current connection open", () => {
+    const session = { close: vi.fn() };
+    expect(closeLateSession(session, () => true)).toBe(false);
+    expect(session.close).not.toHaveBeenCalled();
   });
 });
