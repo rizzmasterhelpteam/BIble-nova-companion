@@ -493,16 +493,16 @@ export function useGeminiLiveVoice(options: Options) {
         },
         onmessage: (message) => {
           if (!activeRef.current || connectionGeneration !== connectionGenerationRef.current) return;
-          // A socket that merely opens and closes is not a healthy recovery.
-          // Reset the retry budget only after Gemini has actually responded.
-          reconnectAttemptsRef.current = 0;
-          refreshIdleTimeout();
           const update = message.sessionResumptionUpdate;
           if (update?.newHandle) providerHandleRef.current = update.newHandle;
           if (message.goAway) {
             scheduleReconnect();
             return;
           }
+          // A socket that merely opens or immediately sends GoAway is not a
+          // healthy recovery. Reset only after a normal provider message.
+          reconnectAttemptsRef.current = 0;
+          refreshIdleTimeout();
           const content = message.serverContent;
           const interimInput = (content as unknown as {
             interimInputTranscription?: { text?: string };

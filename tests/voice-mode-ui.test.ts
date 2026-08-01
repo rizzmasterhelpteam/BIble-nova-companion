@@ -101,8 +101,8 @@ describe("Voice mode interface", () => {
     expect(voiceHookSource).toContain("await releaseReservation(");
     expect(voiceHookSource).toContain("await targetContext.close()");
     const resetIndex = voiceHookSource.indexOf("reconnectAttemptsRef.current = 0");
-    const messageIndex = voiceHookSource.indexOf("onmessage: (message)");
-    expect(resetIndex).toBeGreaterThan(messageIndex);
+    const goAwayIndex = voiceHookSource.indexOf("if (message.goAway)");
+    expect(resetIndex).toBeGreaterThan(goAwayIndex);
   });
 
   it("routes microphone PCM to the current session after reconnecting", () => {
