@@ -66,10 +66,7 @@ export default function Paywall() {
   const monthlyRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    // The web app is temporarily open for browser testing. Keep this guard in
-    // the page itself as well as the route guard so direct /paywall links
-    // cannot trap a signed-in browser session.
-    if (isNativePlatform() && !isSubscribed) return;
+    if (!isSubscribed) return;
     navigate("/", { replace: true });
   }, [isSubscribed, navigate]);
 

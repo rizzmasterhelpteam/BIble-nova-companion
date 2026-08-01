@@ -65,17 +65,6 @@ const reasonForStatus = (statusCode: number, message: string) => {
 const hashUserId = (userId: string) =>
   createHash("sha256").update(userId).digest("hex").slice(0, 12);
 
-const isWebPaymentBypassRequest = (req: any) => {
-  const allowedOrigin = process.env.VOICE_WEB_TEST_ORIGIN?.trim().replace(/\/$/, "");
-  const origin = String(req.headers?.origin || "").replace(/\/$/, "");
-  // Temporary production browser testing path. Capacitor requests do not use
-  // this origin, so Android subscriptions remain server-enforced.
-  return origin === "https://biblecompanion.vercel.app" || (
-    process.env.VOICE_WEB_PAYMENT_BYPASS === "true" &&
-    Boolean(allowedOrigin) && origin === allowedOrigin
-  );
-};
-
 export default async function handler(req: any, res: any) {
   const requestId = String(req.headers?.["x-client-request-id"] || "").slice(0, 80);
   const startedAt = Date.now();
@@ -92,7 +81,6 @@ export default async function handler(req: any, res: any) {
 
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
-    const allowPaymentBypass = isWebPaymentBypassRequest(req);
     userHash = hashUserId(userId);
     await enforceRateLimits([
       { key: `voice-session:user:${userId}`, limit: 20 },
@@ -103,47 +91,6 @@ export default async function handler(req: any, res: any) {
     action = body.action === "release" || body.action === "live-token"
       ? body.action
       : "start";
-
-    if (allowPaymentBypass) {
-      const { maxMinutes, idleTimeoutSeconds } = getVoiceSessionConfig();
-      const now = Date.now();
-      const reservationExpiresAt = new Date(now + maxMinutes * 60_000).toISOString();
-
-      if (action === "release") return res.status(204).end();
-
-      if (action === "live-token") {
-        if (!hasGeminiLiveConfig()) {
-          return res.status(503).json({ error: "Voice streaming is not configured." });
-        }
-        if (!hashVoiceReservationHandle(body.reservationHandle)) {
-          return res.status(400).json({ error: "This Voice reservation is invalid." });
-        }
-        const expiresAt = new Date(now + maxMinutes * 60_000 + LIVE_TOKEN_EXPIRY_MARGIN_MS).toISOString();
-        const newSessionExpiresAt = new Date(now + LIVE_TOKEN_NEW_SESSION_WINDOW_MS).toISOString();
-        const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY!.trim() });
-        const token = await client.authTokens.create({
-          config: {
-            httpOptions: { apiVersion: GEMINI_LIVE_API_VERSION },
-            uses: 1,
-            expireTime: expiresAt,
-            newSessionExpireTime: newSessionExpiresAt,
-            liveConnectConstraints: { model: GEMINI_LIVE_MODEL, config: getGeminiLiveConnectConfig() },
-          },
-        });
-        if (!token.name) throw new Error("Gemini returned an empty ephemeral token.");
-        return res.status(200).json({ token: token.name, expiresAt, newSessionExpiresAt, reservationExpiresAt });
-      }
-
-      const { handle: reservationHandle } = createVoiceReservationHandle();
-      return res.status(200).json({
-        reservationHandle,
-        reservationExpiresAt,
-        remainingSeconds: maxMinutes * 60,
-        resumed: false,
-        usage: null,
-        idleTimeoutSeconds,
-      });
-    }
 
     if (action === "release") {
       const handleHash = hashVoiceReservationHandle(body.reservationHandle);
@@ -185,7 +132,6 @@ export default async function handler(req: any, res: any) {
         monthlyMinutes,
         resetOffsetMinutes,
         handleHash,
-        allowPaymentBypass,
       );
       if (!availability.eligible) {
         return res.status(403).json({
@@ -276,7 +222,6 @@ export default async function handler(req: any, res: any) {
       monthlyMinutes,
       resetOffsetMinutes,
       mode === "recovery_resume" ? handleHash : null,
-      allowPaymentBypass,
     );
 
     if (
@@ -357,7 +302,6 @@ export default async function handler(req: any, res: any) {
       monthlyMinutes,
       resetOffsetMinutes,
       handleHash,
-      allowPaymentBypass,
     );
     const remainingSeconds = Math.max(
       0,

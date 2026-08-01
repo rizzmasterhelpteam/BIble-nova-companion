@@ -200,7 +200,6 @@ export const acquireVoiceSessionLease = async (
   monthlyMinutes = 180,
   resetOffsetMinutes = 330,
   handleHash = "",
-  allowPaymentBypass = false,
 ) => {
   const client = getSupabaseAdminClient();
   const params = {
@@ -210,11 +209,10 @@ export const acquireVoiceSessionLease = async (
     p_monthly_minutes: monthlyMinutes,
     p_reset_offset_minutes: resetOffsetMinutes,
     p_handle_hash: handleHash,
-    ...(allowPaymentBypass ? { p_allow_payment_bypass: true } : {}),
   };
   let { data, error } = await client.rpc("acquire_voice_session_lease", params);
   let usedLegacyRpc = false;
-  if (!allowPaymentBypass && isMissingVoiceRpcSignature(error)) {
+  if (isMissingVoiceRpcSignature(error)) {
     usedLegacyRpc = true;
     ({ data, error } = await client.rpc("acquire_voice_session_lease", {
       p_user_id: userId,
@@ -307,7 +305,6 @@ export const getVoiceSessionAvailability = async (
   monthlyMinutes: number,
   resetOffsetMinutes: number,
   handleHash: string | null,
-  allowPaymentBypass = false,
 ): Promise<VoiceAvailability> => {
   const client = getSupabaseAdminClient();
   const params = {
@@ -317,10 +314,9 @@ export const getVoiceSessionAvailability = async (
     p_monthly_minutes: monthlyMinutes,
     p_reset_offset_minutes: resetOffsetMinutes,
     p_handle_hash: handleHash,
-    ...(allowPaymentBypass ? { p_allow_payment_bypass: true } : {}),
   };
   let { data, error } = await client.rpc("get_voice_session_availability", params);
-  if (!allowPaymentBypass && isMissingVoiceRpcSignature(error)) {
+  if (isMissingVoiceRpcSignature(error)) {
     ({ data, error } = await client.rpc("get_voice_session_availability", {
       p_user_id: userId,
       p_max_minutes: maxMinutes,

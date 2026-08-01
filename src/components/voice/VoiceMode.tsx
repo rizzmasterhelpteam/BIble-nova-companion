@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
-  Captions,
   CircleStop,
   LockKeyhole,
   Mic,
@@ -17,7 +16,6 @@ import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../lib/apiClient";
 import { isNativePlatform } from "../../lib/native/platform";
 import { cn } from "../../lib/utils";
-import { storageGet, storageSet } from "../../lib/webStorage";
 import { useMobileViewport } from "../../context/MobileViewportContext";
 import {
   useGeminiLiveVoice,
@@ -109,7 +107,6 @@ const STATE_DESCRIPTIONS: Record<VoiceState, string> = {
 const isVoiceMessage = (message: ConversationMessage) => message.source === "voice";
 const SHADOW_NOTE_PERSIST_INTERVAL_MS = 70_000;
 const SHADOW_NOTE_TIMEOUT_MS = 10_000;
-const VOICE_CAPTIONS_PREFERENCE_KEY = "bible-nova-voice-captions";
 
 export default function VoiceMode({
   userId,
@@ -134,18 +131,6 @@ export default function VoiceMode({
   const navigate = useNavigate();
   const isPerformanceMode = usePerformanceMode();
   const [cooldownNow, setCooldownNow] = useState(() => Date.now());
-  const [showCaptions, setShowCaptions] = useState(() => {
-    const stored = storageGet(VOICE_CAPTIONS_PREFERENCE_KEY);
-    return stored === null ? true : stored === "true";
-  });
-  useEffect(() => {
-    const refreshCaptionPreference = () => {
-      const stored = storageGet(VOICE_CAPTIONS_PREFERENCE_KEY);
-      if (stored !== null) setShowCaptions(stored === "true");
-    };
-    window.addEventListener("bible-nova-storage-restored", refreshCaptionPreference);
-    return () => window.removeEventListener("bible-nova-storage-restored", refreshCaptionPreference);
-  }, []);
   const persistTimerRef = useRef<number | null>(null);
   const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
   const exitPromiseRef = useRef<Promise<void> | null>(null);
@@ -426,14 +411,6 @@ export default function VoiceMode({
       ? apiStatusConnectionError || "Voice mode is temporarily unavailable. You can retry the connection or continue in Chat."
     : live.error || live.sessionNotice;
   const sessionNoticeIsError = Boolean(live.error) || (!isCheckingVoiceReady && !voiceReady);
-  const toggleCaptions = useCallback(() => {
-    setShowCaptions((visible) => {
-      const next = !visible;
-      storageSet(VOICE_CAPTIONS_PREFERENCE_KEY, String(next));
-      return next;
-    });
-  }, []);
-
   return (
     <div className="voice-mode relative flex min-h-0 flex-1 overflow-hidden bg-transparent">
       {active && (
@@ -482,25 +459,6 @@ export default function VoiceMode({
                 </p>
               </motion.div>
 
-              {showCaptions && active && (
-                <div
-                  className="voice-transcript mt-4 flex min-h-[4.5rem] w-full max-w-[34rem] flex-col items-center justify-center rounded-xl border px-4 py-3 text-center"
-                  aria-live="off"
-                >
-                  <span className="app-muted text-[10px] font-semibold uppercase tracking-[0.12em]">
-                    {live.caption?.speaker || ""}
-                  </span>
-                  <p className={cn(
-                    "min-w-0 whitespace-normal break-words text-[16px] font-medium leading-[1.45] sm:text-[18px]",
-                    live.caption?.phase === "interim" && "opacity-75",
-                  )}>
-                    {live.caption?.text || ""}
-                  </p>
-                </div>
-              )}
-              <p className="sr-only" role="status" aria-live="polite">
-                {live.caption?.phase === "final" ? `${live.caption.speaker}: ${live.caption.text}` : ""}
-              </p>
             </div>
           </div>
 
@@ -542,17 +500,6 @@ export default function VoiceMode({
           )}
 
           <div className={cn("voice-actions mt-4 w-full pb-safe", isShortPhone ? "pt-1" : "pt-2")}>
-            <div className="mb-2 flex justify-end">
-              <button
-                type="button"
-                onClick={toggleCaptions}
-                aria-pressed={showCaptions}
-                className="voice-captions-toggle touch-target app-secondary-button inline-flex min-h-10 items-center gap-1.5 rounded-full px-3 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
-              >
-                <Captions className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>{showCaptions ? "Captions on" : "Captions"}</span>
-              </button>
-            </div>
             {showStartButton ? (
               <div className="flex w-full flex-col gap-2">
                 <button
