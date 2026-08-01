@@ -310,7 +310,7 @@ export function useGeminiLiveVoice(options: Options) {
   }, [clearPlayback, closeAudioContext, releaseReservation, stopMicrophone, transition]);
 
   const finalizeUser = useCallback(() => {
-    captionControllerRef.current?.finishUser(false);
+    captionControllerRef.current?.finishUser();
   }, []);
 
   const startMicrophone = useCallback(async (connectedSession: Session) => {
@@ -351,7 +351,7 @@ export function useGeminiLiveVoice(options: Options) {
         // silent Android/WebView stream from leaving the assistant waiting.
         localTurnEndedRef.current = true;
         connectedSession.sendRealtimeInput({ audioStreamEnd: true });
-        captionControllerRef.current?.finishUser(false);
+        captionControllerRef.current?.finishUser();
         transition("thinking");
       }
     };
@@ -431,7 +431,7 @@ export function useGeminiLiveVoice(options: Options) {
             transition("user-speaking");
             if (content?.inputTranscription?.finished) {
               localTurnEndedRef.current = true;
-              captionControllerRef.current?.finishUser(true);
+              captionControllerRef.current?.finishUser();
               transition("thinking");
             }
           }
@@ -446,7 +446,7 @@ export function useGeminiLiveVoice(options: Options) {
           }
           if (content?.modelTurn?.parts?.length) {
             turnCompleteRef.current = false;
-            captionControllerRef.current?.finishUser(false);
+            captionControllerRef.current?.finishUser();
           }
           for (const part of content?.modelTurn?.parts || []) {
             if (part.inlineData?.data && !content?.interrupted && !suppressPlaybackRef.current) {

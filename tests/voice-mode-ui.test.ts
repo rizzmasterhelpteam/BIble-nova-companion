@@ -30,8 +30,10 @@ describe("Voice mode interface", () => {
     expect(voiceModeSource).toContain("voice-transcript");
     expect(voiceModeSource).toContain("bible-nova-voice-captions");
     expect(voiceModeSource).not.toContain("truncate whitespace-nowrap");
-    expect(voiceModeSource).toContain("min-h-[5.75rem]");
+    expect(voiceModeSource).toContain("min-h-[4.5rem]");
     expect(voiceModeSource).toContain('aria-live="off"');
+    expect(voiceModeSource).toContain("flex-col items-center justify-center");
+    expect(voiceModeSource).not.toContain("max-h-[4.5rem] overflow-hidden");
     expect(voiceModeSource).not.toContain("Voice language");
     expect(voiceModeSource).not.toContain("VOICE_LANGUAGE_OPTIONS");
   });

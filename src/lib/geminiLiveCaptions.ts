@@ -21,6 +21,7 @@ type Turn = {
   interrupted: boolean;
   audioStarted: boolean;
   audioDrained: boolean;
+  visibleWordCount: number;
   revision: number;
 };
 
@@ -38,6 +39,7 @@ const MAX_TRANSCRIPT_CHARS = 8_000;
 const UI_UPDATE_MS = 120;
 const ORDERING_GRACE_MS = 650;
 const FINAL_CAPTION_HOLD_MS = 900;
+const ASSISTANT_SUBTITLE_TICK_MS = 140;
 
 const cleanDisplay = (value: string) => value.trim().replace(/\s+/g, " ").slice(0, MAX_TRANSCRIPT_CHARS);
 
@@ -112,6 +114,24 @@ export const segmentLiveCaption = (value: string, maxChars = 180, maxWords = 32)
   return selected.join(" ") || words.at(-1) || "";
 };
 
+const captionTokens = (value: string) => cleanDisplay(value).match(/\S+/gu) || [];
+
+export const createRollingCaption = (
+  transcript: string,
+  options: { maxWords?: number; maxChars?: number } = {},
+) => {
+  const maxWords = options.maxWords ?? 18;
+  const maxChars = options.maxChars ?? 110;
+  const tokens = captionTokens(transcript);
+  const selected: string[] = [];
+  for (const token of tokens.reverse()) {
+    const proposed = [token, ...selected].join(" ");
+    if (selected.length && (selected.length >= maxWords || proposed.length > maxChars)) break;
+    selected.unshift(token);
+  }
+  return selected.join(" ") || tokens.at(-1) || "";
+};
+
 export class LiveCaptionController {
   private generation = 0;
   private turnId = 0;
@@ -121,6 +141,7 @@ export class LiveCaptionController {
   private visualTimer: ReturnType<typeof setTimeout> | null = null;
   private userFinalTimer: ReturnType<typeof setTimeout> | null = null;
   private assistantFinalTimer: ReturnType<typeof setTimeout> | null = null;
+  private assistantProgressTimer: ReturnType<typeof setTimeout> | null = null;
   private holdTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingVisual = false;
   private turnCompleted = false;
@@ -143,21 +164,24 @@ export class LiveCaptionController {
   }
 
   cleanup() {
-    [this.visualTimer, this.userFinalTimer, this.assistantFinalTimer, this.holdTimer].forEach((timer) => {
+    [this.visualTimer, this.userFinalTimer, this.assistantFinalTimer, this.assistantProgressTimer, this.holdTimer].forEach((timer) => {
       if (timer !== null) this.clearTimer(timer);
     });
     this.visualTimer = null;
     this.userFinalTimer = null;
     this.assistantFinalTimer = null;
+    this.assistantProgressTimer = null;
     this.holdTimer = null;
     this.pendingVisual = false;
   }
 
   receiveUserInterim(text: string) {
+    this.cancelAssistantPresentation();
     const turn = this.ensureUser();
     if (turn.complete || turn.interrupted) return;
     turn.interimText = reconcileTranscriptHypothesis(turn.stableText || turn.interimText, text);
     turn.revision += 1;
+    this.debug("user-interim", turn);
     this.queueVisual(turn);
   }
 
@@ -169,14 +193,16 @@ export class LiveCaptionController {
     turn.stableText = reconcileTranscriptHypothesis(turn.stableText, text);
     turn.interimText = "";
     turn.revision += 1;
+    this.debug("user-stable", turn);
     this.queueVisual(turn, finished);
-    if (finished) this.finishUser(true);
+    if (finished || turn.complete) this.finishUser();
   }
 
-  finishUser(immediate = false) {
+  finishUser() {
     const turn = this.user;
     if (!turn || turn.committed || turn.interrupted) return;
     turn.complete = true;
+    this.debug("user-complete", turn);
     this.queueVisual(turn, true);
     const capturedGeneration = this.generation;
     const finalize = () => {
@@ -185,16 +211,16 @@ export class LiveCaptionController {
       turn.committed = true;
       if (text) this.options.onUserFinal(text);
     };
-    if (immediate) finalize();
-    else this.scheduleUserFinal(finalize);
+    this.scheduleUserFinal(finalize);
   }
 
   receiveAssistantText(text: string) {
     const turn = this.ensureAssistant();
-    if (turn.interrupted) return;
+    if (turn.interrupted || turn.committed) return;
     turn.stableText = reconcileTranscriptHypothesis(turn.stableText, text);
     turn.revision += 1;
-    if (turn.audioStarted) this.queueVisual(turn);
+    this.debug("assistant-transcript", turn);
+    if (turn.audioStarted) this.startAssistantProgression(turn);
     if (turn.complete) this.scheduleAssistantFinalization();
   }
 
@@ -202,7 +228,8 @@ export class LiveCaptionController {
     const turn = this.ensureAssistant();
     if (turn.interrupted) return;
     turn.audioStarted = true;
-    this.queueVisual(turn, true);
+    this.debug("assistant-audio-start", turn);
+    this.startAssistantProgression(turn);
     if (turn.complete) this.scheduleAssistantFinalization();
   }
 
@@ -210,13 +237,17 @@ export class LiveCaptionController {
     const turn = this.assistant;
     if (!turn || turn.interrupted) return;
     turn.audioDrained = true;
+    this.debug("assistant-audio-drained", turn);
+    turn.visibleWordCount = captionTokens(turn.stableText).length;
+    this.queueVisual(turn, true);
+    this.cancelAssistantProgression();
     if (this.assistantMessageId) this.options.onAssistantPlaybackComplete(this.assistantMessageId);
     this.scheduleAssistantFinalization();
   }
 
   turnComplete() {
     this.turnCompleted = true;
-    this.finishUser(false);
+    this.finishUser();
     const turn = this.assistant;
     if (turn && !turn.interrupted) {
       turn.complete = true;
@@ -235,16 +266,14 @@ export class LiveCaptionController {
         this.assistantMessageId = typeof id === "string" ? id : null;
       }
     }
+    this.cancelAssistantPresentation();
     turn.interrupted = true;
-    if (this.visualTimer !== null) this.clearTimer(this.visualTimer);
-    this.visualTimer = null;
-    this.pendingVisual = false;
+    this.debug("assistant-interrupted", turn);
     if (this.assistantFinalTimer !== null) this.clearTimer(this.assistantFinalTimer);
     this.assistantFinalTimer = null;
     if (this.holdTimer !== null) this.clearTimer(this.holdTimer);
     this.holdTimer = null;
     this.assistantMessageId = null;
-    this.options.onCaption(null);
   }
 
   private ensureUser() {
@@ -275,6 +304,7 @@ export class LiveCaptionController {
       interrupted: false,
       audioStarted: false,
       audioDrained: false,
+      visibleWordCount: 0,
       revision: 0,
     };
   }
@@ -285,7 +315,11 @@ export class LiveCaptionController {
       this.visualTimer = null;
       this.pendingVisual = false;
       if (turn.interrupted) return;
-      const text = segmentLiveCaption(turn.stableText || turn.interimText);
+      const fullText = turn.stableText || turn.interimText;
+      const visibleText = turn.speaker === "Bible Nova"
+        ? captionTokens(fullText).slice(0, turn.visibleWordCount).join(" ")
+        : fullText;
+      const text = createRollingCaption(visibleText);
       if (!text) return;
       this.options.onCaption({
         turnId: turn.id,
@@ -327,14 +361,13 @@ export class LiveCaptionController {
 
   private scheduleAssistantFinalization() {
     const turn = this.assistant;
-    if (!turn || turn.committed || turn.interrupted || !turn.complete) return;
+    if (!turn || turn.committed || turn.interrupted || !turn.complete || !turn.audioDrained) return;
     const finalize = () => {
       if (turn.committed || turn.interrupted || this.assistant !== turn) return;
       const text = cleanDisplay(turn.stableText);
       turn.committed = true;
       if (text) {
-        const status = turn.audioDrained ? "completed" : "pending";
-        const id = this.options.onAssistantFinal(text, { playbackStatus: status });
+        const id = this.options.onAssistantFinal(text, { playbackStatus: "completed" });
         this.assistantMessageId = typeof id === "string" ? id : null;
         if (turn.audioDrained && this.assistantMessageId) {
           this.options.onAssistantPlaybackComplete(this.assistantMessageId);
@@ -355,5 +388,56 @@ export class LiveCaptionController {
         this.options.onCaption(null);
       }
     }, FINAL_CAPTION_HOLD_MS);
+  }
+
+  private startAssistantProgression(turn: Turn) {
+    if (turn.interrupted || !turn.audioStarted) return;
+    const availableWords = captionTokens(turn.stableText);
+    if (!availableWords.length) return;
+    if (!turn.visibleWordCount) turn.visibleWordCount = Math.min(3, availableWords.length);
+    this.queueVisual(turn, true);
+    if (turn.visibleWordCount >= availableWords.length || this.assistantProgressTimer !== null) return;
+    const capturedGeneration = this.generation;
+    this.assistantProgressTimer = this.setTimer(() => {
+      this.assistantProgressTimer = null;
+      if (capturedGeneration !== this.generation || turn !== this.assistant || turn.interrupted) return;
+      const total = captionTokens(turn.stableText).length;
+      const lag = total - turn.visibleWordCount;
+      if (lag <= 0) return;
+      turn.visibleWordCount = Math.min(total, turn.visibleWordCount + (lag > 6 ? 2 : 1));
+      this.queueVisual(turn, true);
+      this.startAssistantProgression(turn);
+    }, ASSISTANT_SUBTITLE_TICK_MS);
+  }
+
+  private cancelAssistantProgression() {
+    if (this.assistantProgressTimer !== null) this.clearTimer(this.assistantProgressTimer);
+    this.assistantProgressTimer = null;
+  }
+
+  private cancelAssistantPresentation() {
+    this.cancelAssistantProgression();
+    if (this.visualTimer !== null) this.clearTimer(this.visualTimer);
+    this.visualTimer = null;
+    this.pendingVisual = false;
+    if (this.holdTimer !== null) this.clearTimer(this.holdTimer);
+    this.holdTimer = null;
+    if (this.assistant?.audioStarted && !this.assistant.interrupted) this.options.onCaption(null);
+  }
+
+  private debug(event: string, turn: Turn) {
+    if (!import.meta.env.DEV || import.meta.env.MODE === "test") return;
+    console.debug("[Voice captions]", {
+      event,
+      turnId: turn.id,
+      generation: this.generation,
+      speaker: turn.speaker,
+      phase: turn.interrupted ? "interrupted" : turn.complete ? "final" : turn.stableText ? "stable" : "interim",
+      fullWordCount: captionTokens(turn.stableText || turn.interimText).length,
+      visibleWordCount: turn.visibleWordCount,
+      committed: turn.committed,
+      audioStarted: turn.audioStarted,
+      audioDrained: turn.audioDrained,
+    });
   }
 }

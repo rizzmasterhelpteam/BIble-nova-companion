@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   LiveCaptionController,
+  createRollingCaption,
   reconcileTranscriptHypothesis,
   segmentLiveCaption,
   type LiveCaption,
@@ -44,6 +45,14 @@ describe("Gemini Live captions", () => {
     expect(segmentLiveCaption("hello 👋 this is a longwordwithoutspaces", 24, 5)).toBe("a longwordwithoutspaces");
   });
 
+  it("creates a rolling subtitle window instead of exposing a full response", () => {
+    const words = "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty";
+    const caption = createRollingCaption(words);
+    expect(caption.split(" ").length).toBeGreaterThanOrEqual(12);
+    expect(caption.split(" ").length).toBeLessThanOrEqual(18);
+    expect(caption).toBe("six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty");
+  });
+
   it("shows interim input quickly and commits the corrected final input once", () => {
     vi.useFakeTimers();
     try {
@@ -54,9 +63,10 @@ describe("Gemini Live captions", () => {
       expect(captions.at(-1)).toMatchObject({ speaker: "You", text: "I am feel", phase: "interim" });
       controller.receiveUserStable("I'm feeling anxious", true);
       controller.turnComplete();
-      controller.receiveUserStable("I'm feeling anxious", true);
-      expect(users).toEqual(["I'm feeling anxious"]);
-      expect(captions.at(-1)).toMatchObject({ speaker: "You", text: "I'm feeling anxious", phase: "final" });
+      controller.receiveUserStable("I'm feeling anxious about today", true);
+      vi.advanceTimersByTime(650);
+      expect(users).toEqual(["I'm feeling anxious about today"]);
+      expect(captions.at(-1)).toMatchObject({ speaker: "You", text: "I'm feeling anxious about today", phase: "final" });
     } finally {
       vi.useRealTimers();
     }
@@ -71,11 +81,33 @@ describe("Gemini Live captions", () => {
       controller.turnComplete();
       controller.receiveAssistantText("I hear how heavy this feels.");
       vi.advanceTimersByTime(120);
-      expect(captions.at(-1)).toMatchObject({ speaker: "Bible Nova", text: "I hear how heavy this feels." });
+      expect(captions.at(-1)).toMatchObject({ speaker: "Bible Nova", text: "I hear how" });
       controller.assistantAudioDrained();
       vi.advanceTimersByTime(650);
       expect(assistants).toEqual([{ text: "I hear how heavy this feels.", status: "completed" }]);
       expect(completed).toEqual(["assistant-1"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("progresses assistant subtitles without revealing the whole response immediately", () => {
+    vi.useFakeTimers();
+    try {
+      const { controller, captions } = createController();
+      const output = Array.from({ length: 25 }, (_, index) => `word${index + 1}`).join(" ");
+      controller.beginGeneration();
+      controller.receiveAssistantText(output);
+      controller.assistantAudioStarted();
+      expect(captions.at(-1)?.text.split(" ").length).toBe(3);
+      vi.advanceTimersByTime(560);
+      const progressed = captions.at(-1)?.text.split(" ").length || 0;
+      expect(progressed).toBeGreaterThan(3);
+      expect(progressed).toBeLessThan(18);
+      controller.turnComplete();
+      controller.assistantAudioDrained();
+      expect(captions.at(-1)?.text.split(" ").length).toBeGreaterThanOrEqual(12);
+      expect(captions.at(-1)?.text.split(" ").length).toBeLessThanOrEqual(18);
     } finally {
       vi.useRealTimers();
     }
@@ -90,9 +122,10 @@ describe("Gemini Live captions", () => {
       controller.assistantAudioStarted();
       controller.turnComplete();
       controller.receiveAssistantText("I am here with you.");
+      controller.assistantAudioDrained();
       vi.advanceTimersByTime(650);
       expect(users).toEqual(["I feel overwhelmed"]);
-      expect(assistants).toEqual([{ text: "I am here with you.", status: "pending" }]);
+      expect(assistants).toEqual([{ text: "I am here with you.", status: "completed" }]);
     } finally {
       vi.useRealTimers();
     }

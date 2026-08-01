@@ -138,6 +138,14 @@ export default function VoiceMode({
     const stored = storageGet(VOICE_CAPTIONS_PREFERENCE_KEY);
     return stored === null ? true : stored === "true";
   });
+  useEffect(() => {
+    const refreshCaptionPreference = () => {
+      const stored = storageGet(VOICE_CAPTIONS_PREFERENCE_KEY);
+      if (stored !== null) setShowCaptions(stored === "true");
+    };
+    window.addEventListener("bible-nova-storage-restored", refreshCaptionPreference);
+    return () => window.removeEventListener("bible-nova-storage-restored", refreshCaptionPreference);
+  }, []);
   const persistTimerRef = useRef<number | null>(null);
   const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
   const exitPromiseRef = useRef<Promise<void> | null>(null);
@@ -476,17 +484,17 @@ export default function VoiceMode({
 
               {showCaptions && active && (
                 <div
-                  className="voice-transcript mt-4 flex min-h-[5.75rem] w-full max-w-[32rem] items-start gap-2 rounded-xl border px-3 py-2.5 text-left sm:min-h-[6.25rem]"
+                  className="voice-transcript mt-4 flex min-h-[4.5rem] w-full max-w-[34rem] flex-col items-center justify-center rounded-xl border px-4 py-3 text-center"
                   aria-live="off"
                 >
-                  <span className="app-muted mt-0.5 shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em]">
-                    {live.caption?.speaker || "Captions"}
+                  <span className="app-muted text-[10px] font-semibold uppercase tracking-[0.12em]">
+                    {live.caption?.speaker || ""}
                   </span>
                   <p className={cn(
-                    "min-w-0 max-h-[4.5rem] overflow-hidden text-sm leading-5 [overflow-wrap:anywhere] sm:max-h-[4.8rem] sm:text-[15px]",
+                    "min-w-0 whitespace-normal break-words text-[16px] font-medium leading-[1.45] sm:text-[18px]",
                     live.caption?.phase === "interim" && "opacity-75",
                   )}>
-                    {live.caption?.text || "Your words and Bible Nova’s response will appear here."}
+                    {live.caption?.text || ""}
                   </p>
                 </div>
               )}
