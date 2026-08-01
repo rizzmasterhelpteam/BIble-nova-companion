@@ -18,6 +18,7 @@ import {
   restorePurchases,
   type SubscriptionPackage,
 } from "../lib/native/purchases";
+import { selectNewestConfiguredNativePurchase } from "../lib/native/subscriptionSync";
 
 type Plan = "monthly" | "yearly";
 
@@ -245,9 +246,9 @@ export default function Paywall() {
     setIsLoading(true);
     try {
       const purchases = await restorePurchases();
-      const restoredPurchase =
-        (purchases.find((p) => Boolean((p as NativePurchaseTransaction).productIdentifier)) ||
-          purchases[0]) as NativePurchaseTransaction | undefined;
+      const restoredPurchase = selectNewestConfiguredNativePurchase(
+        purchases as NativePurchaseTransaction[],
+      ) as NativePurchaseTransaction | undefined;
       if (!restoredPurchase?.productIdentifier) throw new Error("Could not determine which subscription to restore.");
       const restoredProductId = getConfiguredProductIdForIdentifier(restoredPurchase.productIdentifier);
       if (!restoredProductId) throw new Error("The restored purchase does not match a configured subscription.");

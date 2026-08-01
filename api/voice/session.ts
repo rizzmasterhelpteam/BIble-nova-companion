@@ -46,12 +46,17 @@ const setCorsHeaders = (res: any) => {
 const getBody = (req: any) => {
   if (typeof req.body === "string") {
     try {
-      return req.body ? JSON.parse(req.body) : {};
+      const parsed = req.body ? JSON.parse(req.body) : null;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? { body: parsed as Record<string, unknown>, invalid: false }
+        : { body: null, invalid: true };
     } catch {
-      return {};
+      return { body: null, invalid: true };
     }
   }
-  return req.body || {};
+  return req.body && typeof req.body === "object" && !Array.isArray(req.body)
+    ? { body: req.body as Record<string, unknown>, invalid: false }
+    : { body: null, invalid: true };
 };
 
 const reasonForStatus = (statusCode: number, message: string) => {
@@ -87,17 +92,23 @@ export default async function handler(req: any, res: any) {
       { key: `voice-session:ip:${ip}`, limit: 40 },
     ]);
 
-    const body = getBody(req);
-    action = body.action === "release" || body.action === "live-token"
-      ? body.action
-      : "start";
+    const parsed = getBody(req);
+    if (parsed.invalid || !parsed.body) {
+      return res.status(400).json({ error: "Voice request must contain a valid JSON object." });
+    }
+    const body = parsed.body;
+    if (body.action !== "start" && body.action !== "release" && body.action !== "live-token") {
+      return res.status(400).json({ error: "Voice request action is invalid." });
+    }
+    action = body.action;
+    const reservationHandle = typeof body.reservationHandle === "string" ? body.reservationHandle : "";
 
     if (action === "release") {
-      const handleHash = hashVoiceReservationHandle(body.reservationHandle);
+      const handleHash = hashVoiceReservationHandle(reservationHandle);
       if (!handleHash) {
         return res.status(400).json({ error: "This Voice reservation is invalid." });
       }
-      const releaseReason = RELEASE_REASONS.has(body.releaseReason)
+      const releaseReason = typeof body.releaseReason === "string" && RELEASE_REASONS.has(body.releaseReason)
         ? body.releaseReason
         : "user_end";
       const released = await releaseVoiceSessionLease(userId, handleHash);
@@ -119,7 +130,7 @@ export default async function handler(req: any, res: any) {
       if (!hasGeminiLiveConfig()) {
         return res.status(503).json({ error: "Voice streaming is not configured." });
       }
-      const handleHash = hashVoiceReservationHandle(body.reservationHandle);
+      const handleHash = hashVoiceReservationHandle(reservationHandle);
       if (!handleHash) {
         return res.status(400).json({ error: "This Voice reservation is invalid." });
       }
@@ -184,12 +195,11 @@ export default async function handler(req: any, res: any) {
         : null;
     mode = requestedMode || "fresh_start";
 
-    let reservationHandle =
-      typeof body.reservationHandle === "string" ? body.reservationHandle : "";
-    let handleHash = hashVoiceReservationHandle(reservationHandle);
+    let nextReservationHandle = reservationHandle;
+    let handleHash = hashVoiceReservationHandle(nextReservationHandle);
     if (!handleHash) {
       const created = createVoiceReservationHandle();
-      reservationHandle = created.handle;
+      nextReservationHandle = created.handle;
       handleHash = created.handleHash;
     }
 
@@ -198,10 +208,12 @@ export default async function handler(req: any, res: any) {
       // End that lease and mint a different one instead of silently resuming it.
       await releaseVoiceSessionLease(userId, handleHash);
       const created = createVoiceReservationHandle();
-      reservationHandle = created.handle;
+      nextReservationHandle = created.handle;
       handleHash = created.handleHash;
     } else if (mode === "fresh_start") {
-      const previousHandleHash = hashVoiceReservationHandle(body.previousReservationHandle);
+      const previousHandleHash = hashVoiceReservationHandle(
+        typeof body.previousReservationHandle === "string" ? body.previousReservationHandle : "",
+      );
       if (previousHandleHash && previousHandleHash === handleHash) {
         return res.status(400).json({
           error: "A fresh Voice reflection requires a new reservation.",
@@ -238,7 +250,7 @@ export default async function handler(req: any, res: any) {
         durationMs: Date.now() - startedAt,
       });
       return res.status(200).json({
-        reservationHandle,
+        reservationHandle: nextReservationHandle,
         reservationExpiresAt: new Date(
           Date.now() + availability.retryAfterSeconds * 1_000,
         ).toISOString(),
@@ -329,7 +341,7 @@ export default async function handler(req: any, res: any) {
       durationMs: Date.now() - startedAt,
     });
     return res.status(200).json({
-      reservationHandle,
+      reservationHandle: nextReservationHandle,
       reservationExpiresAt: lease.expiresAt,
       remainingSeconds,
       resumed: false,

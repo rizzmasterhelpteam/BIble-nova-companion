@@ -60,6 +60,17 @@ describe("turn-based Voice session API", () => {
     releaseVoiceSessionLease.mockResolvedValue(true);
   });
 
+  it("rejects malformed and unknown actions without reserving Voice time", async () => {
+    const malformedResponse = createResponse();
+    await voiceSessionHandler({ method: "POST", body: "{not-json" }, malformedResponse);
+    expect(malformedResponse.statusCode).toBe(400);
+
+    const unknownResponse = createResponse();
+    await voiceSessionHandler({ method: "POST", body: { action: "unexpected" } }, unknownResponse);
+    expect(unknownResponse.statusCode).toBe(400);
+    expect(acquireVoiceSessionLease).not.toHaveBeenCalled();
+  });
+
   it("fresh start releases an old reservation and acquires a new handle", async () => {
     getVoiceSessionAvailability.mockResolvedValue({
       eligible: true,
