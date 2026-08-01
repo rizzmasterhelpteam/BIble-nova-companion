@@ -3,6 +3,7 @@ import {
   base64ToBytes,
   bytesToBase64,
   float32ToPcm16,
+  GeminiPcmPlaybackQueue,
   getLatestLiveCaption,
   LiveTranscriptAccumulator,
   mergeLiveTranscript,
@@ -43,6 +44,35 @@ describe("Gemini Live audio", () => {
       "This is the current thought.",
     );
     expect(getLatestLiveCaption("one two three four", 8)).toBe("ree four");
+  });
+
+  it("waits until queued audio starts before updating playback state", () => {
+    vi.useFakeTimers();
+    try {
+      const source = {
+        buffer: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        onended: null,
+      } as unknown as AudioBufferSourceNode;
+      const context = {
+        currentTime: 0,
+        destination: {},
+        createBuffer: vi.fn(() => ({ duration: 0.1, copyToChannel: vi.fn() })),
+        createBufferSource: vi.fn(() => source),
+      } as unknown as AudioContext;
+      const onStart = vi.fn();
+
+      new GeminiPcmPlaybackQueue(context).enqueue(bytesToBase64(new Uint8Array([0, 0])), onStart);
+
+      expect(onStart).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(35);
+      expect(onStart).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("commits each finalized transcript exactly once", () => {

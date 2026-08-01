@@ -111,6 +111,7 @@ export class GeminiPcmPlaybackQueue {
   private nextTime = 0;
   private generation = 0;
   private sources = new Set<AudioBufferSourceNode>();
+  private startTimers = new Map<AudioBufferSourceNode, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly context: PlaybackContext) {}
 
@@ -126,23 +127,33 @@ export class GeminiPcmPlaybackQueue {
     const startAt = Math.max(this.context.currentTime + 0.035, this.nextTime);
     this.nextTime = startAt + buffer.duration;
     this.sources.add(source);
+    const startTimer = setTimeout(() => {
+      this.startTimers.delete(source);
+      if (generation === this.generation && this.sources.has(source)) onStart?.();
+    }, Math.max(0, (startAt - this.context.currentTime) * 1_000));
+    this.startTimers.set(source, startTimer);
     source.onended = () => {
+      const pendingTimer = this.startTimers.get(source);
+      if (pendingTimer) clearTimeout(pendingTimer);
+      this.startTimers.delete(source);
       source.disconnect();
       this.sources.delete(source);
       if (generation === this.generation && this.sources.size === 0) onDrained?.();
     };
     source.start(startAt);
-    onStart?.();
   }
 
   clear() {
     this.generation += 1;
     for (const source of this.sources) {
+      const pendingTimer = this.startTimers.get(source);
+      if (pendingTimer) clearTimeout(pendingTimer);
       source.onended = null;
       try { source.stop(); } catch { /* already stopped */ }
       source.disconnect();
     }
     this.sources.clear();
+    this.startTimers.clear();
     this.nextTime = this.context.currentTime;
   }
 

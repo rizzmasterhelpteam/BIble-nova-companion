@@ -79,6 +79,7 @@ const RECONNECT_DELAYS_MS = [400, 1_000, 2_200];
 const INPUT_LEVEL_UPDATE_INTERVAL_MS = 90;
 const SPEECH_PEAK_THRESHOLD = 0.015;
 const LOCAL_SILENCE_TURN_END_MS = 1_100;
+const ASSISTANT_CAPTION_DWELL_MS = 1_800;
 
 const safeError = (error: unknown) => {
   if (error instanceof DOMException && error.name === "NotAllowedError") {
@@ -180,6 +181,8 @@ export function useGeminiLiveVoice(options: Options) {
   const appActiveRef = useRef(true);
   const userTranscriptRef = useRef(new LiveTranscriptAccumulator());
   const assistantTranscriptRef = useRef(new LiveTranscriptAccumulator());
+  const pendingAssistantCaptionRef = useRef("");
+  const lastAssistantCaptionAtRef = useRef(0);
   const historyRef = useRef(history);
   const shadowNotesRef = useRef(shadowNotes);
   const lastLevelAtRef = useRef(0);
@@ -288,7 +291,10 @@ export function useGeminiLiveVoice(options: Options) {
   }, [clearPlayback, closeAudioContext, releaseReservation, stopMicrophone, transition]);
 
   const finalizeUser = useCallback(() => {
-    userTranscriptRef.current.finalize(onUserTranscript);
+    userTranscriptRef.current.finalize((text) => {
+      setCaption({ speaker: "You", text: getLatestLiveCaption(text) });
+      onUserTranscript(text);
+    });
   }, [onUserTranscript]);
 
   const finalizeAssistant = useCallback((status: "completed" | "interrupted" = "completed") => {
@@ -419,10 +425,9 @@ export function useGeminiLiveVoice(options: Options) {
             }
           }
           if (outputText) {
-            setCaption({
-              speaker: "Bible Nova",
-              text: getLatestLiveCaption(assistantTranscriptRef.current.append(outputText)),
-            });
+            pendingAssistantCaptionRef.current = getLatestLiveCaption(
+              assistantTranscriptRef.current.append(outputText),
+            );
           }
           if (content?.interrupted) {
             suppressPlaybackRef.current = true;
@@ -437,7 +442,15 @@ export function useGeminiLiveVoice(options: Options) {
               outputAudioSeenRef.current = true;
               playbackRef.current?.enqueue(
                 part.inlineData.data,
-                () => transition("assistant-speaking"),
+                () => {
+                  transition("assistant-speaking");
+                  const now = performance.now();
+                  const text = pendingAssistantCaptionRef.current;
+                  if (text && now - lastAssistantCaptionAtRef.current >= ASSISTANT_CAPTION_DWELL_MS) {
+                    lastAssistantCaptionAtRef.current = now;
+                    setCaption({ speaker: "Bible Nova", text });
+                  }
+                },
                 () => {
                   if (!turnCompleteRef.current) return;
                   const messageId = assistantMessageIdRef.current;
@@ -459,6 +472,8 @@ export function useGeminiLiveVoice(options: Options) {
             }
             userTranscriptRef.current.reset();
             assistantTranscriptRef.current.reset();
+            pendingAssistantCaptionRef.current = "";
+            lastAssistantCaptionAtRef.current = 0;
             suppressPlaybackRef.current = false;
             outputAudioSeenRef.current = false;
             if (!playbackRef.current?.size) {
@@ -547,6 +562,8 @@ export function useGeminiLiveVoice(options: Options) {
       setErrorCode(null);
       setRetryUntil(null);
       setCaption(null);
+      pendingAssistantCaptionRef.current = "";
+      lastAssistantCaptionAtRef.current = 0;
       speechSeenRef.current = false;
       localTurnEndedRef.current = false;
       lastSpeechAtRef.current = 0;
