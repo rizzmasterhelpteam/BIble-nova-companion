@@ -190,6 +190,9 @@ export const getSubscriptionAccessStatus = async (
   };
 };
 
+const isMissingVoiceRpcSignature = (error: { message?: string } | null) =>
+  Boolean(error?.message && /could not find the function .*voice_session_/i.test(error.message));
+
 export const acquireVoiceSessionLease = async (
   userId: string,
   maxMinutes: number,
@@ -209,7 +212,18 @@ export const acquireVoiceSessionLease = async (
     p_handle_hash: handleHash,
     ...(allowPaymentBypass ? { p_allow_payment_bypass: true } : {}),
   };
-  const { data, error } = await client.rpc("acquire_voice_session_lease", params);
+  let { data, error } = await client.rpc("acquire_voice_session_lease", params);
+  let usedLegacyRpc = false;
+  if (!allowPaymentBypass && isMissingVoiceRpcSignature(error)) {
+    usedLegacyRpc = true;
+    ({ data, error } = await client.rpc("acquire_voice_session_lease", {
+      p_user_id: userId,
+      p_max_minutes: maxMinutes,
+      p_daily_minutes: dailyMinutes,
+      p_reset_offset_minutes: resetOffsetMinutes,
+      p_handle_hash: handleHash,
+    }));
+  }
   if (error) {
     const message = error.message.toLowerCase();
     if (message.includes("premium subscription")) {
@@ -232,16 +246,14 @@ export const acquireVoiceSessionLease = async (
   if (
     !result?.lease_id ||
     !result?.lease_expires_at ||
-    !Number.isInteger(reservedMinutes) ||
-    reservedMinutes < 1 ||
-    reservedMinutes > maxMinutes
+    (!usedLegacyRpc && (!Number.isInteger(reservedMinutes) || reservedMinutes < 1 || reservedMinutes > maxMinutes))
   ) {
     throw new HttpError("Voice session protection is temporarily unavailable.", 503);
   }
   return {
     leaseId: String(result.lease_id),
     expiresAt: String(result.lease_expires_at),
-    reservedMinutes,
+    reservedMinutes: usedLegacyRpc ? maxMinutes : reservedMinutes,
   };
 };
 
@@ -307,7 +319,16 @@ export const getVoiceSessionAvailability = async (
     p_handle_hash: handleHash,
     ...(allowPaymentBypass ? { p_allow_payment_bypass: true } : {}),
   };
-  const { data, error } = await client.rpc("get_voice_session_availability", params);
+  let { data, error } = await client.rpc("get_voice_session_availability", params);
+  if (!allowPaymentBypass && isMissingVoiceRpcSignature(error)) {
+    ({ data, error } = await client.rpc("get_voice_session_availability", {
+      p_user_id: userId,
+      p_max_minutes: maxMinutes,
+      p_daily_minutes: dailyMinutes,
+      p_reset_offset_minutes: resetOffsetMinutes,
+      p_handle_hash: handleHash,
+    }));
+  }
   if (error) {
     console.error("Voice availability check failed:", error.message);
     throw new HttpError("Voice eligibility is temporarily unavailable.", 503);

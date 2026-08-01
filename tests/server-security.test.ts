@@ -19,6 +19,7 @@ import {
   assertStringLength,
   enforceRateLimits,
   getRateLimitStorageKey,
+  getVoiceSessionAvailability,
   getVoiceUsageLimits,
   HttpError,
   requireAuthenticatedRequest,
@@ -178,6 +179,38 @@ describe("server security", () => {
       p_monthly_minutes: 180,
       p_reset_offset_minutes: 330,
       p_handle_hash: "a".repeat(64),
+    });
+  });
+
+  it("retries Voice availability with the legacy five-argument RPC", async () => {
+    rpcMock
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: "Could not find the function public.get_voice_session_availability in the schema cache" },
+      })
+      .mockResolvedValueOnce({
+        data: [{
+          eligible: true,
+          available: true,
+          reason: "available",
+          retry_after_seconds: null,
+          can_renew: false,
+        }],
+        error: null,
+      });
+
+    await expect(getVoiceSessionAvailability("user-1", 10, 20, 180, 330, null)).resolves.toMatchObject({
+      eligible: true,
+      available: true,
+      reason: "available",
+      usage: null,
+    });
+    expect(rpcMock).toHaveBeenLastCalledWith("get_voice_session_availability", {
+      p_user_id: "user-1",
+      p_max_minutes: 10,
+      p_daily_minutes: 20,
+      p_reset_offset_minutes: 330,
+      p_handle_hash: null,
     });
   });
 
