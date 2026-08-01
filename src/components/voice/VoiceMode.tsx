@@ -17,6 +17,7 @@ import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../lib/apiClient";
 import { isNativePlatform } from "../../lib/native/platform";
 import { cn } from "../../lib/utils";
+import { storageGet, storageSet } from "../../lib/webStorage";
 import { useMobileViewport } from "../../context/MobileViewportContext";
 import {
   useGeminiLiveVoice,
@@ -134,11 +135,8 @@ export default function VoiceMode({
   const isPerformanceMode = usePerformanceMode();
   const [cooldownNow, setCooldownNow] = useState(() => Date.now());
   const [showCaptions, setShowCaptions] = useState(() => {
-    try {
-      return window.localStorage.getItem(VOICE_CAPTIONS_PREFERENCE_KEY) === "true";
-    } catch {
-      return false;
-    }
+    const stored = storageGet(VOICE_CAPTIONS_PREFERENCE_KEY);
+    return stored === null ? true : stored === "true";
   });
   const persistTimerRef = useRef<number | null>(null);
   const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -423,7 +421,7 @@ export default function VoiceMode({
   const toggleCaptions = useCallback(() => {
     setShowCaptions((visible) => {
       const next = !visible;
-      try { window.localStorage.setItem(VOICE_CAPTIONS_PREFERENCE_KEY, String(next)); } catch { /* optional preference */ }
+      storageSet(VOICE_CAPTIONS_PREFERENCE_KEY, String(next));
       return next;
     });
   }, []);
@@ -450,7 +448,7 @@ export default function VoiceMode({
             "voice-hero flex min-h-0 flex-1 flex-col justify-center",
             isShortPhone ? "py-2" : "py-6 sm:py-10",
           )}>
-            <div className="flex flex-col items-center text-center" aria-live="polite">
+            <div className="flex flex-col items-center text-center">
               <VoiceOrb
                 state={live.state}
                 inputLevel={live.inputLevel}
@@ -476,19 +474,25 @@ export default function VoiceMode({
                 </p>
               </motion.div>
 
-              {showCaptions && live.caption?.text && (
+              {showCaptions && active && (
                 <div
-                  className="voice-transcript mt-4 flex w-full max-w-[32rem] items-center gap-2 rounded-xl border px-3 py-2 text-left"
-                  aria-live="polite"
+                  className="voice-transcript mt-4 flex min-h-[5.75rem] w-full max-w-[32rem] items-start gap-2 rounded-xl border px-3 py-2.5 text-left sm:min-h-[6.25rem]"
+                  aria-live="off"
                 >
-                  <span className="app-muted shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em]">
-                    {live.caption.speaker}
+                  <span className="app-muted mt-0.5 shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em]">
+                    {live.caption?.speaker || "Captions"}
                   </span>
-                  <p className="min-w-0 truncate whitespace-nowrap text-sm leading-5 sm:text-[15px]">
-                    {live.caption.text}
+                  <p className={cn(
+                    "min-w-0 max-h-[4.5rem] overflow-hidden text-sm leading-5 [overflow-wrap:anywhere] sm:max-h-[4.8rem] sm:text-[15px]",
+                    live.caption?.phase === "interim" && "opacity-75",
+                  )}>
+                    {live.caption?.text || "Your words and Bible Nova’s response will appear here."}
                   </p>
                 </div>
               )}
+              <p className="sr-only" role="status" aria-live="polite">
+                {live.caption?.phase === "final" ? `${live.caption.speaker}: ${live.caption.text}` : ""}
+              </p>
             </div>
           </div>
 

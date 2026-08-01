@@ -16,11 +16,10 @@ import {
   bytesToBase64,
   float32ToPcm16,
   GEMINI_INPUT_SAMPLE_RATE,
-  getLatestLiveCaption,
   GeminiPcmPlaybackQueue,
-  LiveTranscriptAccumulator,
   resampleFloat32,
 } from "../lib/geminiLiveAudio";
+import { LiveCaptionController, type LiveCaption } from "../lib/geminiLiveCaptions";
 import type {
   ConversationMessage,
   VoicePlaybackMetadata,
@@ -79,7 +78,6 @@ const RECONNECT_DELAYS_MS = [400, 1_000, 2_200];
 const INPUT_LEVEL_UPDATE_INTERVAL_MS = 90;
 const SPEECH_PEAK_THRESHOLD = 0.015;
 const LOCAL_SILENCE_TURN_END_MS = 1_100;
-const ASSISTANT_CAPTION_DWELL_MS = 1_800;
 
 const safeError = (error: unknown) => {
   if (error instanceof DOMException && error.name === "NotAllowedError") {
@@ -148,7 +146,7 @@ export function useGeminiLiveVoice(options: Options) {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [inputLevel, setInputLevel] = useState(0);
   const [voiceUsage, setVoiceUsage] = useState<VoiceUsageSummary | null>(null);
-  const [caption, setCaption] = useState<{ speaker: "You" | "Bible Nova"; text: string } | null>(null);
+  const [caption, setCaption] = useState<LiveCaption | null>(null);
   const [retryUntil, setRetryUntil] = useState<number | null>(null);
 
   const stateRef = useRef<VoiceState>("idle");
@@ -179,12 +177,10 @@ export function useGeminiLiveVoice(options: Options) {
   const outputAudioSeenRef = useRef(false);
   const suppressPlaybackRef = useRef(false);
   const appActiveRef = useRef(true);
-  const userTranscriptRef = useRef(new LiveTranscriptAccumulator());
-  const assistantTranscriptRef = useRef(new LiveTranscriptAccumulator());
-  const pendingAssistantCaptionRef = useRef("");
-  const lastAssistantCaptionAtRef = useRef(0);
-  const assistantPlaybackStartedRef = useRef(false);
-  const assistantCaptionTimerRef = useRef<number | null>(null);
+  const onUserTranscriptRef = useRef(onUserTranscript);
+  const onAssistantTranscriptRef = useRef(onAssistantTranscript);
+  const onAssistantPlaybackStatusChangeRef = useRef(onAssistantPlaybackStatusChange);
+  const captionControllerRef = useRef<LiveCaptionController | null>(null);
   const historyRef = useRef(history);
   const shadowNotesRef = useRef(shadowNotes);
   const lastLevelAtRef = useRef(0);
@@ -192,29 +188,30 @@ export function useGeminiLiveVoice(options: Options) {
   useEffect(() => { reservationRef.current = reservation; }, [reservation]);
   useEffect(() => { historyRef.current = history; }, [history]);
   useEffect(() => { shadowNotesRef.current = shadowNotes; }, [shadowNotes]);
+  onUserTranscriptRef.current = onUserTranscript;
+  onAssistantTranscriptRef.current = onAssistantTranscript;
+  onAssistantPlaybackStatusChangeRef.current = onAssistantPlaybackStatusChange;
+
+  if (!captionControllerRef.current) {
+    captionControllerRef.current = new LiveCaptionController({
+      onCaption: setCaption,
+      onUserFinal: (text) => onUserTranscriptRef.current(text),
+      onAssistantFinal: (text, playback) => {
+        const id = onAssistantTranscriptRef.current(text, playback);
+        assistantMessageIdRef.current = typeof id === "string" ? id : null;
+        return id;
+      },
+      onAssistantPlaybackComplete: (messageId) => {
+        onAssistantPlaybackStatusChangeRef.current(messageId, { playbackStatus: "completed" });
+        if (assistantMessageIdRef.current === messageId) assistantMessageIdRef.current = null;
+      },
+      onTranscriptUnavailable: () => setSessionNotice("The spoken response played, but its transcript was unavailable."),
+    });
+  }
 
   const transition = useCallback((next: VoiceState) => {
     stateRef.current = next;
     setState(next);
-  }, []);
-
-  const scheduleAssistantCaption = useCallback(() => {
-    if (!assistantPlaybackStartedRef.current || !pendingAssistantCaptionRef.current) return;
-    const updateCaption = () => {
-      assistantCaptionTimerRef.current = null;
-      if (!assistantPlaybackStartedRef.current || !pendingAssistantCaptionRef.current) return;
-      lastAssistantCaptionAtRef.current = performance.now();
-      setCaption({ speaker: "Bible Nova", text: pendingAssistantCaptionRef.current });
-    };
-    const remaining = ASSISTANT_CAPTION_DWELL_MS - (performance.now() - lastAssistantCaptionAtRef.current);
-    if (remaining <= 0) {
-      if (assistantCaptionTimerRef.current !== null) window.clearTimeout(assistantCaptionTimerRef.current);
-      updateCaption();
-      return;
-    }
-    if (assistantCaptionTimerRef.current === null) {
-      assistantCaptionTimerRef.current = window.setTimeout(updateCaption, remaining);
-    }
   }, []);
 
   const primeAudioForUserGesture = useCallback(() => {
@@ -247,9 +244,6 @@ export function useGeminiLiveVoice(options: Options) {
 
   const clearPlayback = useCallback((interrupted = false) => {
     playbackRef.current?.clear();
-    if (assistantCaptionTimerRef.current !== null) window.clearTimeout(assistantCaptionTimerRef.current);
-    assistantCaptionTimerRef.current = null;
-    assistantPlaybackStartedRef.current = false;
     const messageId = assistantMessageIdRef.current;
     if (messageId && interrupted) {
       onAssistantPlaybackStatusChange(messageId, { playbackStatus: "interrupted" });
@@ -302,6 +296,7 @@ export function useGeminiLiveVoice(options: Options) {
     reconnectTimerRef.current = null;
     stopMicrophone();
     clearPlayback(false);
+    captionControllerRef.current?.cleanup();
     connectionGenerationRef.current += 1;
     try { sessionRef.current?.close(); } catch { /* already closed */ }
     sessionRef.current = null;
@@ -315,21 +310,8 @@ export function useGeminiLiveVoice(options: Options) {
   }, [clearPlayback, closeAudioContext, releaseReservation, stopMicrophone, transition]);
 
   const finalizeUser = useCallback(() => {
-    userTranscriptRef.current.finalize((text) => {
-      setCaption({ speaker: "You", text: getLatestLiveCaption(text) });
-      onUserTranscript(text);
-    });
-  }, [onUserTranscript]);
-
-  const finalizeAssistant = useCallback((status: "completed" | "interrupted" = "completed") => {
-    assistantTranscriptRef.current.finalize((text) => {
-      const playbackStatus = status === "completed" && playbackRef.current?.size
-        ? "pending"
-        : status;
-      const id = onAssistantTranscript(text, { playbackStatus });
-      assistantMessageIdRef.current = typeof id === "string" ? id : null;
-    });
-  }, [onAssistantTranscript]);
+    captionControllerRef.current?.finishUser(false);
+  }, []);
 
   const startMicrophone = useCallback(async (connectedSession: Session) => {
     const context = contextRef.current;
@@ -369,6 +351,7 @@ export function useGeminiLiveVoice(options: Options) {
         // silent Android/WebView stream from leaving the assistant waiting.
         localTurnEndedRef.current = true;
         connectedSession.sendRealtimeInput({ audioStreamEnd: true });
+        captionControllerRef.current?.finishUser(false);
         transition("thinking");
       }
     };
@@ -434,34 +417,37 @@ export function useGeminiLiveVoice(options: Options) {
             return;
           }
           const content = message.serverContent;
+          const interimInput = (content as unknown as {
+            interimInputTranscription?: { text?: string };
+          } | undefined)?.interimInputTranscription?.text || "";
           const inputText = content?.inputTranscription?.text || "";
           const outputText = content?.outputTranscription?.text || "";
+          if (interimInput) {
+            captionControllerRef.current?.receiveUserInterim(interimInput);
+            transition("user-speaking");
+          }
           if (inputText) {
-            setCaption({
-              speaker: "You",
-              text: getLatestLiveCaption(userTranscriptRef.current.append(inputText)),
-            });
+            captionControllerRef.current?.receiveUserStable(inputText, Boolean(content?.inputTranscription?.finished));
             transition("user-speaking");
             if (content?.inputTranscription?.finished) {
               localTurnEndedRef.current = true;
-              finalizeUser();
+              captionControllerRef.current?.finishUser(true);
               transition("thinking");
             }
           }
           if (outputText) {
-            pendingAssistantCaptionRef.current = getLatestLiveCaption(
-              assistantTranscriptRef.current.append(outputText),
-            );
-            scheduleAssistantCaption();
+            captionControllerRef.current?.receiveAssistantText(outputText);
           }
           if (content?.interrupted) {
             suppressPlaybackRef.current = true;
+            captionControllerRef.current?.interruptAssistant();
             clearPlayback(true);
-            finalizeAssistant("interrupted");
-            assistantTranscriptRef.current.reset();
             transition("barge-in-listening");
           }
-          if (content?.modelTurn?.parts?.length) turnCompleteRef.current = false;
+          if (content?.modelTurn?.parts?.length) {
+            turnCompleteRef.current = false;
+            captionControllerRef.current?.finishUser(false);
+          }
           for (const part of content?.modelTurn?.parts || []) {
             if (part.inlineData?.data && !content?.interrupted && !suppressPlaybackRef.current) {
               outputAudioSeenRef.current = true;
@@ -469,21 +455,11 @@ export function useGeminiLiveVoice(options: Options) {
                 part.inlineData.data,
                 () => {
                   transition("assistant-speaking");
-                  assistantPlaybackStartedRef.current = true;
-                  scheduleAssistantCaption();
+                  captionControllerRef.current?.assistantAudioStarted();
                 },
                 () => {
                   if (!turnCompleteRef.current) return;
-                  const messageId = assistantMessageIdRef.current;
-                  if (messageId) {
-                    onAssistantPlaybackStatusChange(messageId, { playbackStatus: "completed" });
-                    assistantMessageIdRef.current = null;
-                  }
-                  if (assistantCaptionTimerRef.current !== null) window.clearTimeout(assistantCaptionTimerRef.current);
-                  assistantCaptionTimerRef.current = null;
-                  assistantPlaybackStartedRef.current = false;
-                  pendingAssistantCaptionRef.current = "";
-                  lastAssistantCaptionAtRef.current = 0;
+                  captionControllerRef.current?.assistantAudioDrained();
                   transition("listening");
                 },
               );
@@ -491,21 +467,11 @@ export function useGeminiLiveVoice(options: Options) {
           }
           if (content?.turnComplete) {
             turnCompleteRef.current = true;
-            finalizeUser();
-            finalizeAssistant("completed");
-            if (outputAudioSeenRef.current && !assistantMessageIdRef.current) {
-              setSessionNotice("The spoken response played, but its transcript was unavailable.");
-            }
-            userTranscriptRef.current.reset();
-            assistantTranscriptRef.current.reset();
+            captionControllerRef.current?.turnComplete();
             suppressPlaybackRef.current = false;
             outputAudioSeenRef.current = false;
             if (!playbackRef.current?.size) {
-              const messageId = assistantMessageIdRef.current;
-              if (messageId) {
-                onAssistantPlaybackStatusChange(messageId, { playbackStatus: "completed" });
-                assistantMessageIdRef.current = null;
-              }
+              captionControllerRef.current?.assistantAudioDrained();
               transition("listening");
             }
           }
@@ -524,6 +490,7 @@ export function useGeminiLiveVoice(options: Options) {
           ) return;
           sessionRef.current = null;
           transition("reconnecting");
+          captionControllerRef.current?.beginGeneration();
           const attempt = reconnectAttemptsRef.current++;
           if (attempt >= MAX_RECONNECT_ATTEMPTS) {
             setError("Voice lost its connection. Your session has been safely closed.");
@@ -552,7 +519,7 @@ export function useGeminiLiveVoice(options: Options) {
     transition(mutedRef.current ? "paused" : "listening");
   // provisionAndConnect is assigned below and intentionally read at callback time.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clearPlayback, finalizeAssistant, finalizeUser, onAssistantPlaybackStatusChange, startMicrophone, stop, transition]);
+  }, [clearPlayback, finalizeUser, startMicrophone, stop, transition]);
 
   const provisionAndConnect = useCallback(async (resumptionHandle?: string | null) => {
     const current = reservationRef.current;
@@ -585,12 +552,7 @@ export function useGeminiLiveVoice(options: Options) {
       setError(null);
       setErrorCode(null);
       setRetryUntil(null);
-      setCaption(null);
-      pendingAssistantCaptionRef.current = "";
-      lastAssistantCaptionAtRef.current = 0;
-      assistantPlaybackStartedRef.current = false;
-      if (assistantCaptionTimerRef.current !== null) window.clearTimeout(assistantCaptionTimerRef.current);
-      assistantCaptionTimerRef.current = null;
+      captionControllerRef.current?.beginGeneration();
       speechSeenRef.current = false;
       localTurnEndedRef.current = false;
       lastSpeechAtRef.current = 0;
@@ -683,11 +645,10 @@ export function useGeminiLiveVoice(options: Options) {
 
   const interrupt = useCallback(() => {
     suppressPlaybackRef.current = true;
+    captionControllerRef.current?.interruptAssistant();
     clearPlayback(true);
-    finalizeAssistant("interrupted");
-    assistantTranscriptRef.current.reset();
     transition("listening");
-  }, [clearPlayback, finalizeAssistant, transition]);
+  }, [clearPlayback, transition]);
 
   const retry = useCallback(async () => {
     setError(null);
