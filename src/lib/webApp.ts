@@ -3,7 +3,7 @@ import { isNativePlatform } from "./native/platform";
 export const isWebApp = () => !isNativePlatform();
 
 export const registerWebApp = () => {
-  if (!isWebApp() || typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+  if (import.meta.env.DEV || !isWebApp() || typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
 
   window.addEventListener("load", () => {
     void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch((error) => {

@@ -547,12 +547,15 @@ export default function VoiceMode({
               )}>
                 <button
                   type="button"
-                  onClick={live.toggleMute}
-                  aria-label={live.isMuted ? "Unmute microphone" : "Mute microphone"}
+                  onClick={() => {
+                    if (live.isVisibilityPaused) void live.resume();
+                    else live.toggleMute();
+                  }}
+                  aria-label={live.isVisibilityPaused ? "Resume Voice" : live.isMuted ? "Unmute microphone" : "Mute microphone"}
                   className="voice-control-button touch-target app-secondary-button flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] px-2 text-[13px] font-medium"
                 >
-                  {live.isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                  <span>{live.isMuted ? "Unmute" : "Mute"}</span>
+                  {live.isVisibilityPaused || !live.isMuted ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                  <span>{live.isVisibilityPaused ? "Resume Voice" : live.isMuted ? "Unmute" : "Mute"}</span>
                 </button>
                 {live.state === "assistant-speaking" ? (
                   <button

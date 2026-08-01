@@ -6,6 +6,7 @@
       "source": "/api/(.*)",
       "headers": [
         { "key": "X-API-Contract-Version", "value": "1" },
+        { "key": "Access-Control-Expose-Headers", "value": "X-API-Contract-Version, X-Request-ID, Retry-After" },
         { "key": "Cache-Control", "value": "private, no-store" }
       ]
     },

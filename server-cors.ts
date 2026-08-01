@@ -96,6 +96,7 @@ export const setApiCorsHeaders = (
     : randomUUID();
   res.setHeader?.("X-Request-ID", requestId);
   res.setHeader?.("X-API-Contract-Version", String(API_CONTRACT_VERSION));
+  res.setHeader?.("Access-Control-Expose-Headers", "X-API-Contract-Version, X-Request-ID, Retry-After");
   res.setHeader?.("Access-Control-Allow-Methods", methods);
   res.setHeader?.("Access-Control-Allow-Headers", allowedHeaders);
   return true;

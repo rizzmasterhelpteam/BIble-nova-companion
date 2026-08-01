@@ -23,6 +23,34 @@ const getReminderStatus = async (): Promise<ReminderStatus> => {
   return getDailyReflectionReminderStatus();
 };
 
+type NativeListenerHandle = {
+  remove: () => Promise<void>;
+};
+
+const subscribeToNativeListener = (
+  load: () => Promise<NativeListenerHandle>,
+) => {
+  let disposed = false;
+  let handle: NativeListenerHandle | null = null;
+
+  void load()
+    .then((nextHandle) => {
+      if (disposed) {
+        void nextHandle.remove().catch(() => undefined);
+        return;
+      }
+      handle = nextHandle;
+    })
+    .catch(() => undefined);
+
+  return () => {
+    disposed = true;
+    const currentHandle = handle;
+    handle = null;
+    if (currentHandle) void currentHandle.remove().catch(() => undefined);
+  };
+};
+
 export const capacitorPlatform: PlatformAdapter = {
   kind: Capacitor.getPlatform() === "android"
     ? "android"
@@ -69,39 +97,23 @@ export const capacitorPlatform: PlatformAdapter = {
   },
   network: {
     getStatus: getNetworkStatus,
-    subscribe: (listener) => {
-      let removeListener = () => undefined;
-      void import("@capacitor/network").then(({ Network }) =>
-        Network.addListener("networkStatusChange", (status) => {
+    subscribe: (listener) => subscribeToNativeListener(async () => {
+      const { Network } = await import("@capacitor/network");
+      return Network.addListener("networkStatusChange", (status) => {
           listener({ connected: status.connected, connectionType: status.connectionType });
-        }).then((handle) => {
-          removeListener = () => void handle.remove();
-        }),
-      );
-      return () => removeListener();
-    },
+        });
+    }),
   },
   appState: {
-    subscribe: (listener) => {
-      let removeListener = () => undefined;
-      void import("@capacitor/app").then(({ App }) =>
-        App.addListener("appStateChange", ({ isActive }) => listener({ active: isActive }))
-          .then((handle) => {
-            removeListener = () => void handle.remove();
-          }),
-      );
-      return () => removeListener();
-    },
+    subscribe: (listener) => subscribeToNativeListener(async () => {
+      const { App } = await import("@capacitor/app");
+      return App.addListener("appStateChange", ({ isActive }) => listener({ active: isActive }));
+    }),
   },
   backButton: {
-    subscribe: (listener) => {
-      let removeListener = () => undefined;
-      void import("@capacitor/app").then(({ App }) =>
-        App.addListener("backButton", listener).then((handle) => {
-          removeListener = () => void handle.remove();
-        }),
-      );
-      return () => removeListener();
-    },
+    subscribe: (listener) => subscribeToNativeListener(async () => {
+      const { App } = await import("@capacitor/app");
+      return App.addListener("backButton", listener);
+    }),
   },
 };

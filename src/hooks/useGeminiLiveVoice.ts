@@ -181,6 +181,7 @@ export function useGeminiLiveVoice(options: Options) {
   const [voiceUsage, setVoiceUsage] = useState<VoiceUsageSummary | null>(null);
   const [caption, setCaption] = useState<LiveCaption | null>(null);
   const [retryUntil, setRetryUntil] = useState<number | null>(null);
+  const [isVisibilityPaused, setIsVisibilityPaused] = useState(false);
 
   const stateRef = useRef<VoiceState>("idle");
   const activeRef = useRef(false);
@@ -213,6 +214,7 @@ export function useGeminiLiveVoice(options: Options) {
   const outputAudioSeenRef = useRef(false);
   const suppressPlaybackRef = useRef(false);
   const appActiveRef = useRef(true);
+  const webVisibilityPausedRef = useRef(false);
   const onUserTranscriptRef = useRef(onUserTranscript);
   const onAssistantTranscriptRef = useRef(onAssistantTranscript);
   const onAssistantPlaybackStatusChangeRef = useRef(onAssistantPlaybackStatusChange);
@@ -338,6 +340,8 @@ export function useGeminiLiveVoice(options: Options) {
     reconnectTimerRef.current = null;
     reconnectPromiseRef.current = null;
     idleTimeoutSecondsRef.current = 0;
+    webVisibilityPausedRef.current = false;
+    setIsVisibilityPaused(false);
     stopMicrophone();
     clearPlayback(false);
     captionControllerRef.current?.cleanup();
@@ -644,6 +648,46 @@ export function useGeminiLiveVoice(options: Options) {
     return operation;
   }, [clearPlayback, connect]);
 
+  const resumeWebVoice = useCallback(async () => {
+    if (
+      getPlatformAdapter().isNative ||
+      !webVisibilityPausedRef.current ||
+      !activeRef.current ||
+      !appActiveRef.current
+    ) return;
+
+    setError(null);
+    setErrorCode(null);
+    setSessionNotice(null);
+    transition("requesting-permission");
+    try {
+      if (!primeAudioForUserGesture()) throw new Error("Web Audio is unavailable.");
+      await contextRef.current?.resume();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+      });
+      streamRef.current = stream;
+      mutedRef.current = false;
+      setIsMuted(false);
+      transition("reconnecting");
+      // Keep the provider resumption handle while minting a fresh ephemeral
+      // token for the new browser connection.
+      await provisionAndConnect(providerHandleRef.current);
+      webVisibilityPausedRef.current = false;
+      setIsVisibilityPaused(false);
+      refreshIdleTimeout();
+    } catch (caught) {
+      stopMicrophone();
+      const known = caught as Error & { reason?: VoiceErrorCode };
+      const fallback = safeError(caught);
+      setError(known.message || fallback.message);
+      setErrorCode(known.reason || fallback.code);
+      transition(known.reason === "permission_denied" || fallback.code === "permission_denied"
+        ? "permission-denied"
+        : "error");
+    }
+  }, [primeAudioForUserGesture, provisionAndConnect, refreshIdleTimeout, stopMicrophone, transition]);
+
   const start = useCallback(async (mode: VoiceStartMode = "fresh_start") => {
     if (startingRef.current) return startingRef.current;
     const operation = (async () => {
@@ -659,6 +703,11 @@ export function useGeminiLiveVoice(options: Options) {
         return;
       }
       intentionalStopRef.current = false;
+      appActiveRef.current = true;
+      webVisibilityPausedRef.current = false;
+      setIsVisibilityPaused(false);
+      mutedRef.current = false;
+      setIsMuted(false);
       setError(null);
       setErrorCode(null);
       setRetryUntil(null);
@@ -767,6 +816,10 @@ export function useGeminiLiveVoice(options: Options) {
   const retry = useCallback(async () => {
     setError(null);
     setErrorCode(null);
+    if (webVisibilityPausedRef.current && !getPlatformAdapter().isNative) {
+      await resumeWebVoice();
+      return;
+    }
     if (activeRef.current && reservationRef.current) {
       transition("reconnecting");
       try { await provisionAndConnect(providerHandleRef.current); }
@@ -776,19 +829,34 @@ export function useGeminiLiveVoice(options: Options) {
     await start(isVoiceReservationRecoverable(reservationRef.current, userId)
       ? "recovery_resume"
       : "fresh_start");
-  }, [provisionAndConnect, start, stop, transition, userId]);
+  }, [provisionAndConnect, resumeWebVoice, start, stop, transition, userId]);
 
   useEffect(() => {
     const platform = getPlatformAdapter();
-    if (!platform.isNative) return;
     return platform.appState.subscribe(({ active: isActive }) => {
       appActiveRef.current = isActive;
       if (!activeRef.current) return;
       if (!isActive) {
         mutedRef.current = true;
+        setIsMuted(true);
         sessionRef.current?.sendRealtimeInput({ audioStreamEnd: true });
         stopMicrophone();
         void contextRef.current?.suspend();
+        if (!platform.isNative) {
+          webVisibilityPausedRef.current = true;
+          setIsVisibilityPaused(true);
+          clearPlayback(true);
+          const staleSession = sessionRef.current;
+          sessionRef.current = null;
+          connectionGenerationRef.current += 1;
+          try { staleSession?.close(); } catch { /* already closed */ }
+          setSessionNotice("Voice paused while this tab was hidden. Choose Resume Voice when you are ready.");
+          transition("paused");
+        }
+        return;
+      }
+      if (!platform.isNative) {
+        if (webVisibilityPausedRef.current) transition("paused");
         return;
       }
       void (async () => {
@@ -808,7 +876,7 @@ export function useGeminiLiveVoice(options: Options) {
         await stop("error", "fatal_error");
       });
     });
-  }, [provisionAndConnect, refreshIdleTimeout, stop, stopMicrophone, transition]);
+  }, [clearPlayback, provisionAndConnect, refreshIdleTimeout, stop, stopMicrophone, transition]);
 
   useEffect(() => () => { void stop("ended", "component_unmount"); }, [stop]);
 
@@ -823,6 +891,7 @@ export function useGeminiLiveVoice(options: Options) {
     voiceUsage,
     caption,
     retryUntil,
+    isVisibilityPaused,
     retryLabel: "Retry Voice",
     canRecover: isVoiceReservationRecoverable(reservation, userId),
     start,
@@ -830,6 +899,7 @@ export function useGeminiLiveVoice(options: Options) {
     stop,
     finishTurn,
     toggleMute,
+    resume: resumeWebVoice,
     interrupt,
     primeAudioForUserGesture,
   };

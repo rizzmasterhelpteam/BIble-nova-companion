@@ -1,11 +1,14 @@
 import { isNativePlatform } from "./native/platform";
 import { isSupabaseConfigured, supabase } from "./supabase";
+import { API_CONTRACT_VERSION } from "../platform/types";
 
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, "") || "";
 const shouldUseConfiguredApiBaseUrl = Boolean(configuredApiBaseUrl) && isNativePlatform();
 const NATIVE_API_CONFIGURATION_ERROR =
   "Server connection is not configured for this app build. Android builds require VITE_API_BASE_URL.";
 export const API_REQUEST_TIMEOUT_MS = 30_000;
+export const API_CONTRACT_MISMATCH_MESSAGE =
+  "This app and its server are out of sync. Refresh the app or install the latest version.";
 let cachedAccessToken: string | null | undefined;
 let accessTokenRequest: Promise<string | null> | null = null;
 
@@ -74,11 +77,16 @@ export const apiFetch = async (path: string, init: RequestInit = {}) => {
   }, API_REQUEST_TIMEOUT_MS);
 
   try {
-    return await fetch(getApiUrl(path), {
+    const response = await fetch(getApiUrl(path), {
       ...init,
       signal: controller.signal,
       headers,
     });
+    const contractVersion = response.headers.get("X-API-Contract-Version");
+    if (contractVersion !== String(API_CONTRACT_VERSION)) {
+      throw new Error(API_CONTRACT_MISMATCH_MESSAGE);
+    }
+    return response;
   } finally {
     globalThis.clearTimeout(timeoutId);
     callerSignal?.removeEventListener("abort", forwardAbort);
