@@ -1,13 +1,7 @@
 import { createShadowNotes, type ChatMessage } from "../../chat-api.js";
 import { loadShadowMemoryProfile, saveShadowNotes } from "../../server-api.js";
 import { assertStringLength, enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../../server-security.js";
-
-const setCorsHeaders = (res: any) => {
-  res.setHeader?.("Access-Control-Allow-Origin", "*");
-  res.setHeader?.("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader?.("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Request-Id");
-  res.setHeader?.("Cache-Control", "private, no-store, no-cache, max-age=0, must-revalidate");
-};
+import { setApiCorsHeaders } from "../../server-cors.js";
 
 const normalizeMessages = (value: unknown): ChatMessage[] => {
   if (!Array.isArray(value)) return [];
@@ -28,7 +22,8 @@ const normalizeMessages = (value: unknown): ChatMessage[] => {
 };
 
 export default async function handler(req: any, res: any) {
-  setCorsHeaders(res);
+  if (!setApiCorsHeaders(req, res, "POST, OPTIONS", "Content-Type, Authorization, X-Client-Request-Id")) return;
+  res.setHeader?.("Cache-Control", "private, no-store, no-cache, max-age=0, must-revalidate");
 
   if (req.method === "OPTIONS") {
     res.status(204).end();

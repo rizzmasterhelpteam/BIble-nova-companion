@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'path';
 import pkg from './package.json';
-import {defineConfig, loadEnv} from 'vite';
+import {defineConfig, loadEnv, type Plugin} from 'vite';
 import {
   createReflectionResponse,
   deleteSupabaseAccount,
@@ -29,6 +29,7 @@ import {
   HttpError,
   requireAuthenticatedRequest,
 } from './server-security';
+import { API_CONTRACT_VERSION } from './platform-contract';
 
 const applyLocalEnv = (env: Record<string, string>) => {
   for (const [key, value] of Object.entries(env)) {
@@ -41,6 +42,7 @@ const applyLocalEnv = (env: Record<string, string>) => {
 const sendJson = (res: ServerResponse, statusCode: number, data: unknown) => {
   res.statusCode = statusCode;
   res.setHeader('Content-Type', 'application/json');
+  res.setHeader('X-API-Contract-Version', String(API_CONTRACT_VERSION));
   res.end(JSON.stringify(data));
 };
 
@@ -312,16 +314,51 @@ const localApiPlugin = () => ({
         }
 
         try {
+          const { userId, ip } = await requireAuthenticatedRequest(req);
+          await enforceRateLimits([
+            { key: `models:user:${userId}`, limit: 10 },
+            { key: `models:ip:${ip}`, limit: 20 },
+          ]);
           const data = await fetchAvailableModels();
+          res.setHeader('Cache-Control', 'private, no-store, no-cache, max-age=0');
           sendJson(res, 200, data);
         } catch (error) {
           console.error('Vite local API models error:', error);
-          sendJson(res, 500, { error: getClientErrorMessage(error) });
+          const details = getHttpErrorDetails(error);
+          if (details.retryAfterSeconds) res.setHeader('Retry-After', String(details.retryAfterSeconds));
+          res.setHeader('Cache-Control', 'private, no-store, no-cache, max-age=0');
+          sendJson(res, details.statusCode, {
+            error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message,
+          });
         }
         return;
       }
 
       next();
+    });
+  },
+});
+
+const pwaPrecachePlugin = (): Plugin => ({
+  name: 'pwa-precache-manifest',
+  apply: 'build',
+  generateBundle(_options, bundle) {
+    const bundledAssets = Object.keys(bundle)
+      .filter((fileName) => /\.(?:html|js|css|png|jpe?g|webp|svg|ico|webmanifest|woff2?|ttf)$/i.test(fileName))
+      .map((fileName) => `/${fileName}`);
+    const staticAssets = [
+      '/',
+      '/manifest.webmanifest',
+      '/favicon.png',
+      '/icons/icon-192.png',
+      '/icons/icon-512.png',
+      '/native-error.html',
+    ];
+    const assets = [...new Set([...bundledAssets, ...staticAssets])];
+    this.emitFile({
+      type: 'asset',
+      fileName: 'precache-manifest.json',
+      source: JSON.stringify({ version: 1, assets }, null, 2),
     });
   },
 });
@@ -351,7 +388,7 @@ export default defineConfig(({mode}) => {
     define: {
       'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
     },
-    plugins: [localApiPlugin(), react(), tailwindcss()],
+    plugins: [localApiPlugin(), react(), tailwindcss(), pwaPrecachePlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

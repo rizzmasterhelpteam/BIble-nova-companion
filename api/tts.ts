@@ -13,15 +13,7 @@ import {
   requireAuthenticatedRequest,
 } from "../server-security.js";
 import { normalizeVoiceLanguage } from "../src/lib/voiceLanguage.js";
-
-const setCorsHeaders = (res: any) => {
-  res.setHeader?.("Access-Control-Allow-Origin", "*");
-  res.setHeader?.("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader?.(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-Client-Request-Id",
-  );
-};
+import { setApiCorsHeaders } from "../server-cors.js";
 
 const getBody = (req: any) => {
   if (typeof req.body === "string") {
@@ -42,7 +34,7 @@ export default async function handler(req: any, res: any) {
     timings.total = Date.now() - startedAt;
     res.setHeader?.("Server-Timing", formatServerTiming(timings));
   };
-  setCorsHeaders(res);
+  if (!setApiCorsHeaders(req, res, "POST, OPTIONS", "Content-Type, Authorization, X-Client-Request-Id")) return;
   res.setHeader?.("Cache-Control", "private, no-store");
   if (requestId) res.setHeader?.("X-Client-Request-Id", requestId);
   if (req.method === "OPTIONS") return res.status(204).end();

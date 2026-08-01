@@ -18,17 +18,9 @@ import {
   requireAuthenticatedRequest,
 } from "../server-security.js";
 import { normalizeVoiceLanguage } from "../src/lib/voiceLanguage.js";
+import { setApiCorsHeaders } from "../server-cors.js";
 
 const API_BUILD_ID = "2026-07-29-fast-voice-respond";
-
-const setCorsHeaders = (res: any) => {
-  res.setHeader?.("Access-Control-Allow-Origin", "*");
-  res.setHeader?.("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader?.(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-Client-Request-Id",
-  );
-};
 
 const getBody = (req: any) => {
   if (typeof req.body === "string") {
@@ -79,7 +71,7 @@ export default async function handler(req: any, res: any) {
   };
   let voiceMode = false;
   let userHash = "unverified";
-  setCorsHeaders(res);
+  if (!setApiCorsHeaders(req, res, "POST, OPTIONS", "Content-Type, Authorization, X-Client-Request-Id")) return;
   res.setHeader?.("X-Bible-Nova-Api-Build", API_BUILD_ID);
   res.setHeader?.("Cache-Control", "private, no-store");
   if (requestId) res.setHeader?.("X-Client-Request-Id", requestId);

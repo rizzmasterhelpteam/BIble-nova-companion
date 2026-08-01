@@ -17,7 +17,7 @@ import { useAuth } from "../context/AuthContext";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { useVoiceSession } from "../context/VoiceSessionContext";
 import { apiFetch } from "../lib/apiClient";
-import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
+import { getNativePlatform, getPlatformAdapter } from "../lib/native/platform";
 import { createApiStatusLoader, type ApiStatus } from "../lib/apiStatus";
 import { storageGetJson, storageSet } from "../lib/webStorage";
 import {
@@ -340,7 +340,8 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const isVoiceMode = mode === "voice";
   const isImmersiveVoice = isVoiceMode && isVoiceSessionActive;
   const chatPageRef = useRef<HTMLDivElement>(null);
-  const isAndroidApp = isNativePlatform() && getNativePlatform() === "android";
+  const platform = getPlatformAdapter();
+  const isAndroidApp = platform.isNative && getNativePlatform() === "android";
 
   const refreshSpeechSupport = useCallback(async (reason = "manual") => {
     const speechSession = speechSessionRef.current;
@@ -392,7 +393,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
       : speechMode === "web" && apiStatus?.speechReady !== true
         ? SPEECH_UNAVAILABLE_MESSAGE
         : null;
-  const shouldAutoFocusInput = !isNativePlatform() && width >= 768;
+  const shouldAutoFocusInput = !platform.isNative && width >= 768;
   const shouldAutoFocusInputRef = useRef(shouldAutoFocusInput);
   const previousIdentityKeyRef = useRef<string | null>(null);
 
@@ -492,24 +493,11 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   }, [apiStatus]);
 
   useEffect(() => {
-    if (!isNativePlatform()) return;
-    let disposed = false;
-    let listener: { remove: () => Promise<void> } | null = null;
-    void import("@capacitor/app")
-      .then(({ App }) => App.addListener("appStateChange", ({ isActive }) => {
-        if (isActive) void refreshSpeechSupport("app-resume");
-      }))
-      .then((handle) => {
-        if (disposed) void handle.remove();
-        else listener = handle;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      if (listener) void listener.remove();
-    };
-  }, [refreshSpeechSupport]);
+    if (!platform.isNative) return;
+    return platform.appState.subscribe(({ active }) => {
+      if (active) void refreshSpeechSupport("app-resume");
+    });
+  }, [platform, refreshSpeechSupport]);
 
   useEffect(() => {
     const storageKey = getMessageStorageKey(identityKey);

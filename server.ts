@@ -23,6 +23,7 @@ import {
   getSubscriptionAccessStatus,
   requireAuthenticatedRequest,
 } from "./server-security";
+import { API_CONTRACT_VERSION } from "./platform-contract";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
@@ -31,6 +32,10 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
 app.use(express.json({ limit: "12mb" }));
+app.use((_req, res, next) => {
+  res.setHeader("X-API-Contract-Version", String(API_CONTRACT_VERSION));
+  next();
+});
 
 app.get("/api/status", (_req, res) => {
   res.json(getApiStatus());
@@ -102,12 +107,22 @@ app.post("/api/subscription/native-sync", async (req, res) => {
   }
 });
 
-app.get("/api/models", async (_req, res) => {
+app.get("/api/models", async (req, res) => {
+  res.setHeader("Cache-Control", "private, no-store, no-cache, max-age=0");
   try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    await enforceRateLimits([
+      { key: `models:user:${userId}`, limit: 10 },
+      { key: `models:ip:${ip}`, limit: 20 },
+    ]);
     const data = await fetchAvailableModels();
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: getClientErrorMessage(error) });
+    const details = getHttpErrorDetails(error);
+    if (details.retryAfterSeconds) res.setHeader("Retry-After", String(details.retryAfterSeconds));
+    res.status(details.statusCode).json({
+      error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message,
+    });
   }
 });
 

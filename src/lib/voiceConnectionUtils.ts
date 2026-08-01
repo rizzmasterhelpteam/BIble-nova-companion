@@ -2,6 +2,21 @@ export type RealtimeInputSession = {
   sendRealtimeInput: (input: unknown) => void;
 };
 
+export type ReconnectLifecycleState = {
+  intentionalStop: boolean;
+  active: boolean;
+  appActive: boolean;
+  visibilityPaused: boolean;
+};
+
+export const canStartReconnect = ({
+  intentionalStop,
+  active,
+  appActive,
+  visibilityPaused,
+}: ReconnectLifecycleState) =>
+  !intentionalStop && active && appActive && !visibilityPaused;
+
 /**
  * Resolves the target at send time so a long-lived microphone processor never
  * retains a socket that was replaced during a reconnect.

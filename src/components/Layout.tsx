@@ -30,16 +30,10 @@ import { useAuth } from "../context/AuthContext";
 import { useHaptics } from "../context/HapticsContext";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { useVoiceSession } from "../context/VoiceSessionContext";
-import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
+import { getNativePlatform, getPlatformAdapter } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
 import { cn } from "../lib/utils";
 import { shouldHideBottomNavigation } from "../lib/mobileLayout";
-import {
-  cancelDailyReflectionReminder,
-  getDailyReflectionReminderId,
-  getDailyReflectionReminderStatus,
-  scheduleDailyReflectionReminder,
-} from "../lib/native/notifications";
 import {
   DEFAULT_REMINDER_DAYS,
   DEFAULT_REMINDER_TIME,
@@ -148,7 +142,8 @@ export default function Layout() {
   const displayName = profileName || user?.email?.split("@")[0] || "Unknown";
   const accountInitial = displayName.trim().charAt(0).toUpperCase() || "?";
   const isAccountBusy = isDeletingAccount || isSavingProfile || isProcessingAvatar;
-  const nativeControlsAvailable = isNativePlatform();
+  const platform = getPlatformAdapter();
+  const nativeControlsAvailable = platform.isNative && platform.reminders.supported;
   const isAndroidApp = nativeControlsAvailable && getNativePlatform() === "android";
   const isHomeRoute = location.pathname === "/";
   const hideGlobalChrome = isVoiceSessionActive && location.pathname === "/";
@@ -174,7 +169,7 @@ export default function Layout() {
       let enabled = enabledValue === "true";
 
       if (enabled) {
-        const status = await getDailyReflectionReminderStatus();
+        const status = await platform.reminders.getStatus();
         if (!status.permissionGranted) {
           enabled = false;
           if (showError) {
@@ -186,7 +181,7 @@ export default function Layout() {
             normalizedDays.every((day) =>
               status.schedules.some(
                 (schedule) =>
-                  schedule.id === getDailyReflectionReminderId(day) &&
+                  schedule.id === platform.reminders.getId(day) &&
                   schedule.day === day &&
                   schedule.hour === hour &&
                   schedule.minute === minute,
@@ -194,7 +189,7 @@ export default function Layout() {
             );
 
           if (!scheduleMatches) {
-            enabled = await scheduleDailyReflectionReminder(hour, minute, normalizedDays);
+            enabled = await platform.reminders.schedule({ hour, minute, days: normalizedDays });
             if (!enabled && showError) {
               setNotificationError("Android could not restore the daily reminder.");
             }
@@ -221,7 +216,7 @@ export default function Layout() {
       setIsUpdatingReminder(false);
       setReminderPreferencesReady(true);
     }
-  }, [nativeControlsAvailable]);
+  }, [nativeControlsAvailable, platform]);
 
   useEffect(() => {
     void reconcileDailyReminderPreferences(false);
@@ -229,33 +224,10 @@ export default function Layout() {
 
   useEffect(() => {
     if (!nativeControlsAvailable) return;
-
-    let removeListener: (() => void) | undefined;
-    let isDisposed = false;
-    void import("@capacitor/app")
-      .then(({ App }) =>
-        App.addListener("appStateChange", ({ isActive }) => {
-          if (isActive) void reconcileDailyReminderPreferences(settingsOpenRef.current);
-        }),
-      )
-      .then((listener) => {
-        if (isDisposed) {
-          void listener.remove();
-          return;
-        }
-        removeListener = () => {
-          void listener.remove();
-        };
-      })
-      .catch((error) => {
-        console.warn("Could not register reminder resume recovery:", error);
-      });
-
-    return () => {
-      isDisposed = true;
-      removeListener?.();
-    };
-  }, [nativeControlsAvailable, reconcileDailyReminderPreferences]);
+    return platform.appState.subscribe(({ active }) => {
+      if (active) void reconcileDailyReminderPreferences(settingsOpenRef.current);
+    });
+  }, [nativeControlsAvailable, platform, reconcileDailyReminderPreferences]);
 
   useEffect(() => {
     if (settingsOpen) void reconcileDailyReminderPreferences(true);
@@ -273,7 +245,7 @@ export default function Layout() {
         const nextDays = reminderDays.length ? reminderDays : [...DEFAULT_REMINDER_DAYS];
         const nextTime = normalizeReminderTime(reminderTime);
         const { hour, minute } = parseReminderTime(nextTime);
-        const scheduled = await scheduleDailyReflectionReminder(hour, minute, nextDays);
+        const scheduled = await platform.reminders.schedule({ hour, minute, days: nextDays });
         if (!scheduled) {
           throw new Error("Allow notifications to turn on daily reminders.");
         }
@@ -285,7 +257,7 @@ export default function Layout() {
         setReminderTime(nextTime);
         setReminderDays(nextDays);
       } else {
-        await cancelDailyReflectionReminder();
+        await platform.reminders.cancel();
         await nativeStorage.set(DAILY_REMINDER_STORAGE_KEY, "false");
       }
 
@@ -311,7 +283,7 @@ export default function Layout() {
     try {
       if (dailyRemindersEnabled) {
         const { hour, minute } = parseReminderTime(newTime);
-        const scheduled = await scheduleDailyReflectionReminder(hour, minute, reminderDays);
+        const scheduled = await platform.reminders.schedule({ hour, minute, days: reminderDays });
         if (!scheduled) throw new Error("Could not reschedule reminders.");
       }
       await nativeStorage.set(REMINDER_TIME_STORAGE_KEY, newTime);
@@ -338,7 +310,7 @@ export default function Layout() {
     try {
       if (dailyRemindersEnabled) {
         const { hour, minute } = parseReminderTime(reminderTime);
-        const scheduled = await scheduleDailyReflectionReminder(hour, minute, normalizedDays);
+        const scheduled = await platform.reminders.schedule({ hour, minute, days: normalizedDays });
         if (!scheduled) throw new Error("Could not reschedule reminders.");
       }
       await nativeStorage.set(REMINDER_DAYS_STORAGE_KEY, JSON.stringify(normalizedDays));

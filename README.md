@@ -2,6 +2,27 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
+# Bible Nova Companion
+
+Bible Nova Companion is a web-first AI reflection app. The browser is the
+canonical client: Vercel serves the SPA and API routes, Supabase provides
+authentication and private user data, and server-only Vercel functions call
+Groq, Gemini, and Google Cloud Text-to-Speech. Capacitor remains an optional
+Android wrapper for Google Play billing and native device integrations.
+
+## Web architecture
+
+Production web requests use same-origin `/api/*` routes. This keeps browser
+auth, CORS, cookies, and deployment environments aligned and avoids exposing
+provider credentials. The browser handles microphone permission, PCM voice
+audio, MediaRecorder transcription fallback, and speech playback; provider
+keys and entitlement checks remain server-side. The web build is installable as
+a PWA and uses a network-first shell cache without caching API responses.
+
+Google Play billing remains Android-only in this configuration. A web checkout
+requires a separate billing provider and webhook/entitlement design; it should
+not be simulated with client-side premium flags.
+
 # Run and deploy your AI Studio app
 
 This contains everything you need to run your app locally.
@@ -40,7 +61,8 @@ Set these in Vercel for the environments you deploy to:
 - `RATE_LIMIT_IP_SALT` optional server-only random value used to hash IP-based rate-limit keys; the server-only Supabase service-role key is used as a secure fallback
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` required server-only JSON credentials for verified Android subscriptions
 - `VITE_API_BASE_URL` required in native mobile builds, set to your Vercel site URL
-- Release Capacitor builds load bundled `dist` assets. Set `CAPACITOR_LIVE_RELOAD=true` and `CAPACITOR_SERVER_URL` only for local live reload; never enable it for a release build.
+- Capacitor Android release builds load the verified local `dist` bundle. Set `CAPACITOR_LIVE_RELOAD=true` with a local URL for development only; production builds must not use Capacitor `server.url` to load Vercel directly.
+- `APP_ORIGIN`, `CAPACITOR_ANDROID_ORIGIN`, and `CAPACITOR_IOS_ORIGIN` define the exact authenticated API origins; preview origins must be listed explicitly in `VERCEL_PREVIEW_ORIGINS` or `VERCEL_PREVIEW_ORIGIN_PATTERN`.
 - `VITE_GOOGLE_PLAY_PUBLIC_KEY` optional Google Play monetization RSA public key for Android billing or verification integrations
 - `VITE_IAP_MONTHLY_PRODUCT_ID` and `VITE_IAP_YEARLY_PRODUCT_ID` required for native subscription IAP
 - `VITE_IAP_MONTHLY_BASE_PLAN_ID` and `VITE_IAP_YEARLY_BASE_PLAN_ID` required for Android subscription IAP (Google Play base plans)
@@ -62,8 +84,7 @@ This app is configured with Capacitor for Android and iOS.
 - Open Android Studio: `npm run android:open`
 - Open Xcode: `npm run ios:open` (requires macOS)
 
-For mobile builds, set `VITE_API_BASE_URL` to the deployed Vercel URL so native requests call `/api/*` on Vercel instead of the local WebView origin.
-The native wrapper uses bundled web assets in release builds, so UI changes require rebuilding the APK/IPA. API requests still use the deployed Vercel URL via `VITE_API_BASE_URL`, and the app shows a recoverable error page if bundled assets fail to load.
+For mobile builds, set `VITE_API_BASE_URL` to the deployed Vercel URL so the bundled Android UI calls `/api/*` on Vercel. The release shell never points Capacitor `server.url` at Vercel: it ships the complete local `dist` bundle and remains usable when Vercel is unavailable. Frontend changes require a new APK until a signed, compatible OTA web-bundle provider is selected and configured. The repository contains compatibility types for a signed manifest, but OTA delivery is intentionally disabled until that provider is configured.
 For native Google sign-in on mobile:
 
 - `VITE_GOOGLE_WEB_CLIENT_ID` is an optional Android override; a public Bible Nova client ID is included as the clean-build fallback.
@@ -74,6 +95,6 @@ For native Google sign-in on mobile:
 
 ### Voice-first home
 
-The authenticated home screen opens in Voice mode for new users and remembers each user's Voice/Chat selection. Voice mode records one turn at a time, transcribes it with Groq Whisper Large V3 Turbo, generates a concise response with Groq GPT-OSS 120B, and plays it with Google Cloud Text-to-Speech. Voice transcripts share the existing local conversation timeline and are batched through `/api/voice/shadow-notes` for compact Supabase shadow-note updates.
+The authenticated home screen opens in Voice mode for new users and remembers each user's Voice/Chat selection. Gemini Live remains the Voice data plane: the client captures PCM microphone audio and streams it directly to the short-lived Gemini Live session; Vercel only authenticates the request, checks entitlement and rate limits, holds the Supabase lease, and mints the constrained token. Voice audio is not routed through a record-upload-transcribe-TTS replacement. Text chat, chat microphone dictation, and text-to-speech remain on their existing providers.
 
 The Supabase Voice reservation remains the source of truth for premium eligibility, concurrency, and usage duration. The browser and Android client receive only an opaque reservation handle; Groq, Google Cloud, and Supabase administrative credentials remain in server-only Vercel variables.

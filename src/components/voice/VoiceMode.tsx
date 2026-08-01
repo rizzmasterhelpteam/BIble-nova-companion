@@ -14,7 +14,7 @@ import {
 import { motion } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../lib/apiClient";
-import { isNativePlatform } from "../../lib/native/platform";
+import { getPlatformAdapter } from "../../lib/native/platform";
 import { cn } from "../../lib/utils";
 import { useMobileViewport } from "../../context/MobileViewportContext";
 import {
@@ -345,27 +345,11 @@ export default function VoiceMode({
   }, [onExitVoice, persistVoiceNotes, stopLive]);
 
   useEffect(() => {
-    if (!active || !isNativePlatform()) return;
-
-    let disposed = false;
-    let listener: { remove: () => Promise<void> } | null = null;
-    void import("@capacitor/app")
-      .then(({ App }) => App.addListener("backButton", () => {
-        // A hardware back press ends the active microphone session but keeps
-        // the user in Voice Mode. Moving to text chat remains an explicit
-        // choice through the Continue in Chat control.
-        void handleEnd();
-      }))
-      .then((handle) => {
-        if (disposed) void handle.remove();
-        else listener = handle;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      if (listener) void listener.remove();
-    };
+    const platform = getPlatformAdapter();
+    if (!active || !platform.isNative) return;
+    // A hardware back press ends the active microphone session but keeps
+    // the user in Voice Mode. Moving to text chat remains explicit.
+    return platform.backButton.subscribe(() => void handleEnd());
   }, [active, handleEnd]);
 
   const startLabel = premiumRequired
@@ -563,12 +547,15 @@ export default function VoiceMode({
               )}>
                 <button
                   type="button"
-                  onClick={live.toggleMute}
-                  aria-label={live.isMuted ? "Unmute microphone" : "Mute microphone"}
+                  onClick={() => {
+                    if (live.isVisibilityPaused) void live.resume();
+                    else live.toggleMute();
+                  }}
+                  aria-label={live.isVisibilityPaused ? "Resume Voice" : live.isMuted ? "Unmute microphone" : "Mute microphone"}
                   className="voice-control-button touch-target app-secondary-button flex min-h-12 flex-col items-center justify-center gap-1 rounded-[1rem] px-2 text-[13px] font-medium"
                 >
-                  {live.isMuted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                  <span>{live.isMuted ? "Unmute" : "Mute"}</span>
+                  {live.isVisibilityPaused || !live.isMuted ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                  <span>{live.isVisibilityPaused ? "Resume Voice" : live.isMuted ? "Unmute" : "Mute"}</span>
                 </button>
                 {live.state === "assistant-speaking" ? (
                   <button

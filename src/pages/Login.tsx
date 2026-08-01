@@ -5,8 +5,7 @@ import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/su
 import { useAuth } from "../context/AuthContext";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
-import { signInWithGoogleNative } from "../lib/native/auth";
-import { isNativePlatform } from "../lib/native/platform";
+import { getPlatformAdapter } from "../lib/native/platform";
 import { AppLogo } from "../components/AppLogo";
 
 type LegalView = "terms" | "privacy";
@@ -213,8 +212,8 @@ export default function Login() {
     setIsLoading(true);
     setError(null);
     try {
-      if (isNativePlatform()) {
-        await signInWithGoogleNative();
+      if (getPlatformAdapter().isNative) {
+        await getPlatformAdapter().auth.signInWithGoogle();
       } else {
         const { error } = await supabase.auth.signInWithOAuth({
           provider: "google",
