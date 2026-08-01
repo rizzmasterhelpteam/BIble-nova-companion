@@ -351,7 +351,10 @@ export default function VoiceMode({
     let listener: { remove: () => Promise<void> } | null = null;
     void import("@capacitor/app")
       .then(({ App }) => App.addListener("backButton", () => {
-        void handleExitVoice();
+        // A hardware back press ends the active microphone session but keeps
+        // the user in Voice Mode. Moving to text chat remains an explicit
+        // choice through the Continue in Chat control.
+        void handleEnd();
       }))
       .then((handle) => {
         if (disposed) void handle.remove();
@@ -363,7 +366,7 @@ export default function VoiceMode({
       disposed = true;
       if (listener) void listener.remove();
     };
-  }, [active, handleExitVoice]);
+  }, [active, handleEnd]);
 
   const startLabel = premiumRequired
     ? "Recheck premium access"
@@ -414,12 +417,12 @@ export default function VoiceMode({
       {active && (
         <button
           type="button"
-          onClick={() => void handleExitVoice()}
-          aria-label="Exit Voice and continue in Chat"
+          onClick={() => void handleEnd()}
+          aria-label="End Voice session"
           className="voice-session-close touch-target absolute right-4 top-4 z-30 flex h-11 w-11 items-center justify-center rounded-full border transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] sm:right-6 sm:top-6"
         >
           <X className="h-5 w-5" aria-hidden="true" />
-          <span className="sr-only">Exit Voice and continue in Chat</span>
+          <span className="sr-only">End Voice session</span>
         </button>
       )}
       <div className={cn(
