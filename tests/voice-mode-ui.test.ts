@@ -111,6 +111,8 @@ describe("Voice mode interface", () => {
     expect(voiceHookSource).not.toContain("startMicrophone(connectedSession)");
     expect(voiceHookSource).toContain("reconnectPromiseRef.current");
     expect(voiceHookSource).toContain("clearPlayback(true);");
+    expect(voiceHookSource).toContain("window.clearTimeout(reconnectTimerRef.current);");
+    expect(voiceHookSource).toContain("visibilityPaused: webVisibilityPausedRef.current");
   });
 
   it("honors the server idle timeout and suspends microphone processing in the background", () => {

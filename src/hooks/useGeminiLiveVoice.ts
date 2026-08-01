@@ -21,6 +21,7 @@ import {
 } from "../lib/geminiLiveAudio";
 import { LiveCaptionController, type LiveCaption } from "../lib/geminiLiveCaptions";
 import {
+  canStartReconnect,
   closeLateSession,
   createCurrentSessionRouter,
   withOperationTimeout,
@@ -448,7 +449,12 @@ export function useGeminiLiveVoice(options: Options) {
   }, [enableInputLevel]);
 
   const scheduleReconnect = useCallback(() => {
-    if (intentionalStopRef.current || !activeRef.current || !appActiveRef.current) return;
+    if (!canStartReconnect({
+      intentionalStop: intentionalStopRef.current,
+      active: activeRef.current,
+      appActive: appActiveRef.current,
+      visibilityPaused: webVisibilityPausedRef.current,
+    })) return;
     if (reconnectTimerRef.current !== null || reconnectPromiseRef.current) return;
 
     const attempt = reconnectAttemptsRef.current++;
@@ -468,6 +474,14 @@ export function useGeminiLiveVoice(options: Options) {
     transition("reconnecting");
     reconnectTimerRef.current = window.setTimeout(() => {
       reconnectTimerRef.current = null;
+
+      if (!canStartReconnect({
+        intentionalStop: intentionalStopRef.current,
+        active: activeRef.current,
+        appActive: appActiveRef.current,
+        visibilityPaused: webVisibilityPausedRef.current,
+      })) return;
+
       void provisionAndConnect(providerHandleRef.current).catch(() => {
         scheduleReconnect();
       });
@@ -843,6 +857,10 @@ export function useGeminiLiveVoice(options: Options) {
         stopMicrophone();
         void contextRef.current?.suspend();
         if (!platform.isNative) {
+          if (reconnectTimerRef.current !== null) {
+            window.clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+          }
           webVisibilityPausedRef.current = true;
           setIsVisibilityPaused(true);
           clearPlayback(true);

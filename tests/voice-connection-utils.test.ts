@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  canStartReconnect,
   closeLateSession,
   createCurrentSessionRouter,
   withOperationTimeout,
@@ -40,5 +41,29 @@ describe("Voice connection utilities", () => {
     const session = { close: vi.fn() };
     expect(closeLateSession(session, () => true)).toBe(false);
     expect(session.close).not.toHaveBeenCalled();
+  });
+
+  it("does not reconnect when the tab becomes hidden before a delayed attempt", () => {
+    vi.useFakeTimers();
+    try {
+      let lifecycle = {
+        intentionalStop: false,
+        active: true,
+        appActive: true,
+        visibilityPaused: false,
+      };
+      const connect = vi.fn();
+
+      setTimeout(() => {
+        if (canStartReconnect(lifecycle)) connect();
+      }, 400);
+
+      lifecycle = { ...lifecycle, appActive: false, visibilityPaused: true };
+      vi.advanceTimersByTime(400);
+
+      expect(connect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
