@@ -94,4 +94,16 @@ describe("native subscription entitlement sync", () => {
     );
     expect(apiFetch).not.toHaveBeenCalled();
   });
+
+  it("does not report premium repair for an authoritative non-active state", async () => {
+    vi.mocked(restorePurchases).mockResolvedValue([{
+      productIdentifier: "biblenova",
+      purchaseToken: "held-purchase-token",
+    }] as never);
+    vi.mocked(apiFetch).mockResolvedValue(new Response(JSON.stringify({
+      subscription: { status: "on_hold" },
+    }), { status: 200 }));
+
+    await expect(refreshNativeSubscriptionEntitlement()).resolves.toBe(false);
+  });
 });

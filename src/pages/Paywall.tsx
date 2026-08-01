@@ -31,6 +31,7 @@ type NativePurchaseTransaction = {
 type NativeSubscriptionSyncResponse = {
   subscription?: {
     source?: string;
+    status?: string;
     productId?: string;
     planId?: string;
   };
@@ -237,6 +238,9 @@ export default function Paywall() {
     });
     const data = (await response.json().catch(() => ({}))) as NativeSubscriptionSyncResponse;
     if (!response.ok) throw new Error(data.error || "Could not link this subscription to your account.");
+    if (data.subscription?.status !== "active" && data.subscription?.status !== "grace_period") {
+      throw new Error("Google Play verified this purchase, but it is not currently active.");
+    }
     subscribe("native_google_play");
     return data.subscription;
   };
