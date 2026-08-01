@@ -105,7 +105,8 @@ const getSubscriptionConfigs = () => ({
       normalizeConfigValue(import.meta.env.VITE_IAP_MONTHLY_BASE_PLAN_ID) ||
       DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.monthly.androidBasePlanId,
     androidOfferId:
-      normalizeConfigValue(import.meta.env.VITE_IAP_MONTHLY_OFFER_ID),
+      normalizeConfigValue(import.meta.env.VITE_IAP_MONTHLY_OFFER_ID) ||
+      DEFAULT_ANDROID_SUBSCRIPTION_CONFIG.monthly.androidOfferId,
   },
   yearly: {
     productId:
@@ -188,7 +189,7 @@ const isActivePurchase = (purchase: Transaction) => {
   if (purchase.subscriptionState === "expired") return false;
   if (typeof purchase.isActive === "boolean") return purchase.isActive;
   if (purchase.expirationDate) return Date.parse(purchase.expirationDate) > Date.now();
-  return true;
+  return false;
 };
 
 const getConfiguredProductIds = () => {
