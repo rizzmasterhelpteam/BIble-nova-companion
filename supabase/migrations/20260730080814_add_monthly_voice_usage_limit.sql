@@ -42,8 +42,10 @@ begin
   if not exists (
     select 1 from public.subscription_entitlements
     where user_id = p_user_id
-      and status in ('active', 'grace_period')
-      and (expiry_time is null or expiry_time > now())
+      and (
+        (status in ('active', 'grace_period') and expiry_time > now())
+        or (status = 'canceled' and expiry_time > now())
+      )
   ) then
     raise exception 'Active premium subscription required' using errcode = 'P0001';
   end if;
@@ -152,8 +154,10 @@ begin
   if not exists (
     select 1 from public.subscription_entitlements
     where user_id = p_user_id
-      and status in ('active', 'grace_period')
-      and (expiry_time is null or expiry_time > now())
+      and (
+        (status in ('active', 'grace_period') and expiry_time > now())
+        or (status = 'canceled' and expiry_time > now())
+      )
   ) then
     return query select
       false, false, 'subscription_required'::text, null::integer, false,
