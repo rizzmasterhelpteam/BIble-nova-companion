@@ -108,9 +108,12 @@ export default async function handler(req: any, res: any) {
       if (!handleHash) {
         return res.status(400).json({ error: "This Voice reservation is invalid." });
       }
-      const releaseReason = typeof body.releaseReason === "string" && RELEASE_REASONS.has(body.releaseReason)
-        ? body.releaseReason
-        : "user_end";
+      if (body.releaseReason !== undefined && (
+        typeof body.releaseReason !== "string" || !RELEASE_REASONS.has(body.releaseReason)
+      )) {
+        return res.status(400).json({ error: "Voice release reason is invalid." });
+      }
+      const releaseReason = body.releaseReason || "user_end";
       const released = await releaseVoiceSessionLease(userId, handleHash);
       console.info("[voice/session] released", {
         requestId: requestId || "server-generated",
@@ -189,6 +192,9 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ token: token.name, expiresAt, newSessionExpiresAt, reservationExpiresAt });
     }
 
+    if (body.mode !== undefined && body.mode !== "fresh_start" && body.mode !== "recovery_resume") {
+      return res.status(400).json({ error: "Voice session mode is invalid." });
+    }
     const requestedMode =
       body.mode === "fresh_start" || body.mode === "recovery_resume"
         ? body.mode

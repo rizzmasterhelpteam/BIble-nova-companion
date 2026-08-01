@@ -71,6 +71,20 @@ describe("turn-based Voice session API", () => {
     expect(acquireVoiceSessionLease).not.toHaveBeenCalled();
   });
 
+  it("preserves omitted mode compatibility but rejects supplied invalid schema values", async () => {
+    const invalidMode = createResponse();
+    await voiceSessionHandler({ method: "POST", body: { action: "start", mode: "restart_now" } }, invalidMode);
+    expect(invalidMode.statusCode).toBe(400);
+
+    const invalidReleaseReason = createResponse();
+    await voiceSessionHandler({
+      method: "POST",
+      body: { action: "release", reservationHandle: "r".repeat(43), releaseReason: "unknown" },
+    }, invalidReleaseReason);
+    expect(invalidReleaseReason.statusCode).toBe(400);
+    expect(releaseVoiceSessionLease).not.toHaveBeenCalled();
+  });
+
   it("fresh start releases an old reservation and acquires a new handle", async () => {
     getVoiceSessionAvailability.mockResolvedValue({
       eligible: true,
