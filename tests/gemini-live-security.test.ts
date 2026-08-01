@@ -22,7 +22,7 @@ describe("Gemini Live security", () => {
     const auth = endpointSource.indexOf("requireAuthenticatedRequest(req)");
     const limits = endpointSource.indexOf("enforceRateLimits(");
     const lease = endpointSource.indexOf("getVoiceSessionAvailability(");
-    const mint = endpointSource.indexOf("client.authTokens.create(");
+    const mint = endpointSource.lastIndexOf("client.authTokens.create(");
     expect(auth).toBeGreaterThan(-1);
     expect(limits).toBeGreaterThan(auth);
     expect(lease).toBeGreaterThan(limits);

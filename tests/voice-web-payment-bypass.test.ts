@@ -8,11 +8,12 @@ const migrationSource = readFileSync(
 );
 
 describe("temporary web Voice payment bypass", () => {
-  it("requires both the server switch and an exact allowed browser Origin", () => {
+  it("limits the temporary bypass to the production browser Origin or an explicit test Origin", () => {
     for (const source of [sessionSource]) {
       expect(source).toContain('process.env.VOICE_WEB_PAYMENT_BYPASS === "true"');
       expect(source).toContain("process.env.VOICE_WEB_TEST_ORIGIN");
       expect(source).toContain('req.headers?.origin || ""');
+      expect(source).toContain('origin === "https://biblecompanion.vercel.app"');
     }
   });
 
