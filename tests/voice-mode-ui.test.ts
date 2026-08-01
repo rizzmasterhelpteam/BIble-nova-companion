@@ -10,6 +10,8 @@ const voiceSessionSource = source("../api/voice/session.ts");
 const subscriptionSyncSource = source("../src/lib/native/subscriptionSync.ts");
 const appStylesSource = source("../src/index.css");
 const capacitorConfigSource = source("../capacitor.config.ts");
+const androidManifestSource = source("../android/app/src/main/AndroidManifest.xml");
+const fileProviderPathsSource = source("../android/app/src/main/res/xml/file_paths.xml");
 
 describe("Voice mode interface", () => {
   it("uses Gemini Live only for immersive Voice", () => {
@@ -98,6 +100,24 @@ describe("Voice mode interface", () => {
     expect(voiceHookSource).toContain("clearPlayback(false)");
     expect(voiceHookSource).toContain("await releaseReservation(");
     expect(voiceHookSource).toContain("await targetContext.close()");
+    const resetIndex = voiceHookSource.indexOf("reconnectAttemptsRef.current = 0");
+    const goAwayIndex = voiceHookSource.indexOf("if (message.goAway)");
+    expect(resetIndex).toBeGreaterThan(goAwayIndex);
+  });
+
+  it("routes microphone PCM to the current session after reconnecting", () => {
+    expect(voiceHookSource).toContain("createCurrentSessionRouter");
+    expect(voiceHookSource).toContain("microphoneRouterRef.current.send");
+    expect(voiceHookSource).not.toContain("startMicrophone(connectedSession)");
+    expect(voiceHookSource).toContain("reconnectPromiseRef.current");
+    expect(voiceHookSource).toContain("clearPlayback(true);");
+  });
+
+  it("honors the server idle timeout and suspends microphone processing in the background", () => {
+    expect(voiceHookSource).toContain("idleTimeoutSeconds?: number");
+    expect(voiceHookSource).toContain('stop("ended", "idle_timeout")');
+    expect(voiceHookSource).toContain("void contextRef.current?.suspend()");
+    expect(voiceHookSource).toContain("await navigator.mediaDevices.getUserMedia({");
   });
 
   it("keeps provider and premium failures recoverable inside Voice Mode", () => {
@@ -117,5 +137,10 @@ describe("Voice mode interface", () => {
     expect(appStylesSource).toContain("overflow-y: auto;");
     expect(appStylesSource).toContain("env(safe-area-inset-top");
     expect(capacitorConfigSource).toContain('loggingBehavior: "none"');
+  });
+
+  it("disables Android backups and does not expose the full external storage through FileProvider", () => {
+    expect(androidManifestSource).toContain('android:allowBackup="false"');
+    expect(fileProviderPathsSource).not.toContain("<external-path");
   });
 });
