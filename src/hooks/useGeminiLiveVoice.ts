@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GoogleGenAI, Modality, type Session } from "@google/genai";
+import { GoogleGenAI, type Session } from "@google/genai";
+import {
+  GEMINI_LIVE_API_VERSION,
+  GEMINI_LIVE_MODEL,
+  getGeminiLiveConnectConfig,
+} from "../../gemini-live-config";
 import { apiFetch } from "../lib/apiClient";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import {
@@ -68,8 +73,6 @@ type TokenResponse = {
   error?: string;
 };
 
-const MODEL = "gemini-3.1-flash-live-preview";
-const API_VERSION = "v1beta";
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_DELAYS_MS = [400, 1_000, 2_200];
 const INPUT_LEVEL_UPDATE_INTERVAL_MS = 90;
@@ -351,16 +354,14 @@ export function useGeminiLiveVoice(options: Options) {
   const connect = useCallback(async (token: string, resumptionHandle?: string | null) => {
     const context = contextRef.current;
     if (!context) throw new Error("Audio playback is unavailable.");
-    const ai = new GoogleGenAI({ apiKey: token, httpOptions: { apiVersion: API_VERSION } });
+    const ai = new GoogleGenAI({ apiKey: token, httpOptions: { apiVersion: GEMINI_LIVE_API_VERSION } });
     const connectionGeneration = connectionGenerationRef.current + 1;
     connectionGenerationRef.current = connectionGeneration;
     let opened = false;
     const connectedSession = await ai.live.connect({
-      model: MODEL,
+      model: GEMINI_LIVE_MODEL,
       config: {
-        responseModalities: [Modality.AUDIO],
-        inputAudioTranscription: {},
-        outputAudioTranscription: {},
+        ...getGeminiLiveConnectConfig(),
         sessionResumption: resumptionHandle ? { handle: resumptionHandle } : {},
       },
       callbacks: {
