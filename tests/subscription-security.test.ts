@@ -43,9 +43,13 @@ describe("server-owned Google Play subscription security", () => {
   it("preserves authoritative states and unlocks only active or grace", () => {
     expect(mapGooglePlaySubscriptionState("SUBSCRIPTION_STATE_IN_GRACE_PERIOD")).toBe("grace_period");
     expect(mapGooglePlaySubscriptionState("SUBSCRIPTION_STATE_ON_HOLD")).toBe("on_hold");
-    expect(stateUnlocksPremium("active")).toBe(true);
-    expect(stateUnlocksPremium("grace_period")).toBe(true);
-    expect(stateUnlocksPremium("on_hold")).toBe(false);
+    const future = "2099-09-01T00:00:00Z";
+    expect(stateUnlocksPremium("active", future)).toBe(true);
+    expect(stateUnlocksPremium("grace_period", future)).toBe(true);
+    expect(stateUnlocksPremium("canceled", future)).toBe(true);
+    expect(stateUnlocksPremium("canceled", "2000-01-01T00:00:00Z")).toBe(false);
+    expect(stateUnlocksPremium("active")).toBe(false);
+    expect(stateUnlocksPremium("on_hold", future)).toBe(false);
     expect(stateUnlocksPremium("revoked")).toBe(false);
   });
 });

@@ -71,5 +71,13 @@ export const mapGooglePlaySubscriptionState = (state: string | undefined): Entit
   return states[state || ""] || "revoked";
 };
 
-export const stateUnlocksPremium = (state: EntitlementState) =>
-  state === "active" || state === "grace_period";
+export const stateUnlocksPremium = (
+  state: EntitlementState,
+  expiryTime?: string | null,
+  now = Date.now(),
+) => {
+  if (state !== "active" && state !== "grace_period" && state !== "canceled") return false;
+  if (!expiryTime) return false;
+  const expiry = Date.parse(expiryTime);
+  return Number.isFinite(expiry) && expiry > now;
+};

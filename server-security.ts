@@ -167,7 +167,7 @@ export const getSubscriptionAccessStatus = async (
     .from("subscription_entitlements")
     .select("status, expiry_time, verified_at")
     .eq("user_id", userId)
-    .in("status", ["active", "grace_period"])
+    .in("status", ["active", "grace_period", "canceled"])
     .order("verified_at", { ascending: false })
     .limit(10);
 
@@ -178,8 +178,8 @@ export const getSubscriptionAccessStatus = async (
 
   const now = Date.now();
   const entitlement = (data || []).find((row) => {
-    if (row.status !== "active" && row.status !== "grace_period") return false;
-    if (!row.expiry_time) return true;
+    if (row.status !== "active" && row.status !== "grace_period" && row.status !== "canceled") return false;
+    if (!row.expiry_time) return false;
     const expiry = Date.parse(row.expiry_time);
     return Number.isFinite(expiry) && expiry > now;
   });

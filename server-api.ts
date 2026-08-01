@@ -166,6 +166,7 @@ type UserSubscriptionMetadata = {
   orderId?: string;
   linkedAt?: string;
   platform?: "android" | "ios";
+  accessActive?: boolean;
 };
 
 type VerifiedGooglePlaySubscription = {
@@ -313,7 +314,8 @@ const verifyGooglePlaySubscription = async (
   const expiry = expiryTime ? Date.parse(expiryTime) : NaN;
   const status = mapGooglePlaySubscriptionState(data.subscriptionState);
 
-  if (stateUnlocksPremium(status) && (!expiryTime || !Number.isFinite(expiry) || expiry <= Date.now())) {
+  if ((status === "active" || status === "grace_period" || status === "canceled") &&
+    (!expiryTime || !Number.isFinite(expiry) || expiry <= Date.now())) {
     throw new Error("This Google Play subscription is not active.");
   }
 
@@ -981,14 +983,15 @@ export async function syncNativeSubscription(
     linkedAt,
     platform,
     trialEndsAt: verifiedPurchase.expiryTime,
+    accessActive: stateUnlocksPremium(verifiedPurchase.status, verifiedPurchase.expiryTime),
   };
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const purchaseTokenHash = createHash("sha256").update(purchaseToken).digest("hex");
-  const { data: entitlementLinked, error: entitlementError } = await adminClient.rpc(
-    "link_subscription_entitlement",
+  const { data: entitlementResult, error: entitlementError } = await adminClient.rpc(
+    "link_subscription_entitlement_authoritative",
     {
       p_user_id: data.user.id,
       p_platform: platform,
@@ -1002,19 +1005,30 @@ export async function syncNativeSubscription(
     },
   );
 
-  if (entitlementError || entitlementLinked !== true) {
+  const entitlement = Array.isArray(entitlementResult) ? entitlementResult[0] : entitlementResult;
+  if (entitlementError || !entitlement?.status) {
     throw new Error(entitlementError?.message || "Could not persist the verified subscription entitlement.");
   }
+
+  const authoritativeSubscription: UserSubscriptionMetadata = {
+    ...nextSubscription,
+    status: entitlement.status,
+    productId: entitlement.product_id,
+    planId: entitlement.base_plan_id || undefined,
+    orderId: entitlement.order_id || undefined,
+    trialEndsAt: entitlement.expiry_time || undefined,
+    accessActive: stateUnlocksPremium(entitlement.status, entitlement.expiry_time),
+  };
 
   const { error: updateError } = await adminClient.auth.admin.updateUserById(data.user.id, {
     app_metadata: {
       ...(data.user.app_metadata || {}),
-      subscription: nextSubscription,
+      subscription: authoritativeSubscription,
     },
   });
 
   return {
-    ...nextSubscription,
+    ...authoritativeSubscription,
     ...(updateError ? { metadataWarning: "Entitlement linked; profile metadata refresh is pending." } : {}),
   };
 }

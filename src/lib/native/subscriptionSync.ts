@@ -79,12 +79,12 @@ const syncNativeSubscriptionEntitlement = async () => {
   });
   const result = (await response.json().catch(() => ({}))) as {
     error?: string;
-    subscription?: { status?: string };
+    subscription?: { accessActive?: boolean };
   };
   if (!response.ok) {
     throw new Error(result.error || "Your purchase could not be verified.");
   }
-  return result.subscription?.status === "active" || result.subscription?.status === "grace_period";
+  return result.subscription?.accessActive === true;
 };
 
 // Play Billing and server verification can be requested from both lifecycle
