@@ -489,11 +489,13 @@ export function useGeminiLiveVoice(options: Options) {
         onopen: () => {
           if (!activeRef.current || connectionGeneration !== connectionGenerationRef.current) return;
           opened = true;
-          reconnectAttemptsRef.current = 0;
           transition("ready");
         },
         onmessage: (message) => {
           if (!activeRef.current || connectionGeneration !== connectionGenerationRef.current) return;
+          // A socket that merely opens and closes is not a healthy recovery.
+          // Reset the retry budget only after Gemini has actually responded.
+          reconnectAttemptsRef.current = 0;
           refreshIdleTimeout();
           const update = message.sessionResumptionUpdate;
           if (update?.newHandle) providerHandleRef.current = update.newHandle;
