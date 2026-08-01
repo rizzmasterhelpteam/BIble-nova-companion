@@ -103,8 +103,8 @@ describe("Voice mode interface", () => {
   });
 
   it("routes microphone PCM to the current session after reconnecting", () => {
-    expect(voiceHookSource).toContain("const activeSession = sessionRef.current;");
-    expect(voiceHookSource).toContain("if (!activeSession) return;");
+    expect(voiceHookSource).toContain("createCurrentSessionRouter");
+    expect(voiceHookSource).toContain("microphoneRouterRef.current.send");
     expect(voiceHookSource).not.toContain("startMicrophone(connectedSession)");
     expect(voiceHookSource).toContain("reconnectPromiseRef.current");
     expect(voiceHookSource).toContain("clearPlayback(true);");
