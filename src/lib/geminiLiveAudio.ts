@@ -73,6 +73,15 @@ export const mergeLiveTranscript = (current: string, next: string) => {
   return `${current} ${normalized}`;
 };
 
+// Captions should follow the latest utterance, rather than pinning the first
+// words of an accumulating Live transcript on screen.
+export const getLatestLiveCaption = (transcript: string, maxChars = 180) => {
+  const normalized = transcript.trim().replace(/\s+/g, " ");
+  if (!normalized) return "";
+  const latestSentence = normalized.split(/(?<=[.!?])\s+/).at(-1) || normalized;
+  return latestSentence.slice(-maxChars);
+};
+
 export class LiveTranscriptAccumulator {
   private text = "";
   private committed = false;

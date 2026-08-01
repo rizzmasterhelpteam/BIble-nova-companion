@@ -3,6 +3,7 @@ import {
   base64ToBytes,
   bytesToBase64,
   float32ToPcm16,
+  getLatestLiveCaption,
   LiveTranscriptAccumulator,
   mergeLiveTranscript,
   pcm16ToFloat32,
@@ -35,6 +36,13 @@ describe("Gemini Live audio", () => {
     expect(mergeLiveTranscript("I feel very", "very anxious today")).toBe(
       "I feel very anxious today",
     );
+  });
+
+  it("uses the latest live sentence for a compact caption", () => {
+    expect(getLatestLiveCaption("First thought. This is the current thought.")).toBe(
+      "This is the current thought.",
+    );
+    expect(getLatestLiveCaption("one two three four", 8)).toBe("ree four");
   });
 
   it("commits each finalized transcript exactly once", () => {

@@ -16,6 +16,7 @@ import {
   bytesToBase64,
   float32ToPcm16,
   GEMINI_INPUT_SAMPLE_RATE,
+  getLatestLiveCaption,
   GeminiPcmPlaybackQueue,
   LiveTranscriptAccumulator,
   resampleFloat32,
@@ -406,7 +407,10 @@ export function useGeminiLiveVoice(options: Options) {
           const inputText = content?.inputTranscription?.text || "";
           const outputText = content?.outputTranscription?.text || "";
           if (inputText) {
-            setCaption({ speaker: "You", text: userTranscriptRef.current.append(inputText) });
+            setCaption({
+              speaker: "You",
+              text: getLatestLiveCaption(userTranscriptRef.current.append(inputText)),
+            });
             transition("user-speaking");
             if (content?.inputTranscription?.finished) {
               localTurnEndedRef.current = true;
@@ -415,7 +419,10 @@ export function useGeminiLiveVoice(options: Options) {
             }
           }
           if (outputText) {
-            setCaption({ speaker: "Bible Nova", text: assistantTranscriptRef.current.append(outputText) });
+            setCaption({
+              speaker: "Bible Nova",
+              text: getLatestLiveCaption(assistantTranscriptRef.current.append(outputText)),
+            });
           }
           if (content?.interrupted) {
             suppressPlaybackRef.current = true;
