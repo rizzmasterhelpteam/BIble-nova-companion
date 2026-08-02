@@ -78,30 +78,30 @@ const SubscriptionRefreshNotice = () => {
   const {
     isSubscribed,
     isSubscriptionResolved,
-    isSubscriptionRevalidating,
     subscriptionRevalidationError,
   } = useAuth();
 
   if (
     !isSubscribed ||
     !isSubscriptionResolved ||
-    (!isSubscriptionRevalidating && !subscriptionRevalidationError)
+    !subscriptionRevalidationError
   ) {
     return null;
   }
 
   return (
     <div
-      className="fixed inset-x-3 bottom-3 z-[119] rounded-card border px-4 py-3 text-sm shadow-xl"
+      className="pointer-events-none fixed inset-x-3 z-40 rounded-card border px-4 py-3 text-sm shadow-xl"
       role="status"
       style={{
+        bottom: "calc(5.5rem + env(safe-area-inset-bottom, 0px))",
         backgroundColor: "var(--app-surface-elevated)",
         backgroundImage: "var(--app-shell-highlight)",
         borderColor: "var(--app-card-border)",
         color: "var(--app-text)",
       }}
     >
-      {subscriptionRevalidationError || "Refreshing premium access…"}
+      {subscriptionRevalidationError}
     </div>
   );
 };

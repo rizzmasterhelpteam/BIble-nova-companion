@@ -78,6 +78,7 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 const AVATAR_NONE = "__none__";
+const SUBSCRIPTION_REVALIDATION_NOTICE_DURATION_MS = 6_000;
 
 const LEGACY_GUEST_STORAGE_KEYS = [
   "is_guest",
@@ -211,6 +212,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const memoryRequestVersionRef = React.useRef(0);
   const activeMemoryUserIdRef = React.useRef<string | null>(null);
   activeMemoryUserIdRef.current = user?.id || null;
+
+  useEffect(() => {
+    if (!subscriptionRevalidationError) return;
+
+    const timeoutId = window.setTimeout(
+      () => setSubscriptionRevalidationError(null),
+      SUBSCRIPTION_REVALIDATION_NOTICE_DURATION_MS,
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [subscriptionRevalidationError]);
 
   useEffect(() => {
     let isDisposed = false;

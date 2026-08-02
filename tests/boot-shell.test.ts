@@ -35,5 +35,7 @@ describe("Android/WebView boot stability", () => {
     expect(authSource).toContain("if (initial) setIsSubscriptionResolved(false)");
     expect(authSource).toContain("Premium access could not be refreshed");
     expect(authSource).toContain("isSubscriptionRevalidating");
+    expect(authSource).toContain("SUBSCRIPTION_REVALIDATION_NOTICE_DURATION_MS");
+    expect(appSource).toContain("pointer-events-none fixed inset-x-3 z-40");
   });
 });
