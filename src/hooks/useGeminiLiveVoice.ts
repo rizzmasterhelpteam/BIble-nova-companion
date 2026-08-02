@@ -203,6 +203,7 @@ export function useGeminiLiveVoice(options: Options) {
   const idleTimerRef = useRef<number | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectPromiseRef = useRef<Promise<void> | null>(null);
+  const resumePromiseRef = useRef<Promise<void> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const providerHandleRef = useRef<string | null>(null);
   const lastSpeechAtRef = useRef(0);
@@ -641,6 +642,13 @@ export function useGeminiLiveVoice(options: Options) {
     if (reconnectPromiseRef.current) return reconnectPromiseRef.current;
     const current = reservationRef.current;
     if (!current) throw new Error("Voice reservation is missing.");
+    const canContinue = () => (
+      activeRef.current &&
+      appActiveRef.current &&
+      !intentionalStopRef.current &&
+      reservationRef.current?.handle === current.handle
+    );
+    if (!canContinue()) throw new Error("Voice start was cancelled.");
     const operation = (async () => {
       const previousSession = sessionRef.current;
       if (previousSession) {
@@ -655,8 +663,14 @@ export function useGeminiLiveVoice(options: Options) {
         "Voice token request timed out.",
       );
       const token = await parseResponse<TokenResponse>(response);
+      if (!canContinue()) throw new Error("Voice start was cancelled.");
       tokenRef.current = token.token;
       await connect(token.token, resumptionHandle);
+      if (!canContinue()) {
+        sessionRef.current?.close();
+        sessionRef.current = null;
+        throw new Error("Voice start was cancelled.");
+      }
     })().finally(() => { reconnectPromiseRef.current = null; });
     reconnectPromiseRef.current = operation;
     return operation;
@@ -877,11 +891,18 @@ export function useGeminiLiveVoice(options: Options) {
         if (webVisibilityPausedRef.current) transition("paused");
         return;
       }
-      void (async () => {
+      if (resumePromiseRef.current) return;
+      const resumeOperation = (async () => {
+        if (!appActiveRef.current || !activeRef.current || intentionalStopRef.current) return;
         await contextRef.current?.resume();
+        stopMicrophone();
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
         });
+        if (!appActiveRef.current || !activeRef.current || intentionalStopRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         streamRef.current = stream;
         mutedRef.current = false;
         setIsMuted(false);
@@ -892,7 +913,8 @@ export function useGeminiLiveVoice(options: Options) {
         setError("Voice could not resume after the app returned.");
         setErrorCode("connection_failed");
         await stop("error", "fatal_error");
-      });
+      }).finally(() => { resumePromiseRef.current = null; });
+      resumePromiseRef.current = resumeOperation;
     });
   }, [clearPlayback, provisionAndConnect, refreshIdleTimeout, stop, stopMicrophone, transition]);
 

@@ -68,12 +68,37 @@ const getPreferences = async () => {
   return preferencesPromise;
 };
 
-export const storageGet = (key: string) => getStorage()?.getItem(key) ?? null;
+const unwrapStoredValue = (raw: string | null) => {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { value?: unknown; schemaVersion?: unknown };
+    return typeof parsed?.value === "string" && typeof parsed.schemaVersion === "number"
+      ? parsed.value
+      : raw;
+  } catch {
+    return raw;
+  }
+};
+
+const getStoredUpdatedAt = (raw: string | null) => {
+  if (!raw) return 0;
+  try {
+    const parsed = JSON.parse(raw) as { updatedAt?: unknown; schemaVersion?: unknown };
+    return typeof parsed.schemaVersion === "number" && typeof parsed.updatedAt === "number"
+      ? parsed.updatedAt
+      : 0;
+  } catch {
+    return 0;
+  }
+};
+
+export const storageGet = (key: string) => unwrapStoredValue(getStorage()?.getItem(key) ?? null);
 
 export const storageSet = (key: string, value: string) => {
   try {
     const storage = getStorage();
-    storage?.setItem(key, value);
+    const envelope = JSON.stringify({ value, updatedAt: Date.now(), schemaVersion: 1 });
+    storage?.setItem(key, envelope);
 
     if (!isNativePlatform()) {
       return;
@@ -83,7 +108,7 @@ export const storageSet = (key: string, value: string) => {
       .then((Preferences) =>
         Preferences
           ? withPreferencesTimeout(
-              Preferences.set({ key: `web_storage_${key}`, value }),
+              Preferences.set({ key: `web_storage_${key}`, value: envelope }),
               "Native Preferences write",
             )
           : undefined,
@@ -155,7 +180,10 @@ const restoreWebStorageFromPreferencesImpl = async () => {
 
     for (const { originalKey, value } of entries) {
       if (value !== null) {
-        storage.setItem(originalKey, value);
+        const localRaw = storage.getItem(originalKey);
+        if (getStoredUpdatedAt(value) > getStoredUpdatedAt(localRaw)) {
+          storage.setItem(originalKey, value);
+        }
       }
     }
 
