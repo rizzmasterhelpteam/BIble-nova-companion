@@ -192,20 +192,6 @@ export default function VoiceMode({
       live.errorCode === "monthly_limit") &&
     cooldownSeconds > 0;
   const cooldownMinutes = Math.max(1, Math.ceil(cooldownSeconds / 60));
-  const monthlyUsage = live.voiceUsage;
-  const monthlyUsagePercent = monthlyUsage
-    ? Math.min(100, Math.round((monthlyUsage.monthlyUsedMinutes / monthlyUsage.monthlyLimitMinutes) * 100))
-    : 0;
-  const monthlyUsageWarning = monthlyUsagePercent >= 95
-    ? "Almost at your monthly Voice limit."
-    : monthlyUsagePercent >= 80
-      ? "You have used 80% of this month's Voice time."
-      : null;
-  const monthlyResetLabel = monthlyUsage?.monthlyResetAt
-    ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" })
-      .format(new Date(monthlyUsage.monthlyResetAt))
-    : null;
-
   const persistVoiceNotes = useCallback((force = false) => {
     const persistLatestConfirmedMessages = async () => {
       if (!memoryEnabled) return;
@@ -461,25 +447,6 @@ export default function VoiceMode({
                 ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                 : <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
               <span>{sessionNotice}</span>
-            </div>
-          )}
-
-          {monthlyUsage && (
-            <div
-              className="voice-usage-summary app-muted mt-3 flex w-full items-center justify-between gap-3 rounded-[1rem] border px-3.5 py-3 text-left text-sm"
-              style={{
-                background: monthlyUsagePercent >= 95 ? "var(--app-danger-soft)" : "var(--app-card-soft)",
-                borderColor: monthlyUsagePercent >= 95
-                  ? "color-mix(in srgb, var(--app-danger) 22%, transparent)"
-                  : "var(--app-card-border)",
-              }}
-            >
-              <span className="font-medium">Voice this month</span>
-              <span className="text-right">
-                {monthlyUsage.monthlyRemainingMinutes} of {monthlyUsage.monthlyLimitMinutes} min left
-                {monthlyUsageWarning ? ` · ${monthlyUsageWarning}` : ""}
-                {monthlyResetLabel ? ` Resets ${monthlyResetLabel}.` : ""}
-              </span>
             </div>
           )}
 
