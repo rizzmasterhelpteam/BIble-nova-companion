@@ -114,6 +114,22 @@ describe("fast Voice response path", () => {
     expect(crisis).toContain("emergency services");
   });
 
+  it.each([
+    "main marna chahta hoon",
+    "main marna chahti hoon",
+    "mujhe jeena nahi chahta",
+    "khud ko nuksan pahunchana hai",
+    "मैं मरना चाहता हूँ",
+    "मुझे जीना नहीं है",
+    "खुद को नुकसान",
+  ])("classifies Hindi and Hinglish crisis language: %s", (content) => {
+    expect(classifyVoiceResponseIntensity([{ role: "user", content }])).toBe("crisis-risk");
+  });
+
+  it("does not classify ordinary Hindi reflection as crisis risk", () => {
+    expect(classifyVoiceResponseIntensity([{ role: "user", content: "main aaj thoda udaas hoon aur baat karna chahta hoon" }])).not.toBe("crisis-risk");
+  });
+
   it("does not block the fast response on shadow-note database work", () => {
     const voiceResponsePath = serverApiSource.slice(
       serverApiSource.indexOf("export async function createVoiceReflectionResponse"),

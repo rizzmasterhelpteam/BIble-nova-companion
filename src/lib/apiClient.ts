@@ -13,9 +13,16 @@ export const API_CONTRACT_MISMATCH_MESSAGE =
   "This app and its server are out of sync. Refresh the app or install the latest version.";
 let cachedAccessToken: string | null | undefined;
 let accessTokenRequest: Promise<string | null> | null = null;
+let sessionGeneration = 0;
 
 export const setApiAccessToken = (accessToken: string | null) => {
   cachedAccessToken = accessToken;
+};
+
+export const invalidateApiSession = () => {
+  sessionGeneration += 1;
+  cachedAccessToken = null;
+  accessTokenRequest = null;
 };
 
 const getApiAccessToken = async () => {
@@ -46,6 +53,7 @@ export const getApiUrl = (path: string) => {
 };
 
 export const apiFetch = async (path: string, init: RequestInit = {}) => {
+  const requestGeneration = sessionGeneration;
   const headers = new Headers(init.headers);
   if (
     !headers.has("X-Client-Request-Id") &&
@@ -94,6 +102,9 @@ export const apiFetch = async (path: string, init: RequestInit = {}) => {
       }
     }
 
+    if (requestGeneration !== sessionGeneration) {
+      throw new DOMException("Account session changed.", "AbortError");
+    }
     const contractVersion = response.headers.get("X-API-Contract-Version");
     if (contractVersion !== null && contractVersion !== String(API_CONTRACT_VERSION)) {
       throw new Error(API_CONTRACT_MISMATCH_MESSAGE);

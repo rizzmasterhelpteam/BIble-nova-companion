@@ -920,6 +920,12 @@ export function useGeminiLiveVoice(options: Options) {
 
   useEffect(() => () => { void stop("ended", "component_unmount"); }, [stop]);
 
+  useEffect(() => {
+    const cancelAccountWork = () => { void stop("ended", "account_logout"); };
+    window.addEventListener("bible-nova-account-shutdown", cancelAccountWork);
+    return () => window.removeEventListener("bible-nova-account-shutdown", cancelAccountWork);
+  }, [stop]);
+
   return {
     state,
     error,

@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
-import { apiFetch, setApiAccessToken } from "../lib/apiClient";
+import { apiFetch, invalidateApiSession, setApiAccessToken } from "../lib/apiClient";
+import { cancelNativeSubscriptionEntitlementSync } from "../lib/native/subscriptionSync";
 import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
 import { startup } from "../lib/startup";
 import { normalizeShadowNotes } from "../lib/shadowMemory";
@@ -24,6 +25,7 @@ type AuthContextType = {
   completeOnboarding: () => void;
   shadowNotes: string | null;
   memoryEnabled: boolean;
+  memoryPreferenceState: "loading" | "enabled" | "disabled";
   memoryPreferenceLoading: boolean;
   updateMemoryPreference: (enabled: boolean) => Promise<void>;
   updateShadowNotes: (notes: string) => Promise<void>;
@@ -45,6 +47,7 @@ const AuthContext = createContext<AuthContextType>({
   completeOnboarding: () => {},
   shadowNotes: null,
   memoryEnabled: false,
+  memoryPreferenceState: "loading",
   memoryPreferenceLoading: false,
   updateMemoryPreference: async () => {},
   updateShadowNotes: async () => {},
@@ -75,6 +78,7 @@ const clearLocalIdentityData = (id: string) => {
   storageRemove(`bible-nova-companion-profile-avatar-${id}`);
   storageRemove(`onboardingComplete_${id}`);
   storageRemove("bible_nova_companion_onboarding_answers");
+  storageRemove(`bible-nova-companion-onboarding-answers-${id}`);
   storageRemove(`bible-nova-companion-shadow-notes-${id}`);
 };
 
@@ -149,10 +153,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [shadowNotes, setShadowNotes] = useState<string | null>(null);
   const [memoryEnabled, setMemoryEnabled] = useState(false);
-  const [memoryPreferenceLoading, setMemoryPreferenceLoading] = useState(false);
+  const [memoryPreferenceLoading, setMemoryPreferenceLoading] = useState(true);
+  const [memoryOwnerId, setMemoryOwnerId] = useState<string | null>(null);
   const memoryRequestVersionRef = React.useRef(0);
   const activeMemoryUserIdRef = React.useRef<string | null>(null);
   activeMemoryUserIdRef.current = user?.id || null;
+  const confirmedMemoryEnabled = memoryEnabled && memoryOwnerId === (user?.id || null);
 
   useEffect(() => {
     if (storageHydrationStatus === "loading") return;
@@ -284,7 +290,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const applySession = async (currentSession: Session | null) => {
       if (isDisposed) return;
 
+      const previousSessionToken = activeSessionToken;
       activeSessionToken = currentSession?.access_token || null;
+      if (previousSessionToken && !activeSessionToken) {
+        invalidateApiSession();
+        cancelNativeSubscriptionEntitlementSync();
+        memoryRequestVersionRef.current += 1;
+        window.dispatchEvent(new Event("bible-nova-account-shutdown"));
+      }
       setApiAccessToken(activeSessionToken);
       setSession(currentSession);
       const currentUser = currentSession?.user || null;
@@ -362,9 +375,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const currentUserId = user?.id || null;
     const requestVersion = ++memoryRequestVersionRef.current;
     setShadowNotes(null);
-    // New accounts remember preferences by default. A confirmed server-side
-    // opt-out replaces this optimistic default as soon as it is loaded.
-    setMemoryEnabled(Boolean(currentUserId && isSupabaseConfigured));
+    setMemoryEnabled(false);
+    setMemoryOwnerId(null);
 
     if (!currentUserId || !isSupabaseConfigured) {
       setMemoryPreferenceLoading(false);
@@ -395,6 +407,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         const enabled = data.memoryEnabled === true;
         setMemoryEnabled(enabled);
+        setMemoryOwnerId(currentUserId);
         setShadowNotes(
           enabled && typeof data.shadowNotes === "string"
             ? normalizeShadowNotes(data.shadowNotes)
@@ -420,6 +433,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [session?.access_token, user?.id]);
 
   const logout = useCallback(async () => {
+    invalidateApiSession();
+    cancelNativeSubscriptionEntitlementSync();
+    memoryRequestVersionRef.current += 1;
+    window.dispatchEvent(new Event("bible-nova-account-shutdown"));
     const pendingRaw = storageGet(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY);
     try {
       const pending = pendingRaw ? JSON.parse(pendingRaw) as { userId?: string } : null;
@@ -435,6 +452,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setHasCompletedOnboarding(false);
     setShadowNotes(null);
     setMemoryEnabled(false);
+    setMemoryOwnerId(null);
     setMemoryPreferenceLoading(false);
 
     if (isSupabaseConfigured) {
@@ -444,6 +462,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const deleteAccount = useCallback(async () => {
     const id = user?.id || null;
+    invalidateApiSession();
+    cancelNativeSubscriptionEntitlementSync();
+    memoryRequestVersionRef.current += 1;
+    window.dispatchEvent(new Event("bible-nova-account-shutdown"));
 
     if (user && isSupabaseConfigured) {
       const accessToken = session?.access_token;
@@ -472,6 +494,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setHasCompletedOnboarding(false);
     setShadowNotes(null);
     setMemoryEnabled(false);
+    setMemoryOwnerId(null);
     setMemoryPreferenceLoading(false);
 
     if (isSupabaseConfigured) {
@@ -560,6 +583,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       const confirmedEnabled = data.memoryEnabled === true;
       setMemoryEnabled(confirmedEnabled);
+      setMemoryOwnerId(currentUserId);
       setShadowNotes(
         confirmedEnabled && typeof data.shadowNotes === "string"
           ? normalizeShadowNotes(data.shadowNotes)
@@ -586,7 +610,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const updateShadowNotes = useCallback(async (notes: string) => {
     if (!user) throw new Error("No active profile to update.");
-    if (!memoryEnabled) {
+    if (!confirmedMemoryEnabled) {
       setShadowNotes(null);
       return;
     }
@@ -620,15 +644,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     setShadowNotes(normalizeShadowNotes(trimmed));
-  }, [memoryEnabled, user]);
+  }, [confirmedMemoryEnabled, user]);
 
   const acceptPersistedShadowNotes = useCallback((notes: string | null) => {
-    if (!memoryEnabled) {
+    if (!confirmedMemoryEnabled) {
       setShadowNotes(null);
       return;
     }
     setShadowNotes(normalizeShadowNotes(notes));
-  }, [memoryEnabled]);
+  }, [confirmedMemoryEnabled]);
 
   const value = useMemo(
     () => ({
@@ -645,7 +669,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       updateProfileAvatarUrl,
       completeOnboarding,
       shadowNotes,
-      memoryEnabled,
+      memoryEnabled: confirmedMemoryEnabled,
+      memoryPreferenceState: memoryPreferenceLoading ? "loading" as const : confirmedMemoryEnabled ? "enabled" as const : "disabled" as const,
       memoryPreferenceLoading,
       updateMemoryPreference,
       updateShadowNotes,
@@ -657,7 +682,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       hasCompletedOnboarding,
       identityKey,
       isLoading,
-      memoryEnabled,
+      confirmedMemoryEnabled,
       memoryPreferenceLoading,
       logout,
       profileAvatarUrl,

@@ -30,7 +30,7 @@ describe("Settings preferences", () => {
     expect(layoutSource).toContain("Turning it off stops memory and clears remembered context.");
     expect(layoutSource).toContain('role="switch"');
     expect(authSource).toContain('method: "PUT"');
-    expect(authSource).toContain("if (!memoryEnabled)");
+    expect(authSource).toContain("if (!confirmedMemoryEnabled)");
     expect(voiceModeSource).toContain("if (!memoryEnabled) return");
     expect(serverApiSource).toContain("rememberUser: memoryProfile.memoryEnabled");
     expect(serverApiSource).toContain(
@@ -38,7 +38,8 @@ describe("Settings preferences", () => {
     );
   });
 
-  it("defaults remembered preferences to on until the server confirms an opt-out", () => {
-    expect(authSource).toContain("setMemoryEnabled(Boolean(currentUserId && isSupabaseConfigured))");
+  it("keeps remembered preferences disabled until the server confirms opt-in", () => {
+    expect(authSource).toContain("setMemoryEnabled(false)");
+    expect(authSource).not.toContain("setMemoryEnabled(Boolean(currentUserId && isSupabaseConfigured))");
   });
 });
