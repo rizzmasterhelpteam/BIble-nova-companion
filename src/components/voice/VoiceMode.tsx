@@ -17,6 +17,7 @@ import { apiFetch } from "../../lib/apiClient";
 import { getPlatformAdapter } from "../../lib/native/platform";
 import { cn } from "../../lib/utils";
 import { useMobileViewport } from "../../context/MobileViewportContext";
+import { useEntitlement } from "../../context/EntitlementContext";
 import {
   useGeminiLiveVoice,
   type VoiceStartMode,
@@ -128,6 +129,7 @@ export default function VoiceMode({
   onRetryVoiceReady,
 }: VoiceModeProps) {
   const { isCompactPhone, isShortPhone } = useMobileViewport();
+  const { snapshot: entitlement } = useEntitlement();
   const navigate = useNavigate();
   const isPerformanceMode = usePerformanceMode();
   const [cooldownNow, setCooldownNow] = useState(() => Date.now());
@@ -173,7 +175,9 @@ export default function VoiceMode({
     enableInputLevel: !isPerformanceMode,
   });
   const stopLive = live.stop;
-  const premiumRequired = live.errorCode === "subscription_required";
+  const premiumRequired =
+    live.errorCode === "subscription_required" ||
+    (entitlement.state === "inactive" && !entitlement.active);
   useEffect(() => {
     if (!live.retryUntil) return;
     setCooldownNow(Date.now());

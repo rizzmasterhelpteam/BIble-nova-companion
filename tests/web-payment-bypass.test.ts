@@ -7,8 +7,9 @@ const paywallSource = readFileSync(new URL("../src/pages/Paywall.tsx", import.me
 describe("payment enforcement", () => {
   it("requires a resolved premium entitlement on every platform", () => {
     expect(appSource).not.toContain("bypassPaymentOnWeb");
-    expect(appSource).toContain("hasCompletedOnboarding,");
-    expect(appSource).toContain("location.pathname === \"/paywall\" && isSubscribed");
-    expect(paywallSource).toContain("if (!isSubscribed) return;");
+    expect(appSource).toContain("AuthoritativeAuthGuard");
+    expect(appSource).toContain('snapshot.state === "inactive"');
+    expect(paywallSource).toContain("useEntitlement");
+    expect(paywallSource).not.toContain("if (!isSubscribed) return;");
   });
 });

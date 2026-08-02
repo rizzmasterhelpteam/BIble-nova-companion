@@ -2,29 +2,24 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import type { Session, User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
 import { apiFetch, setApiAccessToken } from "../lib/apiClient";
-import { getPlatformAdapter } from "../lib/native/platform";
 import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
 import { startup } from "../lib/startup";
 import { normalizeShadowNotes } from "../lib/shadowMemory";
+import { useAppStorage } from "./AppStorageContext";
 
 type AuthContextType = {
   user: User | null;
   session: Session | null;
   isLoading: boolean;
-  isSubscriptionResolved: boolean;
-  isSubscriptionRevalidating: boolean;
-  subscriptionRevalidationError: string | null;
   identityKey: string | null;
   profileName: string | null;
   profileAvatarUrl: string | null;
   hasCompletedOnboarding: boolean;
-  isSubscribed: boolean;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   updateProfileName: (name: string) => Promise<void>;
   updateProfileAvatarUrl: (avatarUrl: string | null) => Promise<void>;
   completeOnboarding: () => void;
-  subscribe: (source: SubscriptionSource) => void;
   shadowNotes: string | null;
   memoryEnabled: boolean;
   memoryPreferenceLoading: boolean;
@@ -33,42 +28,19 @@ type AuthContextType = {
   acceptPersistedShadowNotes: (notes: string | null) => void;
 };
 
-type SubscriptionSource = "native_google_play" | "native_app_store";
-
-const isNativeSubscriptionSource = (
-  source: SubscriptionSource | null,
-): source is SubscriptionSource =>
-  source === "native_google_play" || source === "native_app_store";
-
-type UserSubscriptionMetadata = {
-  status?: string;
-  source?: string;
-  trialEndsAt?: string;
-  productId?: string;
-  planId?: string;
-  orderId?: string;
-  linkedAt?: string;
-  platform?: "android" | "ios";
-};
-
 const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   isLoading: true,
-  isSubscriptionResolved: false,
-  isSubscriptionRevalidating: false,
-  subscriptionRevalidationError: null,
   identityKey: null,
   profileName: null,
   profileAvatarUrl: null,
   hasCompletedOnboarding: false,
-  isSubscribed: false,
   logout: async () => {},
   deleteAccount: async () => {},
   updateProfileName: async () => {},
   updateProfileAvatarUrl: async () => {},
   completeOnboarding: () => {},
-  subscribe: () => {},
   shadowNotes: null,
   memoryEnabled: false,
   memoryPreferenceLoading: false,
@@ -78,8 +50,6 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 const AVATAR_NONE = "__none__";
-const SUBSCRIPTION_REVALIDATION_NOTICE_DURATION_MS = 6_000;
-
 const LEGACY_GUEST_STORAGE_KEYS = [
   "is_guest",
   "onboardingComplete_guest",
@@ -102,8 +72,6 @@ const clearLocalIdentityData = (id: string) => {
   storageRemove(`bible-nova-companion-profile-name-${id}`);
   storageRemove(`bible-nova-companion-profile-avatar-${id}`);
   storageRemove(`onboardingComplete_${id}`);
-  storageRemove(`isSubscribed_${id}`);
-  storageRemove(`subscriptionSource_${id}`);
   storageRemove("bible_nova_companion_onboarding_answers");
   storageRemove(`bible-nova-companion-shadow-notes-${id}`);
 };
@@ -133,32 +101,6 @@ const getStoredProfileAvatarUrl = (id: string, currentUser: User | null) => {
   const stored = storageGet(`bible-nova-companion-profile-avatar-${id}`);
   if (stored === AVATAR_NONE) return null;
   return stored || getUserAvatarUrl(currentUser);
-};
-
-const setStoredSubscriptionState = (id: string, value: boolean) => {
-  storageSet(`isSubscribed_${id}`, value ? "true" : "false");
-};
-
-const setStoredSubscriptionSource = (id: string, source: SubscriptionSource) => {
-  storageSet(`subscriptionSource_${id}`, source);
-};
-
-const clearStoredSubscriptionSource = (id: string) => {
-  storageRemove(`subscriptionSource_${id}`);
-};
-
-const getStoredSubscriptionSource = (id: string) =>
-  storageGet(`subscriptionSource_${id}`) as SubscriptionSource | null;
-
-const getUserSubscriptionMetadata = (currentUser: User | null) =>
-  (currentUser?.app_metadata?.subscription || undefined) as UserSubscriptionMetadata | undefined;
-
-const hasActiveServerSubscription = (currentUser: User | null) => {
-  const subscription = getUserSubscriptionMetadata(currentUser);
-  if (!subscription || subscription.status !== "active") return false;
-  if (!subscription.trialEndsAt) return true;
-  const expiry = Date.parse(subscription.trialEndsAt);
-  return Number.isFinite(expiry) && expiry > Date.now();
 };
 
 const AUTH_STARTUP_TIMEOUT_MS = 5000;
@@ -195,17 +137,14 @@ const withStartupTimeout = <T,>(
   });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const { status: storageHydrationStatus } = useAppStorage();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSubscriptionResolved, setIsSubscriptionResolved] = useState(false);
-  const [isSubscriptionRevalidating, setIsSubscriptionRevalidating] = useState(false);
-  const [subscriptionRevalidationError, setSubscriptionRevalidationError] = useState<string | null>(null);
   const [identityKey, setIdentityKey] = useState<string | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
-  const [isSubscribed, setIsSubscribed] = useState(false);
   const [shadowNotes, setShadowNotes] = useState<string | null>(null);
   const [memoryEnabled, setMemoryEnabled] = useState(false);
   const [memoryPreferenceLoading, setMemoryPreferenceLoading] = useState(false);
@@ -214,24 +153,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   activeMemoryUserIdRef.current = user?.id || null;
 
   useEffect(() => {
-    if (!subscriptionRevalidationError) return;
-
-    const timeoutId = window.setTimeout(
-      () => setSubscriptionRevalidationError(null),
-      SUBSCRIPTION_REVALIDATION_NOTICE_DURATION_MS,
-    );
-    return () => window.clearTimeout(timeoutId);
-  }, [subscriptionRevalidationError]);
-
-  useEffect(() => {
+    if (storageHydrationStatus === "loading") return;
     let isDisposed = false;
     let anonymousSignOutInFlight = false;
     let activeSessionToken: string | null = null;
     let activeUserId: string | null = null;
-    let subscriptionRequestVersion = 0;
-
+    let activeProfileUser: User | null = null;
     clearLegacyGuestState();
-    const clearLegacyStateAfterRestore = () => clearLegacyGuestState();
+    const clearLegacyStateAfterRestore = () => {
+      clearLegacyGuestState();
+      syncOnboardingState(activeUserId);
+      syncProfileState(activeProfileUser);
+    };
     window.addEventListener("bible-nova-storage-restored", clearLegacyStateAfterRestore);
 
     const syncOnboardingState = (userId: string | null) => {
@@ -278,115 +211,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const syncSubscriptionState = async (
-      currentUser: User | null,
-      { initial = false }: { initial?: boolean } = {},
-    ) => {
-      const id = currentUser?.id || null;
-      if (!id) {
-        if (!isDisposed) {
-          setIsSubscribed(false);
-          setIsSubscriptionResolved(true);
-          setIsSubscriptionRevalidating(false);
-          setSubscriptionRevalidationError(null);
-        }
-        return;
-      }
-
-      const requestSessionToken = activeSessionToken;
-      const requestVersion = ++subscriptionRequestVersion;
-      if (initial) setIsSubscriptionResolved(false);
-      setIsSubscriptionRevalidating(true);
-      setSubscriptionRevalidationError(null);
-      let hasEntitlement = false;
-      let authoritativeResult = false;
-
-      try {
-        const response = await apiFetch("/api/subscription/native-sync", {
-          method: "GET",
-          cache: "no-store",
-          headers: { "Cache-Control": "no-cache" },
-        });
-        const data = (await response.json().catch(() => ({}))) as {
-          active?: boolean;
-          error?: string;
-        };
-        if (!response.ok) {
-          throw new Error(data.error || "Premium verification failed.");
-        }
-        hasEntitlement = data.active === true;
-        authoritativeResult = true;
-      } catch (error) {
-        // A failed background refresh must not tear down an already-authorized
-        // screen. Initial access still fails closed below because it has no
-        // previously verified entitlement to preserve.
-        console.warn("Could not verify authoritative subscription access:", error);
-      }
-
-      if (!authoritativeResult && getPlatformAdapter().isNative) {
-        try {
-          const { refreshNativeSubscriptionEntitlement } = await import(
-            "../lib/native/subscriptionSync"
-          );
-          hasEntitlement = await refreshNativeSubscriptionEntitlement();
-          authoritativeResult = true;
-          console.info("[Bible Nova subscription]", {
-            event: "startup-native-entitlement-refresh",
-            restored: hasEntitlement,
-          });
-        } catch (error) {
-          console.warn("Could not refresh the Google Play entitlement during startup:", error);
-        }
-      }
-
-      if (
-        isDisposed ||
-        activeSessionToken !== requestSessionToken ||
-        subscriptionRequestVersion !== requestVersion
-      ) {
-        return;
-      }
-
-      if (authoritativeResult) {
-        setStoredSubscriptionState(id, hasEntitlement);
-        if (!hasEntitlement) clearStoredSubscriptionSource(id);
-        setIsSubscribed(hasEntitlement);
-        setSubscriptionRevalidationError(null);
-      } else if (initial) {
-        // There is no safe access state to preserve during the first check.
-        setStoredSubscriptionState(id, false);
-        clearStoredSubscriptionSource(id);
-        setIsSubscribed(false);
-        setSubscriptionRevalidationError("Premium access could not be verified. Please try again.");
-      } else {
-        setSubscriptionRevalidationError(
-          "Premium access could not be refreshed. Your current access is still available.",
-        );
-      }
-
-      setIsSubscriptionResolved(true);
-      setIsSubscriptionRevalidating(false);
-      if (initial) startup.mark("subscription-initial-resolved");
-    };
-
-    const restoreCachedSubscriptionState = (currentUser: User, blockUntilVerified: boolean) => {
-      const id = currentUser.id;
-      const storedSubscription = storageGet(`isSubscribed_${id}`) === "true";
-      const storedSubscriptionSource = getStoredSubscriptionSource(id);
-      const hasServerEntitlement = hasActiveServerSubscription(currentUser);
-      const hasCachedNativeEntitlement =
-        storedSubscription && isNativeSubscriptionSource(storedSubscriptionSource);
-
-      setIsSubscribed(hasServerEntitlement || hasCachedNativeEntitlement);
-      // Cached state is display-only. It must never unlock the main routes
-      // until the first authoritative check confirms the entitlement row.
-      if (blockUntilVerified) setIsSubscriptionResolved(false);
-    };
-
     const clearActiveSession = async () => {
       if (isDisposed) return;
       setSession(null);
       setUser(null);
+      activeProfileUser = null;
       activeUserId = null;
       setIdentityKey(null);
       syncOnboardingState(null);
@@ -394,8 +223,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setShadowNotes(null);
       setMemoryEnabled(false);
       setMemoryPreferenceLoading(false);
-      setIsSubscriptionResolved(true);
-      await syncSubscriptionState(null);
     };
 
     const rejectAnonymousSession = async () => {
@@ -413,18 +240,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await clearActiveSession();
     };
 
-    const applyAuthenticatedUser = async (currentUser: User, blockUntilVerified: boolean) => {
+    const applyAuthenticatedUser = async (currentUser: User) => {
       if (currentUser.is_anonymous) {
         await rejectAnonymousSession();
         return;
       }
 
       setUser(currentUser);
+      activeProfileUser = currentUser;
       activeUserId = currentUser.id;
       setIdentityKey(currentUser.id);
+      // Remove the former local premium cache now that EntitlementContext is
+      // the only membership authority.
+      storageRemove(`isSubscribed_${currentUser.id}`);
+      storageRemove(`subscriptionSource_${currentUser.id}`);
       syncOnboardingState(currentUser.id);
       syncProfileState(currentUser);
-      restoreCachedSubscriptionState(currentUser, blockUntilVerified);
     };
 
     const refreshAuthenticatedUser = async (currentSession: Session, initialUser: User) => {
@@ -441,16 +272,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         setUser(refreshedUser);
+        activeProfileUser = refreshedUser;
         syncProfileState(refreshedUser);
       } catch (error) {
         console.warn("Could not refresh the signed-in user in the background:", error);
       }
     };
 
-    const applySession = async (
-      currentSession: Session | null,
-      initialSessionResolution = false,
-    ) => {
+    const applySession = async (currentSession: Session | null) => {
       if (isDisposed) return;
 
       activeSessionToken = currentSession?.access_token || null;
@@ -463,11 +292,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } else if (currentUser) {
         // The session already contains the user needed to render onboarding and
         // paywall. Do not hold the first interactive frame on a second network
-        // request; refresh profile/subscription metadata in the background.
-        const isNewIdentity = activeUserId !== currentUser.id;
-        const blockUntilVerified = initialSessionResolution || isNewIdentity;
-        await applyAuthenticatedUser(currentUser, blockUntilVerified);
-        void syncSubscriptionState(currentUser, { initial: blockUntilVerified });
+        // request; refresh the signed-in profile in the background.
+        await applyAuthenticatedUser(currentUser);
         if (currentSession.access_token) {
           void refreshAuthenticatedUser(currentSession, currentUser);
         }
@@ -499,7 +325,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (isDisposed) return;
         if (error) console.warn("Supabase getSession error:", error.message);
-        await applySession(initialSession, true);
+        await applySession(initialSession);
       } catch (error) {
         if (!isDisposed) console.error("Failed to get session:", error);
       } finally {
@@ -523,35 +349,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }, 0);
     });
 
-    let removeAppStateListener: (() => void) | undefined;
-    if (getPlatformAdapter().isNative) {
-      removeAppStateListener = getPlatformAdapter().appState.subscribe(({ active }) => {
-        if (!active) return;
-
-        void supabase.auth
-          .getSession()
-          .then(async ({ data: { session: activeSession }, error }) => {
-            if (error) throw error;
-            const currentUser = await resolveCurrentUser(activeSession);
-            if (currentUser?.is_anonymous) {
-              await rejectAnonymousSession();
-              return;
-            }
-            return syncSubscriptionState(currentUser, { initial: false });
-          })
-          .catch((error) => {
-            console.warn("Could not refresh session while syncing subscriptions:", error);
-          });
-      });
-    }
-
     return () => {
       isDisposed = true;
       subscription.unsubscribe();
-      removeAppStateListener?.();
       window.removeEventListener("bible-nova-storage-restored", clearLegacyStateAfterRestore);
     };
-  }, []);
+  }, [storageHydrationStatus]);
 
   useEffect(() => {
     const currentUserId = user?.id || null;
@@ -621,8 +424,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setProfileName(null);
     setProfileAvatarUrl(null);
     setHasCompletedOnboarding(false);
-    setIsSubscribed(false);
-    setIsSubscriptionResolved(true);
     setShadowNotes(null);
     setMemoryEnabled(false);
     setMemoryPreferenceLoading(false);
@@ -660,8 +461,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setProfileName(null);
     setProfileAvatarUrl(null);
     setHasCompletedOnboarding(false);
-    setIsSubscribed(false);
-    setIsSubscriptionResolved(true);
     setShadowNotes(null);
     setMemoryEnabled(false);
     setMemoryPreferenceLoading(false);
@@ -709,18 +508,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     storageSet(`onboardingComplete_${id}`, "true");
     setHasCompletedOnboarding(true);
-  }, [user?.id]);
-
-  const subscribe = useCallback((source: SubscriptionSource) => {
-    const id = user?.id || null;
-    if (!id) return;
-
-    // Paywall calls this only after the server has verified the purchase. On
-    // the next launch, entitlement is rechecked server-side or with the store.
-    setStoredSubscriptionState(id, true);
-    setStoredSubscriptionSource(id, source);
-    setIsSubscribed(true);
-    setIsSubscriptionResolved(true);
   }, [user?.id]);
 
   const updateMemoryPreference = useCallback(async (enabled: boolean) => {
@@ -839,20 +626,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       user,
       session,
       isLoading,
-      isSubscriptionResolved,
-      isSubscriptionRevalidating,
-      subscriptionRevalidationError,
       identityKey,
       profileName,
       profileAvatarUrl,
       hasCompletedOnboarding,
-      isSubscribed,
       logout,
       deleteAccount,
       updateProfileName,
       updateProfileAvatarUrl,
       completeOnboarding,
-      subscribe,
       shadowNotes,
       memoryEnabled,
       memoryPreferenceLoading,
@@ -866,17 +648,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       hasCompletedOnboarding,
       identityKey,
       isLoading,
-      isSubscribed,
-      isSubscriptionResolved,
-      isSubscriptionRevalidating,
-      subscriptionRevalidationError,
       memoryEnabled,
       memoryPreferenceLoading,
       logout,
       profileAvatarUrl,
       profileName,
       session,
-      subscribe,
       updateProfileAvatarUrl,
       updateProfileName,
       user,

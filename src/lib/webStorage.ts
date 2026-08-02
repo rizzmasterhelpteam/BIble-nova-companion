@@ -12,6 +12,7 @@ const getStorage = () => {
 
 let preferencesPromise: Promise<typeof import("@capacitor/preferences").Preferences | null> | null =
   null;
+let restorePromise: Promise<void> | null = null;
 
 const PREFERENCES_TIMEOUT_MS = 1500;
 
@@ -120,7 +121,7 @@ export const storageRemove = (key: string) => {
 /**
  * Call this on app startup to restore any missing localStorage keys from native preferences.
  */
-export const restoreWebStorageFromPreferences = async () => {
+const restoreWebStorageFromPreferencesImpl = async () => {
   if (typeof window === "undefined" || !isNativePlatform()) return;
 
   try {
@@ -134,19 +135,16 @@ export const restoreWebStorageFromPreferences = async () => {
       Preferences.keys(),
       "Native Preferences listing",
     );
-    const missingPreferenceKeys = keys
+    const storedPreferenceKeys = keys
       .filter((prefKey) => prefKey.startsWith("web_storage_"))
       .map((prefKey) => ({
         prefKey,
         originalKey: prefKey.replace("web_storage_", ""),
       }))
-      .filter(
-        ({ originalKey }) =>
-          !LEGACY_GUEST_KEYS.has(originalKey) && !storage.getItem(originalKey),
-      );
+      .filter(({ originalKey }) => !LEGACY_GUEST_KEYS.has(originalKey));
 
     const entries = await Promise.all(
-      missingPreferenceKeys.map(async ({ prefKey, originalKey }) => {
+      storedPreferenceKeys.map(async ({ prefKey, originalKey }) => {
         const { value } = await withPreferencesTimeout(
           Preferences.get({ key: prefKey }),
           "Native Preferences read",
@@ -164,7 +162,16 @@ export const restoreWebStorageFromPreferences = async () => {
     window.dispatchEvent(new CustomEvent("bible-nova-storage-restored"));
   } catch (err) {
     console.warn('Failed to restore web storage from preferences', err);
+    throw err;
   }
+};
+
+export const restoreWebStorageFromPreferences = () => {
+  if (!isNativePlatform()) return Promise.resolve();
+  restorePromise ||= restoreWebStorageFromPreferencesImpl().finally(() => {
+    restorePromise = null;
+  });
+  return restorePromise;
 };
 
 export const storageGetJson = <T,>(key: string, fallback: T): T => {

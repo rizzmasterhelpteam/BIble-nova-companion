@@ -48,7 +48,13 @@ describe("subscription status API", () => {
   it("returns the authoritative active entitlement state without caching", async () => {
     getSubscriptionAccessStatus.mockResolvedValue({
       active: true,
+      state: "active",
+      status: "active",
+      source: "google_play",
+      productId: "biblenova",
       expiresAt: "2026-08-01T00:00:00.000Z",
+      verifiedAt: "2026-07-31T00:00:00.000Z",
+      reconciliationRecommended: false,
     });
     const { response, headers } = createResponse();
 
@@ -56,7 +62,11 @@ describe("subscription status API", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject({
+      state: "active",
       active: true,
+      status: "active",
+      source: "google_play",
+      productId: "biblenova",
       expiresAt: "2026-08-01T00:00:00.000Z",
     });
     expect(headers.get("Cache-Control")).toContain("no-store");
@@ -66,14 +76,27 @@ describe("subscription status API", () => {
   it("returns inactive instead of trusting client subscription metadata", async () => {
     getSubscriptionAccessStatus.mockResolvedValue({
       active: false,
+      state: "inactive",
+      status: "none",
+      source: "none",
+      productId: null,
       expiresAt: null,
+      verifiedAt: null,
+      reconciliationRecommended: true,
     });
     const { response } = createResponse();
 
     await subscriptionStatusHandler({ method: "GET", headers: {} }, response);
 
     expect(response.statusCode).toBe(200);
-    expect(response.body).toMatchObject({ active: false, expiresAt: null });
+    expect(response.body).toMatchObject({
+      state: "inactive",
+      active: false,
+      status: "none",
+      source: "none",
+      reconciliationRecommended: true,
+      expiresAt: null,
+    });
   });
 
   it("rejects unauthenticated checks", async () => {
@@ -87,5 +110,17 @@ describe("subscription status API", () => {
     expect(response.statusCode).toBe(401);
     expect(response.body).toEqual({ error: "Authentication is required." });
     expect(getSubscriptionAccessStatus).not.toHaveBeenCalled();
+  });
+
+  it("preserves unknown verification as a retryable 503", async () => {
+    getSubscriptionAccessStatus.mockRejectedValue(
+      Object.assign(new Error("Premium verification is temporarily unavailable."), { statusCode: 503 }),
+    );
+    const { response } = createResponse();
+
+    await subscriptionStatusHandler({ method: "GET", headers: {} }, response);
+
+    expect(response.statusCode).toBe(503);
+    expect(response.body).toEqual({ error: "Premium verification is temporarily unavailable." });
   });
 });

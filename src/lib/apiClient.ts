@@ -3,9 +3,11 @@ import { isSupabaseConfigured, supabase } from "./supabase";
 import { API_CONTRACT_VERSION } from "../platform/types";
 
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, "") || "";
-const shouldUseConfiguredApiBaseUrl = Boolean(configuredApiBaseUrl) && isNativePlatform();
-const NATIVE_API_CONFIGURATION_ERROR =
-  "Server connection is not configured for this app build. Android builds require VITE_API_BASE_URL.";
+const currentPageOrigin = typeof window === "undefined" ? "" : window.location.origin;
+const shouldUseConfiguredApiBaseUrl =
+  Boolean(configuredApiBaseUrl) &&
+  isNativePlatform() &&
+  configuredApiBaseUrl !== currentPageOrigin;
 export const API_REQUEST_TIMEOUT_MS = 30_000;
 export const API_CONTRACT_MISMATCH_MESSAGE =
   "This app and its server are out of sync. Refresh the app or install the latest version.";
@@ -34,7 +36,7 @@ const getApiAccessToken = async () => {
   return accessTokenRequest;
 };
 
-export const isNativeApiConfigured = () => !isNativePlatform() || Boolean(configuredApiBaseUrl);
+export const isNativeApiConfigured = () => true;
 
 export const getApiUrl = (path: string) => {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
@@ -44,13 +46,6 @@ export const getApiUrl = (path: string) => {
 };
 
 export const apiFetch = async (path: string, init: RequestInit = {}) => {
-  if (!isNativeApiConfigured()) {
-    if (import.meta.env.DEV) {
-      console.warn(NATIVE_API_CONFIGURATION_ERROR);
-    }
-    throw new Error(NATIVE_API_CONFIGURATION_ERROR);
-  }
-
   const headers = new Headers(init.headers);
   if (
     !headers.has("X-Client-Request-Id") &&
@@ -77,11 +72,28 @@ export const apiFetch = async (path: string, init: RequestInit = {}) => {
   }, API_REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(getApiUrl(path), {
+    const requestMethod = (init.method || "GET").toUpperCase();
+    let response = await fetch(getApiUrl(path), {
       ...init,
       signal: controller.signal,
       headers,
     });
+
+    // Only safe reads may retry once after Supabase refreshes an expired token.
+    // Purchase and other mutation requests must never be replayed implicitly.
+    if (response.status === 401 && requestMethod === "GET" && isSupabaseConfigured) {
+      const { data, error } = await supabase.auth.refreshSession();
+      if (!error && data.session?.access_token) {
+        cachedAccessToken = data.session.access_token;
+        headers.set("Authorization", `Bearer ${data.session.access_token}`);
+        response = await fetch(getApiUrl(path), {
+          ...init,
+          signal: controller.signal,
+          headers,
+        });
+      }
+    }
+
     const contractVersion = response.headers.get("X-API-Contract-Version");
     if (contractVersion !== String(API_CONTRACT_VERSION)) {
       throw new Error(API_CONTRACT_MISMATCH_MESSAGE);

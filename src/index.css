@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Layer scale: content 0-20, navigation 40, header 50, toast 60,
+   drawer overlay 70, drawer 80, modal overlay 90, modal 100. */
+
 @keyframes app-route-enter {
   from { opacity: 0.98; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }

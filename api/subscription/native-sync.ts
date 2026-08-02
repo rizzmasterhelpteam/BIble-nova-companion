@@ -31,8 +31,14 @@ export default async function handler(req: any, res: any) {
       ]);
       const status = await getSubscriptionAccessStatus(userId);
       res.status(200).json({
+        state: status.state,
         active: status.active,
+        status: status.status,
+        source: status.source,
+        productId: status.productId,
         expiresAt: status.expiresAt,
+        verifiedAt: status.verifiedAt,
+        reconciliationRecommended: status.reconciliationRecommended,
         checkedAt: new Date().toISOString(),
       });
       return;

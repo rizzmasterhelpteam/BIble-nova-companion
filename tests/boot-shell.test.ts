@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
-const authSource = readFileSync(new URL("../src/context/AuthContext.tsx", import.meta.url), "utf8");
 const indexSource = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const layoutSource = readFileSync(new URL("../src/components/Layout.tsx", import.meta.url), "utf8");
 const themeSource = readFileSync(new URL("../src/context/ThemeContext.tsx", import.meta.url), "utf8");
+const toastSource = readFileSync(new URL("../src/components/ToastViewport.tsx", import.meta.url), "utf8");
 
 describe("Android/WebView boot stability", () => {
   it("uses a themed boot shell instead of a black global loader", () => {
@@ -30,12 +30,11 @@ describe("Android/WebView boot stability", () => {
     expect(layoutSource).toContain("<Suspense fallback={<RouteContentFallback />}");
   });
 
-  it("keeps subscription refreshes non-blocking after the initial check", () => {
-    expect(authSource).toContain("{ initial = false }");
-    expect(authSource).toContain("if (initial) setIsSubscriptionResolved(false)");
-    expect(authSource).toContain("Premium access could not be refreshed");
-    expect(authSource).toContain("isSubscriptionRevalidating");
-    expect(authSource).toContain("SUBSCRIPTION_REVALIDATION_NOTICE_DURATION_MS");
-    expect(appSource).toContain("pointer-events-none fixed inset-x-3 z-40");
+  it("uses top-safe toasts instead of bottom navigation-blocking notices", () => {
+    expect(appSource).toContain("ToastViewport");
+    expect(appSource).not.toContain("ConnectivityNotice");
+    expect(appSource).not.toContain("SubscriptionRefreshNotice");
+    expect(toastSource).toContain("pointer-events-none fixed inset-x-3 z-[60]");
+    expect(toastSource).not.toContain("bottom:");
   });
 });

@@ -156,7 +156,13 @@ export const requireAuthenticatedRequest = async (req: RequestLike) => {
 
 export type SubscriptionAccessStatus = {
   active: boolean;
+  state: "active" | "inactive";
+  status: "active" | "grace_period" | "canceled_until_expiry" | "expired" | "none";
+  source: "server" | "google_play" | "none";
+  productId: string | null;
   expiresAt: string | null;
+  verifiedAt: string | null;
+  reconciliationRecommended: boolean;
 };
 
 export const getSubscriptionAccessStatus = async (
@@ -165,9 +171,8 @@ export const getSubscriptionAccessStatus = async (
   const client = getSupabaseAdminClient();
   const { data, error } = await client
     .from("subscription_entitlements")
-    .select("status, expiry_time, verified_at")
+    .select("status, platform, product_id, expiry_time, verified_at")
     .eq("user_id", userId)
-    .in("status", ["active", "grace_period", "canceled"])
     .order("verified_at", { ascending: false })
     .limit(10);
 
@@ -184,9 +189,22 @@ export const getSubscriptionAccessStatus = async (
     return Number.isFinite(expiry) && expiry > now;
   });
 
+  const latest = entitlement || data?.[0] || null;
+  const activeStatus = entitlement?.status === "canceled"
+    ? "canceled_until_expiry"
+    : entitlement?.status || "none";
+  const inactiveStatus = latest ? "expired" : "none";
+  const active = Boolean(entitlement);
+
   return {
-    active: Boolean(entitlement),
+    active,
+    state: active ? "active" : "inactive",
+    status: active ? activeStatus : inactiveStatus,
+    source: latest?.platform === "android" ? "google_play" : latest ? "server" : "none",
+    productId: latest?.product_id || null,
     expiresAt: entitlement?.expiry_time || null,
+    verifiedAt: latest?.verified_at || null,
+    reconciliationRecommended: !active,
   };
 };
 

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { PluginListenerHandle } from "@capacitor/core";
 import type { KeyboardInfo } from "@capacitor/keyboard";
-import { isNativePlatform } from "../lib/native/platform";
+import { getPlatformAdapter, isNativePlatform } from "../lib/native/platform";
 
 type MobileViewportState = {
   bottomInset: number;
@@ -11,6 +11,10 @@ type MobileViewportState = {
   keyboardHeight: number;
   visibleHeight: number;
   width: number;
+};
+
+type MobileViewportContextValue = MobileViewportState & {
+  resetKeyboardState: () => void;
 };
 
 const MIN_STARTUP_VIEWPORT_HEIGHT = 320;
@@ -41,7 +45,10 @@ const initialState: MobileViewportState = {
   width: DEFAULT_VIEWPORT_WIDTH,
 };
 
-const MobileViewportContext = createContext<MobileViewportState>(initialState);
+const MobileViewportContext = createContext<MobileViewportContextValue>({
+  ...initialState,
+  resetKeyboardState: () => {},
+});
 
 const KEYBOARD_OPEN_THRESHOLD = 120;
 const MIN_VISIBLE_HEIGHT = 280;
@@ -200,12 +207,21 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
     let appliedRootState: MobileViewportState | null = null;
     let publishedState: MobileViewportState | null = null;
     let pendingPublishedState: MobileViewportState | null = null;
+    let keyboardRecoveryTimer: number | null = null;
     const listenerHandles: PluginListenerHandle[] = [];
+    let removeAppStateListener: (() => void) | undefined;
 
     const clearFocusTimer = () => {
       if (focusTimer !== null) {
         window.clearTimeout(focusTimer);
         focusTimer = null;
+      }
+    };
+
+    const clearKeyboardRecoveryTimer = () => {
+      if (keyboardRecoveryTimer !== null) {
+        window.clearTimeout(keyboardRecoveryTimer);
+        keyboardRecoveryTimer = null;
       }
     };
 
@@ -285,9 +301,17 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
       if (!wasKeyboardOpen && keyboardOpen) {
         scheduleFocusIntoView();
       }
+      clearKeyboardRecoveryTimer();
+      if (keyboardOpen) {
+        keyboardRecoveryTimer = window.setTimeout(() => {
+          keyboardRecoveryTimer = null;
+          if (keyboardOpen && !isEditableElementFocused()) handleKeyboardHide();
+        }, 10_000);
+      }
     };
 
     const handleKeyboardHide = () => {
+      clearKeyboardRecoveryTimer();
       keyboardHeight = 0;
       keyboardOpen = false;
       queueViewportSync(true);
@@ -310,7 +334,13 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
         if (!wasKeyboardOpen) {
           scheduleFocusIntoView();
         }
+        clearKeyboardRecoveryTimer();
+        keyboardRecoveryTimer = window.setTimeout(() => {
+          keyboardRecoveryTimer = null;
+          if (keyboardOpen && !isEditableElementFocused()) handleKeyboardHide();
+        }, 10_000);
       } else if (!isNativePlatform() || !isEditableElementFocused()) {
+        clearKeyboardRecoveryTimer();
         keyboardHeight = 0;
         keyboardOpen = false;
       }
@@ -331,13 +361,24 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
       queueViewportSync(true);
     };
 
+    const handleFocusChange = () => {
+      if (keyboardOpen && !isEditableElementFocused()) handleKeyboardHide();
+    };
+
+    const handleExternalKeyboardReset = () => handleKeyboardHide();
+
     syncViewport(true);
     window.addEventListener("resize", handleViewportChange, { passive: true });
     window.addEventListener("orientationchange", handleOrientationChange, { passive: true });
     window.visualViewport?.addEventListener("resize", handleViewportChange, { passive: true });
     window.visualViewport?.addEventListener("scroll", handleViewportScroll, { passive: true });
+    window.addEventListener("focusout", handleFocusChange);
+    window.addEventListener("bible-nova-keyboard-reset", handleExternalKeyboardReset);
 
     if (isNativePlatform()) {
+      removeAppStateListener = getPlatformAdapter().appState.subscribe(({ active }) => {
+        if (active && !isEditableElementFocused()) handleKeyboardHide();
+      });
       void import("@capacitor/keyboard").then(({ Keyboard }) => Promise.all([
         Keyboard.addListener("keyboardDidShow", handleKeyboardShow),
         Keyboard.addListener("keyboardDidHide", handleKeyboardHide),
@@ -358,15 +399,22 @@ export function MobileViewportProvider({ children }: { children: React.ReactNode
       }
       clearFocusTimer();
       clearPublishTimer();
+      clearKeyboardRecoveryTimer();
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("orientationchange", handleOrientationChange);
       window.visualViewport?.removeEventListener("resize", handleViewportChange);
       window.visualViewport?.removeEventListener("scroll", handleViewportScroll);
+      window.removeEventListener("focusout", handleFocusChange);
+      window.removeEventListener("bible-nova-keyboard-reset", handleExternalKeyboardReset);
+      removeAppStateListener?.();
       void Promise.all(listenerHandles.map((handle) => handle.remove()));
     };
   }, []);
 
-  const value = useMemo(() => state, [state]);
+  const resetKeyboardState = React.useCallback(() => {
+    window.dispatchEvent(new Event("bible-nova-keyboard-reset"));
+  }, []);
+  const value = useMemo(() => ({ ...state, resetKeyboardState }), [resetKeyboardState, state]);
 
   return (
     <MobileViewportContext.Provider value={value}>{children}</MobileViewportContext.Provider>

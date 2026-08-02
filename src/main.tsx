@@ -2,7 +2,6 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
-import { restoreWebStorageFromPreferences } from './lib/webStorage';
 import { startup } from './lib/startup';
 import { registerWebApp } from './lib/webApp';
 
@@ -31,9 +30,4 @@ const renderApp = () => {
   }
 };
 
-// Local web storage restoration is a best-effort upgrade path. It must never
-// delay the first React render or the login route.
 renderApp();
-void restoreWebStorageFromPreferences().catch((error) => {
-  console.warn("Continuing without restored native web storage:", error);
-});

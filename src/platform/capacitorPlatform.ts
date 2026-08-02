@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import type { NetworkStatus, PlatformAdapter, ReminderSchedule, ReminderStatus } from "./types";
 import { API_CONTRACT_VERSION, NATIVE_BRIDGE_VERSION } from "./types";
+import { getNativeRuntimeInfo } from "../lib/native/runtime";
 
 const getNetworkStatus = async (): Promise<NetworkStatus> => {
   const { Network } = await import("@capacitor/network");
@@ -60,6 +61,7 @@ export const capacitorPlatform: PlatformAdapter = {
   isNative: Capacitor.isNativePlatform(),
   nativeBridgeVersion: NATIVE_BRIDGE_VERSION,
   apiContractVersion: API_CONTRACT_VERSION,
+  runtime: getNativeRuntimeInfo(),
   getAppVersion: () => import.meta.env.VITE_APP_VERSION?.trim() || "native",
   auth: {
     signInWithGoogle: async () => {

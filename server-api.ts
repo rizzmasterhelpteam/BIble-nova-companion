@@ -35,6 +35,7 @@ import {
   parseGoogleTtsSpeakingRate,
 } from "./src/lib/voiceSpeechFormatter.js";
 import { hasGeminiLiveConfig } from "./gemini-live-config.js";
+import { API_CONTRACT_VERSION, MINIMUM_NATIVE_BRIDGE_VERSION } from "./platform-contract.js";
 export {
   createReflection,
   getClientErrorMessage,
@@ -146,6 +147,8 @@ export async function fetchAvailableModels() {
 }
 
 export const getApiStatus = () => ({
+  apiContractVersion: API_CONTRACT_VERSION,
+  minimumNativeBridgeVersion: MINIMUM_NATIVE_BRIDGE_VERSION,
   chatReady: hasChatApiKey(),
   modelsReady: hasModelsApiKey(),
   prayerReady: hasPrayerApiKey(),
