@@ -1,10 +1,9 @@
 import {
   API_CONTRACT_VERSION,
   MINIMUM_NATIVE_BRIDGE_VERSION,
-  NATIVE_BRIDGE_VERSION,
 } from "../../platform-contract";
 
-export { API_CONTRACT_VERSION, MINIMUM_NATIVE_BRIDGE_VERSION, NATIVE_BRIDGE_VERSION };
+export { API_CONTRACT_VERSION, MINIMUM_NATIVE_BRIDGE_VERSION };
 
 export type PlatformKind = "web" | "android" | "ios" | "unknown";
 
@@ -45,9 +44,7 @@ export type ReminderStatus = {
 export type PlatformAdapter = {
   kind: PlatformKind;
   isNative: boolean;
-  nativeBridgeVersion: typeof NATIVE_BRIDGE_VERSION;
   apiContractVersion: typeof API_CONTRACT_VERSION;
-  runtime: NativeRuntimeInfo;
   getAppVersion: () => string;
   auth: {
     signInWithGoogle: () => Promise<void>;

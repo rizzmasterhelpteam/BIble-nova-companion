@@ -19,7 +19,7 @@
     <main role="alert">
       <h1>Your reflection space is offline.</h1>
       <p>Reconnect to the internet and try again. Your account data has not been changed.</p>
-      <button type="button" onclick="window.location.reload()">Retry</button>
+      <button type="button" onclick="window.location.replace('https://biblecompanion.vercel.app/?nativeRetry=' + Date.now())">Retry</button>
     </main>
   </body>
 </html>

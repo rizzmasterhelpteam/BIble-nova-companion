@@ -1,4 +1,4 @@
-import { API_CONTRACT_VERSION, NATIVE_BRIDGE_VERSION } from "./types";
+import { API_CONTRACT_VERSION } from "./types";
 
 export const WEB_BUNDLE_MANIFEST_VERSION = 1 as const;
 
@@ -15,9 +15,9 @@ export type WebBundleManifest = {
   assetUrl: string;
 };
 
-export const isCompatibleWebBundle = (manifest: WebBundleManifest) =>
+export const isCompatibleWebBundle = (manifest: WebBundleManifest, nativeBridgeVersion: number) =>
   manifest.manifestVersion === WEB_BUNDLE_MANIFEST_VERSION &&
-  manifest.minNativeBridgeVersion <= NATIVE_BRIDGE_VERSION &&
+  manifest.minNativeBridgeVersion <= nativeBridgeVersion &&
   (manifest.maxNativeBridgeVersion === undefined ||
-    manifest.maxNativeBridgeVersion >= NATIVE_BRIDGE_VERSION) &&
+    manifest.maxNativeBridgeVersion >= nativeBridgeVersion) &&
   manifest.apiContractVersion === API_CONTRACT_VERSION;
