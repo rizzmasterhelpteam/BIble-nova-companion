@@ -170,14 +170,18 @@ export default function Layout() {
       const normalizedTime = normalizeReminderTime(storedTime);
       const normalizedDays = parseStoredReminderDays(storedDays);
       const { hour, minute } = parseReminderTime(normalizedTime);
-      let enabled = enabledValue === "true";
+      const wantsReminder = enabledValue === "true";
+      let enabled = false;
 
-      if (enabled) {
+      if (wantsReminder) {
         const status = await platform.reminders.getStatus();
-        if (!status.permissionGranted) {
-          enabled = false;
+        if (!status.permissionGranted || status.exactAlarmGranted === false) {
           if (showError) {
-            setNotificationError("Daily reminders are off because notification permission is not enabled.");
+            setNotificationError(
+              !status.permissionGranted
+                ? "Allow notification permission to use daily reminders."
+                : "Allow Android's ‘Alarms & reminders’ permission, then turn the daily reminder on again.",
+            );
           }
         } else {
           const scheduleMatches =
@@ -197,12 +201,13 @@ export default function Layout() {
             if (!enabled && showError) {
               setNotificationError("Android could not restore the daily reminder.");
             }
+          } else {
+            enabled = true;
           }
         }
       }
 
       await Promise.all([
-        nativeStorage.set(DAILY_REMINDER_STORAGE_KEY, String(enabled)),
         nativeStorage.set(REMINDER_TIME_STORAGE_KEY, normalizedTime),
         nativeStorage.set(REMINDER_DAYS_STORAGE_KEY, JSON.stringify(normalizedDays)),
       ]);

@@ -24,6 +24,8 @@ export type ReminderSchedule = {
 
 export type ReminderStatus = {
   permissionGranted: boolean;
+  /** Android 12+ can disable exact alarms separately from notifications. */
+  exactAlarmGranted?: boolean;
   schedules: Array<{
     id: number;
     day: number;
