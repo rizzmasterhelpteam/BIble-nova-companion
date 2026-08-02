@@ -771,7 +771,7 @@ export function useGeminiLiveVoice(options: Options) {
         let response = await requestSession();
         if (response.status === 403 && getPlatformAdapter().isNative && getNativePlatform() === "android") {
           const { refreshNativeSubscriptionEntitlement } = await import("../lib/native/subscriptionSync");
-          if (await refreshNativeSubscriptionEntitlement().catch(() => false)) {
+          if (await refreshNativeSubscriptionEntitlement(userId).catch(() => false)) {
             response = await requestSession();
           }
         }

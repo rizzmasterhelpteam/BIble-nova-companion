@@ -20,7 +20,7 @@ import {
   type SubscriptionPackage,
 } from "../lib/native/purchases";
 import { selectNewestConfiguredNativePurchase } from "../lib/native/subscriptionSync";
-import { storageRemove, storageSet } from "../lib/webStorage";
+import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
 
 const PENDING_NATIVE_ENTITLEMENT_SYNC_KEY = "bible-nova-pending-native-entitlement-sync";
 
@@ -67,7 +67,7 @@ export default function Paywall() {
   const [offeringReloadKey, setOfferingReloadKey] = useState(0);
   const [subscriptionSyncReady, setSubscriptionSyncReady] = useState<boolean | null>(null);
   const { session, user } = useAuth();
-  const { snapshot, refresh } = useEntitlement();
+  const { snapshot, refresh, restoreGooglePlayPurchase } = useEntitlement();
   const navigate = useNavigate();
   const yearlyRef = useRef<HTMLButtonElement | null>(null);
   const monthlyRef = useRef<HTMLButtonElement | null>(null);
@@ -147,6 +147,19 @@ export default function Paywall() {
       });
     return () => { isMounted = false; };
   }, [nativeStoreAvailable]);
+
+  useEffect(() => {
+    if (!nativeStoreAvailable || !user?.id || snapshot.active) return;
+    const pending = storageGet(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY);
+    if (!pending) return;
+    const timers = [2_000, 5_000].map((delay, index) => window.setTimeout(() => {
+      void (async () => {
+        const result = index === 1 ? await restoreGooglePlayPurchase() : await refresh(true);
+        if (result.active) storageRemove(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY);
+      })();
+    }, delay));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [nativeStoreAvailable, refresh, restoreGooglePlayPurchase, snapshot.active, user?.id]);
 
   useEffect(() => {
     if (!nativeStoreAvailable || isLoadingOffering || iapPackages[selectedPlan]) return;

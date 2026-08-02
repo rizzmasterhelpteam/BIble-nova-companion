@@ -86,7 +86,7 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
           canRepair: true,
           restoreGooglePlayPurchase: async () => {
             const { refreshNativeSubscriptionEntitlement } = await import("../lib/native/subscriptionSync");
-            return refreshNativeSubscriptionEntitlement();
+            return refreshNativeSubscriptionEntitlement(userId);
           },
           refetchStatus: () => fetchEntitlementStatus(userId, { force: true, bypassInFlight: true }),
         });
@@ -122,6 +122,11 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
     activeUserIdRef.current = userId;
     requestVersionRef.current += 1;
     if (previousUserId !== userId) nativeRepairAttemptedRef.current = null;
+    if (previousUserId !== userId) {
+      void import("../lib/native/subscriptionSync").then(({ cancelNativeSubscriptionEntitlementSync }) =>
+        cancelNativeSubscriptionEntitlementSync(previousUserId || undefined),
+      );
+    }
     clearEntitlementCache();
 
     if (!userId) {
@@ -150,7 +155,7 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
     if (getPlatformAdapter().isNative && getPlatformAdapter().kind === "android") {
       nativeRepairAttemptedRef.current = user?.id || null;
       const { refreshNativeSubscriptionEntitlement } = await import("../lib/native/subscriptionSync");
-      await refreshNativeSubscriptionEntitlement();
+      if (user?.id) await refreshNativeSubscriptionEntitlement(user.id);
     }
     return refresh(true);
   }, [refresh, user?.id]);

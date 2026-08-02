@@ -13,7 +13,8 @@ export type NativeSubscriptionPurchase = {
   purchaseDate?: string;
 };
 
-let nativeEntitlementRefreshPromise: Promise<boolean> | null = null;
+let activeSync: { userId: string; generation: number; controller: AbortController; promise: Promise<boolean> } | null = null;
+let syncGeneration = 0;
 const NATIVE_ENTITLEMENT_SYNC_TIMEOUT_MS = 10_000;
 
 const withNativeEntitlementSyncTimeout = <T,>(promise: Promise<T>) =>
@@ -56,10 +57,11 @@ export const selectNewestConfiguredNativePurchase = (
   ))
   .sort((left, right) => getPurchaseTimestamp(right) - getPurchaseTimestamp(left))[0];
 
-const syncNativeSubscriptionEntitlement = async () => {
+const syncNativeSubscriptionEntitlement = async (controller: AbortController, isCurrent: () => boolean) => {
   if (!isNativePlatform() || getNativePlatform() !== "android") return false;
 
   const purchases = (await restorePurchases()) as NativeSubscriptionPurchase[];
+  if (!isCurrent()) return false;
   const purchase = selectNewestConfiguredNativePurchase(purchases);
   if (!purchase?.productIdentifier) return false;
 
@@ -76,6 +78,7 @@ const syncNativeSubscriptionEntitlement = async () => {
       purchaseToken: purchase.purchaseToken.trim(),
       platform: "android",
     }),
+    signal: controller.signal,
   });
   const result = (await response.json().catch(() => ({}))) as {
     error?: string;
@@ -84,19 +87,27 @@ const syncNativeSubscriptionEntitlement = async () => {
   if (!response.ok) {
     throw new Error(result.error || "Your purchase could not be verified.");
   }
-  return result.subscription?.accessActive === true;
+  return isCurrent() && result.subscription?.accessActive === true;
 };
 
 // Play Billing and server verification can be requested from both lifecycle
 // recovery and Voice entitlement repair. Collapse simultaneous attempts so a
 // single purchase is never verified repeatedly in parallel.
-export const refreshNativeSubscriptionEntitlement = () => {
-  if (!nativeEntitlementRefreshPromise) {
-    nativeEntitlementRefreshPromise = withNativeEntitlementSyncTimeout(
-      syncNativeSubscriptionEntitlement(),
-    ).finally(() => {
-      nativeEntitlementRefreshPromise = null;
-    });
+export const cancelNativeSubscriptionEntitlementSync = (userId?: string) => {
+  if (activeSync && (!userId || activeSync.userId === userId)) {
+    activeSync.controller.abort();
+    activeSync = null;
   }
-  return nativeEntitlementRefreshPromise;
+};
+
+export const refreshNativeSubscriptionEntitlement = (userId: string) => {
+  if (activeSync && activeSync.userId === userId) return activeSync.promise;
+  cancelNativeSubscriptionEntitlementSync();
+  const generation = ++syncGeneration;
+  const controller = new AbortController();
+  const isCurrent = () => activeSync?.userId === userId && activeSync.generation === generation && !controller.signal.aborted;
+  const promise = withNativeEntitlementSyncTimeout(syncNativeSubscriptionEntitlement(controller, isCurrent))
+    .finally(() => { if (isCurrent()) activeSync = null; });
+  activeSync = { userId, generation, controller, promise };
+  return promise;
 };

@@ -139,11 +139,27 @@ export const NativeRuntimeGate = ({
   if (status === "loading") {
     return <AppBootShell message="Checking native app compatibility..." />;
   }
+  if (status === "unavailable") {
+    return <RuntimeUnavailableScreen />;
+  }
   if (!isNativeRuntimeCompatible(runtime, minimumBridgeVersion)) {
     return <UpdateRequiredScreen runtime={runtime} />;
   }
   return <>{children}</>;
 };
+
+const RuntimeUnavailableScreen = () => (
+  <div className="app-screen flex min-h-full flex-1 items-center justify-center px-6 py-12 text-center">
+    <div className="app-panel w-full max-w-sm rounded-card border p-6 shadow-sm">
+      <p className="app-kicker">App check</p>
+      <h1 className="app-heading mt-3 text-2xl font-serif">Could not check the installed app</h1>
+      <p className="app-muted mt-3 text-sm">Please retry. Update is only required when the installed bridge is confirmed to be too old.</p>
+      <button type="button" className="touch-target mt-5 rounded-pill px-5 py-3 text-sm font-semibold" style={{ background: "var(--app-accent)", color: "var(--app-accent-contrast)" }} onClick={() => window.location.reload()}>
+        Retry
+      </button>
+    </div>
+  </div>
+);
 
 const CompatibleApplication = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {

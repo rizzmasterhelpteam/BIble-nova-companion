@@ -174,15 +174,28 @@ const restoreWebStorageFromPreferencesImpl = async () => {
           Preferences.get({ key: prefKey }),
           "Native Preferences read",
         );
-        return { originalKey, value };
+        return { prefKey, originalKey, value };
       }),
     );
 
-    for (const { originalKey, value } of entries) {
+    for (const { prefKey, originalKey, value } of entries) {
       if (value !== null) {
         const localRaw = storage.getItem(originalKey);
-        if (getStoredUpdatedAt(value) > getStoredUpdatedAt(localRaw)) {
-          storage.setItem(originalKey, value);
+        const preferenceUpdatedAt = getStoredUpdatedAt(value);
+        const localUpdatedAt = getStoredUpdatedAt(localRaw);
+        const localIsMissing = localRaw === null;
+        const preferenceIsLegacy = preferenceUpdatedAt === 0;
+        if (localIsMissing || (!preferenceIsLegacy && preferenceUpdatedAt > localUpdatedAt)) {
+          const migratedValue = preferenceIsLegacy
+            ? JSON.stringify({ value: unwrapStoredValue(value), updatedAt: Date.now(), schemaVersion: 1 })
+            : value;
+          storage.setItem(originalKey, migratedValue);
+          if (preferenceIsLegacy) {
+            void withPreferencesTimeout(
+              Preferences.set({ key: prefKey, value: migratedValue }),
+              "Native Preferences migration",
+            ).catch(() => undefined);
+          }
         }
       }
     }
