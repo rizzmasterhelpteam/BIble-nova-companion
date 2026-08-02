@@ -89,11 +89,39 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: "Voice request must contain a valid JSON object." });
     }
     const body = parsed.body;
-    if (body.action !== "start" && body.action !== "release" && body.action !== "live-token") {
+    if (
+      body.action !== "start" &&
+      body.action !== "release" &&
+      body.action !== "live-token" &&
+      body.action !== "usage"
+    ) {
       return res.status(400).json({ error: "Voice request action is invalid." });
     }
     action = body.action;
     const reservationHandle = typeof body.reservationHandle === "string" ? body.reservationHandle : "";
+
+    if (action === "usage") {
+      const { maxMinutes } = getVoiceSessionConfig();
+      const { dailyMinutes, monthlyMinutes, resetOffsetMinutes } = getVoiceUsageLimits(maxMinutes);
+      const availability = await getVoiceSessionAvailability(
+        userId,
+        maxMinutes,
+        dailyMinutes,
+        monthlyMinutes,
+        resetOffsetMinutes,
+        null,
+      );
+      return res.status(200).json({
+        eligible: availability.eligible,
+        usage: availability.usage,
+        limits: {
+          maxSessionMinutes: maxMinutes,
+          dailyMinutes,
+          monthlyMinutes,
+        },
+        checkedAt: new Date().toISOString(),
+      });
+    }
 
     if (action === "release") {
       const handleHash = hashVoiceReservationHandle(reservationHandle);

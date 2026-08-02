@@ -79,10 +79,10 @@ export default function ProfileCapacityCard({
     setIsLoading(true);
     setError(null);
 
-    void apiFetch("/api/voice/usage", {
-      method: "GET",
-      cache: "no-store",
-      headers: { "Cache-Control": "no-cache" },
+    void apiFetch("/api/voice/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+      body: JSON.stringify({ action: "usage" }),
       signal: controller.signal,
     })
       .then(async (response) => {
