@@ -125,12 +125,12 @@ export default function ProfileCapacityCard({
   const voiceValue = isLoading
     ? "Loading…"
     : usage
-      ? `${usage.monthlyUsedMinutes} min / ${usage.monthlyLimitMinutes} min`
+      ? `${usage.monthlyRemainingMinutes} min left of ${usage.monthlyLimitMinutes} min`
       : hasVerifiedVoiceAccess
         ? "Unavailable"
         : "Premium only";
   const voiceRemaining = usage
-    ? `${usage.monthlyRemainingMinutes} min left`
+    ? `${usage.monthlyUsedMinutes} min used this month`
     : hasVerifiedVoiceAccess
       ? "Usage unavailable"
       : error
@@ -195,7 +195,7 @@ export default function ProfileCapacityCard({
             <div>
               <div className="flex items-center justify-between gap-3 text-[12px]">
                 <span className="app-heading">Text replies</span>
-                <span className="app-heading font-semibold">No daily cap</span>
+                <span className="app-heading font-semibold">Unlimited</span>
               </div>
               <CapacityProgress value={0} muted />
               <p className="app-muted mt-2 text-[10px]">Fair-use rate limits still protect the service.</p>
