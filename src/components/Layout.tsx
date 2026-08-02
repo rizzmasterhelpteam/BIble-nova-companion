@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
@@ -34,6 +34,8 @@ import { getNativePlatform, getPlatformAdapter } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
 import { cn } from "../lib/utils";
 import { shouldHideBottomNavigation } from "../lib/mobileLayout";
+import RouteContentFallback from "./RouteContentFallback";
+import ProfileCapacityCard from "./ProfileCapacityCard";
 import {
   DEFAULT_REMINDER_DAYS,
   DEFAULT_REMINDER_TIME,
@@ -102,8 +104,8 @@ export default function Layout() {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const { hapticsEnabled, setHapticsEnabled } = useHaptics();
-  const { isCompactPhone, isKeyboardOpen, isShortPhone } = useMobileViewport();
-  const { isVoiceSessionActive } = useVoiceSession();
+  const { bottomInset, isCompactPhone, isKeyboardOpen, isShortPhone, resetKeyboardState } = useMobileViewport();
+  const { isVoiceSessionActive, setVoiceSessionActive } = useVoiceSession();
   const {
     user,
     profileName,
@@ -147,8 +149,28 @@ export default function Layout() {
   const isAndroidApp = nativeControlsAvailable && getNativePlatform() === "android";
   const isHomeRoute = location.pathname === "/";
   const hideGlobalChrome = isVoiceSessionActive && location.pathname === "/";
-  const hideBottomNavigation = shouldHideBottomNavigation(isKeyboardOpen) || hideGlobalChrome;
-  const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "1.1.4";
+  const hideBottomNavigation = shouldHideBottomNavigation(isKeyboardOpen && bottomInset > 0) || hideGlobalChrome;
+  const appVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) || "1.1.8";
+
+  React.useEffect(() => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) activeElement.blur();
+    resetKeyboardState();
+  }, [location.pathname, resetKeyboardState]);
+
+  React.useEffect(() => {
+    if (location.pathname !== "/" && isVoiceSessionActive) setVoiceSessionActive(false);
+  }, [isVoiceSessionActive, location.pathname, setVoiceSessionActive]);
+
+  const prepareNavigation = React.useCallback(() => {
+    setSettingsOpen(false);
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) activeElement.blur();
+    resetKeyboardState();
+    if (platform.isNative) {
+      void import("@capacitor/keyboard").then(({ Keyboard }) => Keyboard.hide().catch(() => undefined));
+    }
+  }, [platform.isNative, resetKeyboardState]);
 
   const reconcileDailyReminderPreferences = React.useCallback(async (showError: boolean) => {
     if (!nativeControlsAvailable || reminderOperationInFlightRef.current) return;
@@ -166,14 +188,18 @@ export default function Layout() {
       const normalizedTime = normalizeReminderTime(storedTime);
       const normalizedDays = parseStoredReminderDays(storedDays);
       const { hour, minute } = parseReminderTime(normalizedTime);
-      let enabled = enabledValue === "true";
+      const wantsReminder = enabledValue === "true";
+      let enabled = false;
 
-      if (enabled) {
+      if (wantsReminder) {
         const status = await platform.reminders.getStatus();
-        if (!status.permissionGranted) {
-          enabled = false;
+        if (!status.permissionGranted || status.exactAlarmGranted === false) {
           if (showError) {
-            setNotificationError("Daily reminders are off because notification permission is not enabled.");
+            setNotificationError(
+              !status.permissionGranted
+                ? "Allow notification permission to use daily reminders."
+                : "Allow Android's ‘Alarms & reminders’ permission, then turn the daily reminder on again.",
+            );
           }
         } else {
           const scheduleMatches =
@@ -193,12 +219,13 @@ export default function Layout() {
             if (!enabled && showError) {
               setNotificationError("Android could not restore the daily reminder.");
             }
+          } else {
+            enabled = true;
           }
         }
       }
 
       await Promise.all([
-        nativeStorage.set(DAILY_REMINDER_STORAGE_KEY, String(enabled)),
         nativeStorage.set(REMINDER_TIME_STORAGE_KEY, normalizedTime),
         nativeStorage.set(REMINDER_DAYS_STORAGE_KEY, JSON.stringify(normalizedDays)),
       ]);
@@ -504,7 +531,7 @@ export default function Layout() {
         )}
 
         <main className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
-          <AnimatePresence mode="wait" initial={false}>
+          <AnimatePresence mode={isAndroidApp ? "sync" : "wait"} initial={false}>
             <motion.div
               key={location.pathname}
               initial={prefersReducedMotion || isAndroidApp ? false : { opacity: 0, y: 8 }}
@@ -513,7 +540,9 @@ export default function Layout() {
               transition={{ duration: prefersReducedMotion || isAndroidApp ? 0 : 0.2, ease: "easeOut" }}
               className="relative flex min-h-0 flex-1 flex-col"
             >
-              <Outlet />
+              <Suspense fallback={<RouteContentFallback />}>
+                <Outlet />
+              </Suspense>
             </motion.div>
           </AnimatePresence>
         </main>
@@ -531,10 +560,10 @@ export default function Layout() {
           style={{ pointerEvents: hideBottomNavigation ? "none" : undefined }}
         >
           <div className="app-nav-shell mx-auto flex w-full max-w-xl items-center justify-between gap-1 rounded-[1.6rem] p-1.5">
-            <NavItem to="/" end icon={<Home strokeWidth={1.6} className="h-5 w-5" />} label="Home" />
-            <NavItem to="/breathe" icon={<Wind strokeWidth={1.6} className="h-5 w-5" />} label="Breathe" />
-            <NavItem to="/intentions" icon={<Heart strokeWidth={1.6} className="h-5 w-5" />} label="Intentions" />
-            <NavItem to="/confess" icon={<Flame strokeWidth={1.6} className="h-5 w-5" />} label="Release" />
+            <NavItem to="/" end onNavigate={prepareNavigation} icon={<Home strokeWidth={1.6} className="h-5 w-5" />} label="Home" />
+            <NavItem to="/breathe" onNavigate={prepareNavigation} icon={<Wind strokeWidth={1.6} className="h-5 w-5" />} label="Breathe" />
+            <NavItem to="/intentions" onNavigate={prepareNavigation} icon={<Heart strokeWidth={1.6} className="h-5 w-5" />} label="Intentions" />
+            <NavItem to="/confess" onNavigate={prepareNavigation} icon={<Flame strokeWidth={1.6} className="h-5 w-5" />} label="Release" />
           </div>
         </nav>
 
@@ -547,7 +576,7 @@ export default function Layout() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
                 onClick={() => setSettingsOpen(false)}
-                className="app-overlay app-settings-overlay fixed inset-0 z-[60] backdrop-blur-sm"
+                className="app-overlay app-settings-overlay fixed inset-0 z-[70] backdrop-blur-sm"
               />
 
               <motion.div
@@ -560,7 +589,7 @@ export default function Layout() {
                 aria-labelledby="settings-title"
                 ref={settingsDialogRef}
                 tabIndex={-1}
-                className="app-panel-strong app-settings-sheet fixed inset-x-0 bottom-0 z-[70] mx-auto max-h-[92dvh] w-full overflow-y-auto rounded-t-[2rem] border-t scrollbar-hide sm:max-w-lg sm:px-0 xl:max-w-xl"
+                className="app-panel-strong app-settings-sheet fixed inset-x-0 bottom-0 z-[80] mx-auto max-h-[92dvh] w-full overflow-y-auto rounded-t-[2rem] border-t scrollbar-hide sm:max-w-lg sm:px-0 xl:max-w-xl"
                 style={{
                   bottom: "var(--app-bottom-offset)",
                   borderColor: "var(--app-card-border)",
@@ -577,7 +606,7 @@ export default function Layout() {
                 <div
                   className={cn("space-y-6 px-5 pt-2 sm:px-6", isCompactPhone ? "pb-5" : "pb-6")}
                 >
-                <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between">
                     <div>
                       <h2 id="settings-title" className="text-[19px] font-semibold tracking-tight app-heading">Settings</h2>
                     </div>
@@ -589,6 +618,10 @@ export default function Layout() {
                       <X className="h-4 w-4" />
                     </button>
                   </div>
+
+                  <ProfileCapacityCard
+                    isOpen={settingsOpen}
+                  />
 
                   <section>
                     <div className="mb-3 flex items-center gap-2">
@@ -1064,11 +1097,24 @@ export default function Layout() {
   );
 }
 
-function NavItem({ to, end = false, icon, label }: { to: string; end?: boolean; icon: React.ReactNode; label: string }) {
+function NavItem({
+  to,
+  end = false,
+  icon,
+  label,
+  onNavigate,
+}: {
+  to: string;
+  end?: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onNavigate: () => void;
+}) {
   return (
     <NavLink
       to={to}
       end={end}
+      onClick={onNavigate}
       className="touch-target relative flex min-h-[58px] flex-1 flex-col items-center justify-center gap-1.5 rounded-pill py-2 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
       style={{ color: "var(--app-text-muted)" }}
     >

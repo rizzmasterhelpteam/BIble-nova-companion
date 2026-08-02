@@ -127,7 +127,7 @@ export default function Onboarding() {
   );
   const [hasStarted, setHasStarted] = useState(() => Object.keys(answers).length > 0);
   const [showAnalysis, setShowAnalysis] = useState(false);
-  const { completeOnboarding, isSubscribed, updateShadowNotes } = useAuth();
+  const { completeOnboarding, updateShadowNotes } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -179,9 +179,7 @@ export default function Onboarding() {
     completeOnboarding();
     const analysis = getAnalysisSummary(answers);
     void updateShadowNotes(analysis.overview).catch(() => undefined);
-    const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
-    const nextPath = isAndroidNative && !isSubscribed ? "/paywall" : "/";
-    window.requestAnimationFrame(() => navigate(nextPath, { replace: true }));
+    window.requestAnimationFrame(() => navigate("/", { replace: true }));
   };
 
   const handleSkip = () => {
@@ -190,9 +188,7 @@ export default function Onboarding() {
     void updateShadowNotes(
       "User chose default reflection preferences. Keep guidance gentle, scripture-grounded, and practical.",
     ).catch(() => undefined);
-    const isAndroidNative = isNativePlatform() && getNativePlatform() === "android";
-    const nextPath = isAndroidNative && !isSubscribed ? "/paywall" : "/";
-    navigate(nextPath, { replace: true });
+    navigate("/", { replace: true });
   };
 
   // Staggered welcome screen

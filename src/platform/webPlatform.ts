@@ -1,5 +1,6 @@
 import type { NetworkStatus, PlatformAdapter, ReminderSchedule, ReminderStatus } from "./types";
 import { API_CONTRACT_VERSION, NATIVE_BRIDGE_VERSION } from "./types";
+import { getNativeRuntimeInfo } from "../lib/native/runtime";
 
 const getNetworkStatus = (): NetworkStatus => ({
   connected: typeof navigator === "undefined" ? true : navigator.onLine,
@@ -17,6 +18,7 @@ export const webPlatform: PlatformAdapter = {
   isNative: false,
   nativeBridgeVersion: NATIVE_BRIDGE_VERSION,
   apiContractVersion: API_CONTRACT_VERSION,
+  runtime: getNativeRuntimeInfo(),
   getAppVersion: () => import.meta.env.VITE_APP_VERSION?.trim() || "web",
   auth: {
     signInWithGoogle: async () => {

@@ -1,4 +1,4 @@
-export const DEFAULT_VOICE_SESSION_MAX_MINUTES = 10;
+export const DEFAULT_VOICE_SESSION_MAX_MINUTES = 15;
 export const DEFAULT_VOICE_IDLE_TIMEOUT_SECONDS = 45;
 
 export const getVoiceSessionMaxMinutes = () => {

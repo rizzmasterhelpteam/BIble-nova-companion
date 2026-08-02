@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useEntitlement } from "../context/EntitlementContext";
 import { Check, Star, AlertCircle, ShieldCheck, Sparkles, HeartHandshake, Lock, BookOpen } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
@@ -62,15 +63,16 @@ export default function Paywall() {
   const [subscriptionSyncError, setSubscriptionSyncError] = useState<string | null>(null);
   const [offeringReloadKey, setOfferingReloadKey] = useState(0);
   const [subscriptionSyncReady, setSubscriptionSyncReady] = useState<boolean | null>(null);
-  const { isSubscribed, session, subscribe, user } = useAuth();
+  const { session, user } = useAuth();
+  const { snapshot, refresh } = useEntitlement();
   const navigate = useNavigate();
   const yearlyRef = useRef<HTMLButtonElement | null>(null);
   const monthlyRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    if (!isSubscribed) return;
+    if (!snapshot.active) return;
     navigate("/", { replace: true });
-  }, [isSubscribed, navigate]);
+  }, [navigate, snapshot.active]);
 
   useEffect(() => {
     if (!nativeStoreAvailable) return;
@@ -198,6 +200,8 @@ export default function Paywall() {
         selectedNativePackage.androidBasePlanId,
         selectedNativePackage.productId,
       );
+      const verified = await refresh(true);
+      if (!verified.active) throw new Error("Your purchase was linked, but premium access is still being verified.");
       navigate("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Purchase could not be completed.");
@@ -241,7 +245,7 @@ export default function Paywall() {
     if (data.subscription?.accessActive !== true) {
       throw new Error("Google Play verified this purchase, but it is not currently active.");
     }
-    subscribe("native_google_play");
+    await refresh(true);
     return data.subscription;
   };
 

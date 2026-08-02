@@ -81,6 +81,26 @@ export async function hideNativeSplashScreen() {
   }
 }
 
+export async function updateNativeStatusBarTheme(resolvedTheme: "dark" | "light") {
+  if (!isNativePlatform()) return;
+
+  try {
+    const { StatusBar, Style } = await loadNativeModules();
+    await withNativeTimeout(
+      StatusBar.setStyle({ style: resolvedTheme === "dark" ? Style.Dark : Style.Light }),
+      "Status bar style",
+    );
+    await withNativeTimeout(
+      StatusBar.setBackgroundColor({
+        color: resolvedTheme === "dark" ? "#050b14" : "#d9e9f7",
+      }),
+      "Status bar color",
+    );
+  } catch {
+    // Some platforms do not support status bar controls.
+  }
+}
+
 export async function initializeNativeApp() {
   if (!isNativePlatform()) return;
 
@@ -92,9 +112,18 @@ export async function initializeNativeApp() {
     const { hasNativeGoogleAuthConfig, initializeNativeGoogleAuth } = await import("./auth");
     const { App, Keyboard, Network, StatusBar, Style } = await loadNativeModules();
 
+    const resolvedTheme = document.documentElement.classList.contains("dark") ? "dark" : "light";
     try {
-      await withNativeTimeout(StatusBar.setStyle({ style: Style.Dark }), "Status bar style");
-      await withNativeTimeout(StatusBar.setBackgroundColor({ color: "#111827" }), "Status bar color");
+      await withNativeTimeout(
+        StatusBar.setStyle({ style: resolvedTheme === "dark" ? Style.Dark : Style.Light }),
+        "Status bar style",
+      );
+      await withNativeTimeout(
+        StatusBar.setBackgroundColor({
+          color: resolvedTheme === "dark" ? "#050b14" : "#d9e9f7",
+        }),
+        "Status bar color",
+      );
     } catch {
       // Some platforms do not support all status bar controls.
     }

@@ -72,7 +72,7 @@ app.delete("/api/account", async (req, res) => {
   }
 });
 
-app.get("/api/subscription/native-sync", async (req, res) => {
+app.get(["/api/subscription/native-sync", "/api/subscription/status"], async (req, res) => {
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
@@ -82,8 +82,14 @@ app.get("/api/subscription/native-sync", async (req, res) => {
     const status = await getSubscriptionAccessStatus(userId);
     res.setHeader("Cache-Control", "private, no-store, no-cache, max-age=0");
     res.json({
+      state: status.state,
       active: status.active,
+      status: status.status,
+      source: status.source,
+      productId: status.productId,
       expiresAt: status.expiresAt,
+      verifiedAt: status.verifiedAt,
+      reconciliationRecommended: status.reconciliationRecommended,
       checkedAt: new Date().toISOString(),
     });
   } catch (error) {

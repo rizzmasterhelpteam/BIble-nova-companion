@@ -48,7 +48,7 @@ export const getLiveSessionDurationMs = ({
   remainingSeconds?: number;
   maxMinutes?: number;
 }) => {
-  const fallbackSeconds = Math.max(60, Math.min(900, Number(maxMinutes || 10) * 60));
+  const fallbackSeconds = Math.max(60, Math.min(900, Number(maxMinutes || 15) * 60));
   const serverRemainingSeconds = Number(remainingSeconds);
   const effectiveSeconds =
     Number.isFinite(serverRemainingSeconds) && serverRemainingSeconds > 0

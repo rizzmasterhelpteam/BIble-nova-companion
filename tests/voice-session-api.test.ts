@@ -25,7 +25,7 @@ vi.mock("../server-security", () => ({
   requireAuthenticatedRequest,
 }));
 vi.mock("../voice-config", () => ({
-  getVoiceSessionConfig: () => ({ maxMinutes: 10, idleTimeoutSeconds: 45 }),
+  getVoiceSessionConfig: () => ({ maxMinutes: 15, idleTimeoutSeconds: 45 }),
 }));
 
 import voiceSessionHandler from "../api/voice/session";
@@ -68,6 +68,41 @@ describe("turn-based Voice session API", () => {
     const unknownResponse = createResponse();
     await voiceSessionHandler({ method: "POST", body: { action: "unexpected" } }, unknownResponse);
     expect(unknownResponse.statusCode).toBe(400);
+    expect(acquireVoiceSessionLease).not.toHaveBeenCalled();
+  });
+
+  it("returns usage and configured limits without reserving Voice time", async () => {
+    getVoiceSessionAvailability.mockResolvedValue({
+      eligible: true,
+      available: true,
+      reason: "available",
+      retryAfterSeconds: null,
+      canRenew: false,
+      usage: {
+        monthlyLimitMinutes: 180,
+        monthlyUsedMinutes: 15,
+        monthlyRemainingMinutes: 165,
+        monthlyResetAt: "2026-09-01T00:00:00.000Z",
+      },
+    });
+    const response = createResponse();
+
+    await voiceSessionHandler({ method: "POST", body: { action: "usage" } }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      eligible: true,
+      usage: { monthlyUsedMinutes: 15, monthlyRemainingMinutes: 165 },
+      limits: { maxSessionMinutes: 15, dailyMinutes: 60, monthlyMinutes: 180 },
+    });
+    expect(getVoiceSessionAvailability).toHaveBeenCalledWith(
+      "user-1",
+      15,
+      60,
+      180,
+      330,
+      null,
+    );
     expect(acquireVoiceSessionLease).not.toHaveBeenCalled();
   });
 
@@ -120,7 +155,7 @@ describe("turn-based Voice session API", () => {
     expect(releaseVoiceSessionLease).toHaveBeenCalledWith("user-1", "p".repeat(64));
     expect(getVoiceSessionAvailability).toHaveBeenCalledWith(
       "user-1",
-      10,
+      15,
       60,
       180,
       330,
@@ -128,7 +163,7 @@ describe("turn-based Voice session API", () => {
     );
     expect(acquireVoiceSessionLease).toHaveBeenCalledWith(
       "user-1",
-      10,
+      15,
       60,
       180,
       330,
@@ -165,7 +200,7 @@ describe("turn-based Voice session API", () => {
     expect(response.statusCode).toBe(200);
     expect(acquireVoiceSessionLease).toHaveBeenCalledWith(
       "user-1",
-      10,
+      15,
       60,
       180,
       330,

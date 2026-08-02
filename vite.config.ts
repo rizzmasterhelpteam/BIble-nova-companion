@@ -26,6 +26,7 @@ import {
   assertStringLength,
   enforceRateLimits,
   getHttpErrorDetails,
+  getSubscriptionAccessStatus,
   HttpError,
   requireAuthenticatedRequest,
 } from './server-security';
@@ -285,7 +286,34 @@ const localApiPlugin = () => ({
         return;
       }
 
-      if (pathname === '/api/subscription/native-sync') {
+      if (pathname === '/api/subscription/status' || pathname === '/api/subscription/native-sync') {
+        if (pathname === '/api/subscription/status' && req.method === 'GET') {
+          try {
+            const { userId, ip } = await requireAuthenticatedRequest(req);
+            await enforceRateLimits([
+              { key: `subscription-status:user:${userId}`, limit: 60 },
+              { key: `subscription-status:ip:${ip}`, limit: 120 },
+            ]);
+            const status = await getSubscriptionAccessStatus(userId);
+            res.setHeader('Cache-Control', 'private, no-store, no-cache, max-age=0');
+            sendJson(res, 200, {
+              state: status.state,
+              active: status.active,
+              status: status.status,
+              source: status.source,
+              productId: status.productId,
+              expiresAt: status.expiresAt,
+              verifiedAt: status.verifiedAt,
+              reconciliationRecommended: status.reconciliationRecommended,
+              checkedAt: new Date().toISOString(),
+            });
+          } catch (error) {
+            const details = getHttpErrorDetails(error);
+            sendJson(res, details.statusCode, { error: details.message });
+          }
+          return;
+        }
+
         if (req.method !== 'POST') {
           sendJson(res, 405, { error: 'Method not allowed.' });
           return;

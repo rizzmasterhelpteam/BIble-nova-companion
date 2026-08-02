@@ -17,9 +17,10 @@
     "assets:native": "powershell -ExecutionPolicy Bypass -File scripts/generate-native-assets.ps1",
     "fix:ios-spm": "node scripts/fix-capacitor-ios-spm.mjs",
     "verify:native-env": "node scripts/verify-native-env.mjs",
+    "verify:native-shell": "node scripts/verify-native-shell.mjs",
     "sync:native-google-auth": "node scripts/sync-native-google-auth.mjs",
-    "cap:sync": "npm run verify:native-env && npm run build && cap sync && npm run fix:ios-spm && npm run sync:native-google-auth",
-    "cap:copy": "npm run verify:native-env && npm run build && cap copy && npm run fix:ios-spm && npm run sync:native-google-auth",
+    "cap:sync": "npm run verify:native-env && npm run verify:native-shell && npm run build && cap sync && npm run verify:native-shell && npm run fix:ios-spm && npm run sync:native-google-auth",
+    "cap:copy": "npm run verify:native-env && npm run verify:native-shell && npm run build && cap copy && npm run verify:native-shell && npm run fix:ios-spm && npm run sync:native-google-auth",
     "android:open": "npm run cap:sync && cap open android",
     "ios:open": "npm run cap:sync && cap open ios"
   },

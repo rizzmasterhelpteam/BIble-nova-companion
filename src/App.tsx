@@ -3,131 +3,38 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { Suspense, lazy, useState, useEffect } from "react";
+import React, { Suspense, lazy, useCallback, useState, useEffect } from "react";
 import { BrowserRouter, HashRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { EntitlementProvider, useEntitlement } from "./context/EntitlementContext";
+import { AppStorageProvider } from "./context/AppStorageContext";
+import { ToastProvider } from "./context/ToastContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { HapticsProvider } from "./context/HapticsContext";
 import { MobileViewportProvider } from "./context/MobileViewportContext";
 import { VoiceSessionProvider } from "./context/VoiceSessionContext";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { isNativePlatform } from "./lib/native/platform";
+import { getPlatformAdapter } from "./lib/native/platform";
+import { isNativeRuntimeCompatible } from "./lib/native/runtime";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { initializeNativeApp } from "./lib/native/app";
 import { startup } from "./lib/startup";
 import { isNativeAndroidDevice } from "./hooks/usePerformanceMode";
-import {
-  shouldRedirectToPaywall,
-  shouldWaitForSubscriptionResolution,
-} from "./lib/subscriptionAccess";
+import AppBootShell from "./components/AppBootShell";
+import RouteContentFallback from "./components/RouteContentFallback";
+import UpdateRequiredScreen from "./components/UpdateRequiredScreen";
+import ToastViewport from "./components/ToastViewport";
+import ConnectivityStatus from "./components/ConnectivityStatus";
+import Layout from "./components/Layout";
+import Home from "./pages/Home";
+import Login from "./pages/Login";
+import Onboarding from "./pages/Onboarding";
+import Paywall from "./pages/Paywall";
 
-const Layout = lazy(() => import("./components/Layout"));
-const Home = lazy(() => import("./pages/Home"));
 const Breathe = lazy(() => import("./pages/Breathe"));
 const Intentions = lazy(() => import("./pages/Intentions"));
 const Confession = lazy(() => import("./pages/Confession"));
-const Login = lazy(() => import("./pages/Login"));
-const Onboarding = lazy(() => import("./pages/Onboarding"));
-const Paywall = lazy(() => import("./pages/Paywall"));
-
-const FullScreenLoader = () => (
-  <div className="fixed inset-0 z-[100] bg-black" aria-hidden="true" />
-);
-
-const ConnectivityNotice = () => {
-  const [isOffline, setIsOffline] = useState(
-    typeof navigator !== "undefined" && navigator.onLine === false,
-  );
-
-  useEffect(() => {
-    const handleOffline = () => setIsOffline(true);
-    const handleOnline = () => setIsOffline(false);
-    window.addEventListener("offline", handleOffline);
-    window.addEventListener("online", handleOnline);
-    return () => {
-      window.removeEventListener("offline", handleOffline);
-      window.removeEventListener("online", handleOnline);
-    };
-  }, []);
-
-  if (!isOffline) return null;
-
-  return (
-    <div
-      className="fixed inset-x-3 bottom-3 z-[120] flex items-center justify-between gap-3 rounded-card border px-4 py-3 shadow-xl"
-      role="alert"
-      style={{
-        backgroundColor: "var(--app-surface-elevated)",
-        backgroundImage: "var(--app-shell-highlight)",
-        borderColor: "var(--app-card-border)",
-        color: "var(--app-text)",
-      }}
-    >
-      <span className="text-sm">You’re offline. Reconnect to continue using Bible Nova Companion.</span>
-      <button
-        type="button"
-        className="touch-target rounded-pill px-3 py-2 text-sm font-medium"
-        style={{ background: "var(--app-accent)", color: "var(--app-accent-contrast)" }}
-        onClick={() => window.location.reload()}
-      >
-        Retry
-      </button>
-    </div>
-  );
-};
-
-const AuthGuard = ({ children }: { children: React.ReactNode }) => {
-  const {
-    user,
-    isLoading,
-    hasCompletedOnboarding,
-    isSubscribed,
-    isSubscriptionResolved,
-  } = useAuth();
-  const location = useLocation();
-  const hasActiveIdentity = Boolean(user);
-  
-  if (isLoading) {
-    return <FullScreenLoader />;
-  }
-
-  if (!hasActiveIdentity) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (!hasCompletedOnboarding && location.pathname !== "/onboarding") {
-    return <Navigate to="/onboarding" replace />;
-  }
-
-  if (
-    shouldWaitForSubscriptionResolution({
-      hasCompletedOnboarding,
-      isSubscriptionResolved,
-    })
-  ) {
-    return <FullScreenLoader />;
-  }
-
-  // Every completed-onboarding account must have a verified server entitlement
-  // before entering the main experience. Billing is still completed on Android.
-  if (shouldRedirectToPaywall({
-    hasCompletedOnboarding,
-    isSubscribed,
-    pathname: location.pathname,
-  })) {
-    return <Navigate to="/paywall" replace />;
-  }
-
-  if (
-    hasCompletedOnboarding &&
-    (location.pathname === "/onboarding" ||
-      (location.pathname === "/paywall" && isSubscribed))
-  ) {
-    return <Navigate to="/" replace />;
-  }
-
-  return <>{children}</>;
-};
 
 // Gentle page entrance for auth-flow routes (login → onboarding → paywall).
 // useReducedMotion is used here so it respects user preferences.
@@ -139,35 +46,89 @@ const PageFade = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
+const AuthoritativeAuthGuard = ({ children }: { children: React.ReactNode }) => {
+  const { user, isLoading, hasCompletedOnboarding } = useAuth();
+  const { snapshot, isRefreshing, refresh } = useEntitlement();
+  const location = useLocation();
+
+  if (isLoading) return <AppBootShell message="Checking your secure session..." />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!hasCompletedOnboarding && location.pathname !== "/onboarding") {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  if (snapshot.state === "initializing" || (snapshot.state === "refreshing" && !snapshot.active)) {
+    return <AppBootShell message={isRefreshing ? "Confirming your reflection space..." : "Checking your membership..."} />;
+  }
+  if (snapshot.state === "unknown" && !snapshot.active) {
+    return <EntitlementUnavailableScreen error={snapshot.error} onRetry={() => void refresh(true)} />;
+  }
+  if (!snapshot.active && snapshot.state === "inactive" && location.pathname !== "/paywall") {
+    return <Navigate to="/paywall" replace />;
+  }
+  if (hasCompletedOnboarding && (location.pathname === "/onboarding" || location.pathname === "/paywall")) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+};
+
+const EntitlementUnavailableScreen = ({
+  error,
+  onRetry,
+}: {
+  error: string | null;
+  onRetry: () => void;
+}) => (
+  <div className="app-screen flex min-h-full flex-1 items-center justify-center px-6 py-12 text-center">
+    <div className="app-panel w-full max-w-sm rounded-card border p-6 shadow-sm">
+      <p className="app-kicker">Membership check</p>
+      <h1 className="app-heading mt-3 text-2xl font-serif">We could not verify your access.</h1>
+      <p className="app-muted mt-3 text-sm leading-relaxed">
+        A temporary verification error will not move you to a free plan. Check again when your connection is available.
+      </p>
+      {error && <p className="app-muted mt-2 text-xs">{error}</p>}
+      <button
+        type="button"
+        className="touch-target mt-5 rounded-pill px-5 py-3 text-sm font-semibold"
+        style={{ background: "var(--app-accent)", color: "var(--app-accent-contrast)" }}
+        onClick={onRetry}
+      >
+        Retry membership check
+      </button>
+    </div>
+  </div>
+);
+
 const AnimatedRoutes = () => {
   const location = useLocation();
-  // Only animate the top-level auth flow routes, not in-app sub-routes
-  const topKey = location.pathname.startsWith("/") 
-    ? ["login","onboarding","paywall"].find(r => location.pathname === `/${r}`) ?? "app"
-    : "app";
 
   return (
-      <React.Fragment key={topKey}>
-      <Routes location={location}>
-        <Route path="/login" element={<PageFade><Login /></PageFade>} />
-        <Route path="/onboarding" element={<AuthGuard><PageFade><Onboarding /></PageFade></AuthGuard>} />
-        <Route path="/paywall" element={<AuthGuard><PageFade><Paywall /></PageFade></AuthGuard>} />
-        <Route path="/" element={<AuthGuard><Layout /></AuthGuard>}>
-          <Route index element={<Home />} />
-          <Route path="breathe" element={<Breathe />} />
-          <Route path="intentions" element={<Intentions />} />
-          <Route path="confess" element={<Confession />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-      </React.Fragment>
+    <Routes location={location}>
+      <Route path="/login" element={<PageFade><Login /></PageFade>} />
+      <Route path="/onboarding" element={<AuthoritativeAuthGuard><PageFade><Onboarding /></PageFade></AuthoritativeAuthGuard>} />
+      <Route path="/paywall" element={<AuthoritativeAuthGuard><PageFade><Paywall /></PageFade></AuthoritativeAuthGuard>} />
+      <Route path="/" element={<AuthoritativeAuthGuard><Layout /></AuthoritativeAuthGuard>}>
+        <Route index element={<Home />} />
+        <Route path="breathe" element={<Breathe />} />
+        <Route path="intentions" element={<Intentions />} />
+        <Route path="confess" element={<Confession />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 };
 
 export default function App() {
-  const [hasRenderedAppFrame, setHasRenderedAppFrame] = useState(false);
+  const [hasPaintedReactShell, setHasPaintedReactShell] = useState(false);
   const isNativeApp = isNativePlatform();
+  const nativeRuntime = getPlatformAdapter().runtime;
   const Router = isNativeApp ? HashRouter : BrowserRouter;
+
+  const handleBootShellPainted = useCallback(() => {
+    startup.mark("first-frame-painted");
+    startup.mark("initial-route-ready");
+    setHasPaintedReactShell(true);
+  }, []);
 
   useEffect(() => {
     startup.mark("app-mounted");
@@ -194,47 +155,56 @@ export default function App() {
   }, [isNativeApp]);
 
   useEffect(() => {
-    let frameOne = 0;
-    let frameTwo = 0;
+    const safetyTimer = window.setTimeout(() => {
+      setHasPaintedReactShell((hasPainted) => {
+        if (!hasPainted) startup.mark("native-splash-safety-timeout");
+        return true;
+      });
+    }, 6000);
 
-    frameOne = window.requestAnimationFrame(() => {
-        frameTwo = window.requestAnimationFrame(() => {
-          setHasRenderedAppFrame(true);
-        });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameOne);
-      window.cancelAnimationFrame(frameTwo);
-    };
+    return () => window.clearTimeout(safetyTimer);
   }, []);
 
   useEffect(() => {
-    if (!hasRenderedAppFrame) return;
+    if (!hasPaintedReactShell) return;
+    startup.mark("native-splash-hide-start");
     void hideNativeSplashScreen().then(() => {
+      startup.mark("native-splash-hide-complete");
       startup.mark("native-splash-hidden");
     });
-  }, [hasRenderedAppFrame]);
+  }, [hasPaintedReactShell]);
 
   return (
-    <ThemeProvider>
-      <MobileViewportProvider>
-        <HapticsProvider>
-          <AuthProvider>
-            <VoiceSessionProvider>
-              <ErrorBoundary>
-                <Router>
-                  <Suspense fallback={<FullScreenLoader />}>
-                    <AnimatedRoutes />
-                  </Suspense>
-                </Router>
-              </ErrorBoundary>
-            </VoiceSessionProvider>
-          </AuthProvider>
-        </HapticsProvider>
+    <AppStorageProvider>
+      <ThemeProvider>
+      {!isNativeRuntimeCompatible(nativeRuntime) ? (
+        <UpdateRequiredScreen runtime={nativeRuntime} />
+      ) : (
+        <ToastProvider>
+          <MobileViewportProvider>
+            <HapticsProvider>
+              <AuthProvider>
+                <EntitlementProvider>
+                  <VoiceSessionProvider>
+                    <ErrorBoundary>
+                      <Router>
+                        <Suspense fallback={<RouteContentFallback />}>
+                          <AnimatedRoutes />
+                        </Suspense>
+                      </Router>
+                    </ErrorBoundary>
+                  </VoiceSessionProvider>
+                </EntitlementProvider>
+              </AuthProvider>
+            </HapticsProvider>
 
-        <ConnectivityNotice />
-      </MobileViewportProvider>
-    </ThemeProvider>
+            {!hasPaintedReactShell && <AppBootShell onPainted={handleBootShellPainted} />}
+            <ToastViewport />
+            <ConnectivityStatus />
+          </MobileViewportProvider>
+        </ToastProvider>
+      )}
+      </ThemeProvider>
+    </AppStorageProvider>
   );
 }

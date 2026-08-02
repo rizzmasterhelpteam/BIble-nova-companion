@@ -3,10 +3,19 @@ type StartupStage =
   | "main-evaluated"
   | "react-root-mounted"
   | "app-mounted"
+  | "theme-bootstrap-applied"
+  | "react-boot-shell-mounted"
+  | "react-boot-shell-painted"
   | "first-frame-painted"
   | "session-resolution-started"
   | "session-resolution-completed"
+  | "auth-initial-resolved"
+  | "subscription-initial-resolved"
+  | "initial-route-ready"
   | "native-initialization-failed"
+  | "native-splash-hide-start"
+  | "native-splash-hide-complete"
+  | "native-splash-safety-timeout"
   | "native-splash-hidden"
   | "root-element-missing"
   | "react-root-mount"
@@ -69,7 +78,7 @@ const hideNativeSplashFromFallback = () => {
 const showFallbackRecovery = (stage: string) => {
   if (typeof document === "undefined") return;
 
-  const fallback = document.getElementById("startup-fallback");
+  const fallback = document.getElementById("initial-app-shell");
   const message = document.getElementById("startup-fallback-message");
   const retry = document.getElementById("startup-retry");
   const startupId = document.getElementById("startup-fallback-id");

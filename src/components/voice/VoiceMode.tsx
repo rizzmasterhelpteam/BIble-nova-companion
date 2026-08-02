@@ -17,6 +17,7 @@ import { apiFetch } from "../../lib/apiClient";
 import { getPlatformAdapter } from "../../lib/native/platform";
 import { cn } from "../../lib/utils";
 import { useMobileViewport } from "../../context/MobileViewportContext";
+import { useEntitlement } from "../../context/EntitlementContext";
 import {
   useGeminiLiveVoice,
   type VoiceStartMode,
@@ -128,6 +129,7 @@ export default function VoiceMode({
   onRetryVoiceReady,
 }: VoiceModeProps) {
   const { isCompactPhone, isShortPhone } = useMobileViewport();
+  const { snapshot: entitlement } = useEntitlement();
   const navigate = useNavigate();
   const isPerformanceMode = usePerformanceMode();
   const [cooldownNow, setCooldownNow] = useState(() => Date.now());
@@ -173,7 +175,9 @@ export default function VoiceMode({
     enableInputLevel: !isPerformanceMode,
   });
   const stopLive = live.stop;
-  const premiumRequired = live.errorCode === "subscription_required";
+  const premiumRequired =
+    live.errorCode === "subscription_required" ||
+    (entitlement.state === "inactive" && !entitlement.active);
   useEffect(() => {
     if (!live.retryUntil) return;
     setCooldownNow(Date.now());
@@ -192,20 +196,6 @@ export default function VoiceMode({
       live.errorCode === "monthly_limit") &&
     cooldownSeconds > 0;
   const cooldownMinutes = Math.max(1, Math.ceil(cooldownSeconds / 60));
-  const monthlyUsage = live.voiceUsage;
-  const monthlyUsagePercent = monthlyUsage
-    ? Math.min(100, Math.round((monthlyUsage.monthlyUsedMinutes / monthlyUsage.monthlyLimitMinutes) * 100))
-    : 0;
-  const monthlyUsageWarning = monthlyUsagePercent >= 95
-    ? "Almost at your monthly Voice limit."
-    : monthlyUsagePercent >= 80
-      ? "You have used 80% of this month's Voice time."
-      : null;
-  const monthlyResetLabel = monthlyUsage?.monthlyResetAt
-    ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" })
-      .format(new Date(monthlyUsage.monthlyResetAt))
-    : null;
-
   const persistVoiceNotes = useCallback((force = false) => {
     const persistLatestConfirmedMessages = async () => {
       if (!memoryEnabled) return;
@@ -461,25 +451,6 @@ export default function VoiceMode({
                 ? <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                 : <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
               <span>{sessionNotice}</span>
-            </div>
-          )}
-
-          {monthlyUsage && (
-            <div
-              className="voice-usage-summary app-muted mt-3 flex w-full items-center justify-between gap-3 rounded-[1rem] border px-3.5 py-3 text-left text-sm"
-              style={{
-                background: monthlyUsagePercent >= 95 ? "var(--app-danger-soft)" : "var(--app-card-soft)",
-                borderColor: monthlyUsagePercent >= 95
-                  ? "color-mix(in srgb, var(--app-danger) 22%, transparent)"
-                  : "var(--app-card-border)",
-              }}
-            >
-              <span className="font-medium">Voice this month</span>
-              <span className="text-right">
-                {monthlyUsage.monthlyRemainingMinutes} of {monthlyUsage.monthlyLimitMinutes} min left
-                {monthlyUsageWarning ? ` · ${monthlyUsageWarning}` : ""}
-                {monthlyResetLabel ? ` Resets ${monthlyResetLabel}.` : ""}
-              </span>
             </div>
           )}
 
