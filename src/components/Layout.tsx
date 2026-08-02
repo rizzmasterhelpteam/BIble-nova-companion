@@ -35,6 +35,7 @@ import { nativeStorage } from "../lib/native/storage";
 import { cn } from "../lib/utils";
 import { shouldHideBottomNavigation } from "../lib/mobileLayout";
 import RouteContentFallback from "./RouteContentFallback";
+import ProfileCapacityCard from "./ProfileCapacityCard";
 import {
   DEFAULT_REMINDER_DAYS,
   DEFAULT_REMINDER_TIME,
@@ -107,6 +108,8 @@ export default function Layout() {
   const { isVoiceSessionActive } = useVoiceSession();
   const {
     user,
+    isSubscriptionResolved,
+    isSubscribed,
     profileName,
     profileAvatarUrl,
     logout,
@@ -580,7 +583,7 @@ export default function Layout() {
                 <div
                   className={cn("space-y-6 px-5 pt-2 sm:px-6", isCompactPhone ? "pb-5" : "pb-6")}
                 >
-                <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between">
                     <div>
                       <h2 id="settings-title" className="text-[19px] font-semibold tracking-tight app-heading">Settings</h2>
                     </div>
@@ -592,6 +595,12 @@ export default function Layout() {
                       <X className="h-4 w-4" />
                     </button>
                   </div>
+
+                  <ProfileCapacityCard
+                    isOpen={settingsOpen}
+                    isSubscribed={isSubscribed}
+                    isSubscriptionResolved={isSubscriptionResolved}
+                  />
 
                   <section>
                     <div className="mb-3 flex items-center gap-2">

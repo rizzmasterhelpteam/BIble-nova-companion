@@ -56,7 +56,7 @@ Set these in Vercel for the environments you deploy to:
 - `GOOGLE_TTS_SERVICE_ACCOUNT_JSON` required server-only Google Cloud service-account JSON with Text-to-Speech access
 - `GOOGLE_TTS_LANGUAGE_CODE` optional language code; defaults to `en-AU`
 - `GOOGLE_TTS_VOICE_NAME` optional voice; defaults to `en-AU-Chirp3-HD-Algenib`
-- `VOICE_SESSION_MAX_MINUTES` optional voice-session limit from 1–15 minutes; defaults to `10`
+- `VOICE_SESSION_MAX_MINUTES` optional voice-session limit from 1–15 minutes; defaults to `15`
 - `SUPABASE_SERVICE_ROLE_KEY` required server-only for account deletion, persistent rate limits, and subscription entitlements
 - `RATE_LIMIT_IP_SALT` optional server-only random value used to hash IP-based rate-limit keys; the server-only Supabase service-role key is used as a secure fallback
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` required server-only JSON credentials for verified Android subscriptions
