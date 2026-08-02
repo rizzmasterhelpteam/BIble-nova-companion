@@ -1,4 +1,10 @@
 -- Privacy default: absence of an explicit preference is not consent.
+-- Keep a non-exposed, server-only rollback snapshot before clearing legacy notes.
+create schema if not exists private;
+create table if not exists private.user_shadow_notes_backup_20260803 as
+select * from public.user_shadow_notes;
+revoke all on table private.user_shadow_notes_backup_20260803 from public, anon, authenticated;
+
 alter table public.user_shadow_notes
   alter column memory_enabled set default false;
 

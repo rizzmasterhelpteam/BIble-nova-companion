@@ -35,15 +35,19 @@ const getApiAccessToken = async () => {
   if (cachedAccessToken !== undefined) return cachedAccessToken;
   if (accessTokenRequest) return accessTokenRequest;
 
-  accessTokenRequest = supabase.auth
-    .getSession()
+  const tokenGeneration = sessionGeneration;
+  const request = supabase.auth.getSession()
     .then(({ data }) => {
+      if (tokenGeneration !== sessionGeneration) {
+        throw new DOMException("Account session changed.", "AbortError");
+      }
       cachedAccessToken = data.session?.access_token || null;
       return cachedAccessToken;
     })
     .finally(() => {
-      accessTokenRequest = null;
+      if (accessTokenRequest === request) accessTokenRequest = null;
     });
+  accessTokenRequest = request;
 
   return accessTokenRequest;
 };
@@ -103,6 +107,9 @@ export const apiFetch = async (path: string, init: RequestInit = {}) => {
     // Purchase and other mutation requests must never be replayed implicitly.
     if (response.status === 401 && requestMethod === "GET" && isSupabaseConfigured) {
       const { data, error } = await supabase.auth.refreshSession();
+      if (requestGeneration !== sessionGeneration) {
+        throw new DOMException("Account session changed.", "AbortError");
+      }
       if (!error && data.session?.access_token) {
         cachedAccessToken = data.session.access_token;
         headers.set("Authorization", `Bearer ${data.session.access_token}`);
