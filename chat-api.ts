@@ -203,9 +203,9 @@ const getLatestUserMessage = (messages: ChatMessage[]) =>
     .find((message) => message.role === "user")
     ?.content.toLowerCase() || "";
 
-export const classifyVoiceResponseIntensity = (
-  messages: ChatMessage[],
-): VoiceResponseIntensity => {
+export type SafetyRisk = "crisis-risk" | null;
+
+export const classifySafetyRisk = (messages: ChatMessage[]): SafetyRisk => {
   const latestUserMessage = getLatestUserMessage(messages);
   const recentContext = messages
     .slice(-4)
@@ -213,8 +213,25 @@ export const classifyVoiceResponseIntensity = (
     .join(" ")
     .toLowerCase();
   const safetyText = `${latestUserMessage} ${recentContext}`;
+  return /(?:suicid|kill myself|end my life|want to die|don't want to live|do not want to live|hurt myself|harm myself|can't stay safe|cannot stay safe|marn[ae] chaht[ai]|jeena nahi chaht[ai]|jaan dena|apni jaan lena|khud ko nuksan|main safe nahi hoon|मरना चाहत[ाी]|जीना नहीं चाहत[ाी]|मुझे जीना नहीं|खुद को नुकसान|अपनी जान लेना|जान देना)/iu.test(safetyText)
+    ? "crisis-risk"
+    : null;
+};
 
-  if (/(?:suicid|kill myself|end my life|want to die|don't want to live|do not want to live|hurt myself|harm myself|can't stay safe|cannot stay safe|marn[ae] chaht[ai]|jeena nahi chaht[ai]|jaan dena|apni jaan lena|khud ko nuksan|main safe nahi hoon|मरना चाहत[ाी]|जीना नहीं चाहत[ाी]|मुझे जीना नहीं|खुद को नुकसान|अपनी जान लेना|जान देना)/iu.test(safetyText)) {
+const getLocalizedCrisisFallback = (messages: ChatMessage[]) => {
+  const latestText = getLatestUserMessage(messages);
+  if (/[\u0900-\u097f]/u.test(latestText)) return HINDI_CRISIS_VOICE_FALLBACK;
+  if (/(?:marna|jeena nahi|jaan dena|khud ko|safe nahi)/i.test(latestText)) {
+    return HINGLISH_CRISIS_VOICE_FALLBACK;
+  }
+  return CRISIS_VOICE_FALLBACK;
+};
+
+export const classifyVoiceResponseIntensity = (
+  messages: ChatMessage[],
+): VoiceResponseIntensity => {
+  const latestUserMessage = getLatestUserMessage(messages);
+  if (classifySafetyRisk(messages) === "crisis-risk") {
     return "crisis-risk";
   }
   if (/(?:i(?:'m| am) depressed|feel empty|hate myself|feel alone|nobody cares|can(?:'t| not) do this anymore|feel like giving up|panic|anxious|anxiety|can't sleep|cannot sleep|god (?:must )?hate me|god feels far|grief|ashamed|shame)/i.test(latestUserMessage)) {
@@ -234,13 +251,18 @@ export async function createChatCompletion(
   shadowNotes?: string,
   options: ChatCompletionOptions = {},
 ) {
+  if (!Array.isArray(messages)) {
+    throw new Error("Chat messages must be an array.");
+  }
+  // This deterministic safety response covers both text Chat and Voice, so a
+  // provider outage cannot turn a clear crisis disclosure into generic advice.
+  if (classifySafetyRisk(messages) === "crisis-risk") {
+    return getLocalizedCrisisFallback(messages);
+  }
+
   const providers = getChatProviders();
   if (!providers.length) {
     throw new Error("API key is missing. Please configure it in settings.");
-  }
-
-  if (!Array.isArray(messages)) {
-    throw new Error("Chat messages must be an array.");
   }
 
   const voiceIntensity = options.mode === "voice"
@@ -388,12 +410,7 @@ export async function createVoiceResponse(
   voiceLanguage: VoiceLanguage = "auto",
 ) {
   const intensity = classifyVoiceResponseIntensity(messages);
-  const latestText = getLatestUserMessage(messages);
-  const crisisFallback = /[\u0900-\u097f]/u.test(latestText)
-    ? HINDI_CRISIS_VOICE_FALLBACK
-    : /(?:marna|jeena nahi|jaan dena|khud ko|safe nahi)/i.test(latestText)
-      ? HINGLISH_CRISIS_VOICE_FALLBACK
-      : CRISIS_VOICE_FALLBACK;
+  const crisisFallback = getLocalizedCrisisFallback(messages);
   const response = await createChatCompletion(
     messages,
     shadowNotes || undefined,

@@ -468,6 +468,7 @@ export async function saveShadowNotes(userId: string, notes: string) {
 export async function setShadowMemoryPreference(
   userId: string,
   memoryEnabled: boolean,
+  initialNotes?: string,
 ): Promise<ShadowMemoryProfile> {
   const adminClient = createSupabaseAdminClient();
   if (!adminClient) {
@@ -481,7 +482,10 @@ export async function setShadowMemoryPreference(
     .maybeSingle<{ memory_enabled: boolean; notes: string | null }>();
   if (loadError) throw new Error(loadError.message);
 
-  if (existing?.memory_enabled === true && memoryEnabled) {
+  const normalizedInitialNotes = memoryEnabled
+    ? normalizeShadowNotes(initialNotes) || ""
+    : "";
+  if (existing?.memory_enabled === true && memoryEnabled && !normalizedInitialNotes) {
     return {
       memoryEnabled: true,
       shadowNotes: normalizeShadowNotes(existing.notes),
@@ -497,7 +501,7 @@ export async function setShadowMemoryPreference(
         memory_enabled: memoryEnabled,
         memory_consent_updated_at: now,
         memory_consent_version: 1,
-        notes: "",
+        notes: normalizedInitialNotes,
         updated_at: now,
       },
       { onConflict: "user_id" },

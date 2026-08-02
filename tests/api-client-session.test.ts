@@ -17,4 +17,19 @@ describe("API account generation", () => {
     resolveFetch(new Response("{}", { status: 200 }));
     await expect(request).rejects.toMatchObject({ name: "AbortError" });
   });
+
+  it("aborts an in-flight request when the account session changes", async () => {
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal("fetch", vi.fn((_url, init: RequestInit) => {
+      signal = init.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal?.reason), { once: true });
+      });
+    }));
+    const request = apiFetch("/api/status");
+    await Promise.resolve();
+    invalidateApiSession();
+    expect(signal?.aborted).toBe(true);
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+  });
 });

@@ -87,6 +87,22 @@ describe("shadow memory database boundary", () => {
     expect(database.query.upsert).not.toHaveBeenCalled();
   });
 
+  it("persists initial onboarding notes with the explicit opt-in", async () => {
+    database.query.single.mockResolvedValueOnce({
+      data: { memory_enabled: true, notes: "User memory:\n- Preferred tone: gentle" },
+      error: null,
+    });
+    await expect(setShadowMemoryPreference("user-1", true, "User memory:\n- Preferred tone: gentle"))
+      .resolves.toEqual({
+        memoryEnabled: true,
+        shadowNotes: normalizeShadowNotes("User memory:\n- Preferred tone: gentle"),
+      });
+    expect(database.query.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ notes: normalizeShadowNotes("User memory:\n- Preferred tone: gentle") }),
+      { onConflict: "user_id" },
+    );
+  });
+
   it("writes only through a memory-enabled row filter", async () => {
     database.query.maybeSingle.mockResolvedValueOnce({
       data: { notes: "Updated context" },

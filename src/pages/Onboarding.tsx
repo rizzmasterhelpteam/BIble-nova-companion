@@ -118,7 +118,7 @@ export default function Onboarding() {
       (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches),
   );
   const shouldAnimateLightly = !isPerformanceMode;
-  const { user, completeOnboarding, updateMemoryPreference } = useAuth();
+  const { user, completeOnboarding, enableMemoryWithInitialNotes } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [prevStep, setPrevStep] = useState(-1);
   const [answers, setAnswers] = useState<Record<string, string>>(() => user?.id ? loadOnboardingDraft(user.id) : {});
@@ -175,7 +175,7 @@ export default function Onboarding() {
   const handleGetStarted = async () => {
     setCompletionError(null);
     try {
-      if (rememberPreferences) await updateMemoryPreference(true);
+      if (rememberPreferences) await enableMemoryWithInitialNotes(getAnalysisSummary(answers).overview);
       if (user?.id) clearOnboardingDraft(user.id);
       completeOnboarding();
       window.requestAnimationFrame(() => navigate("/", { replace: true }));

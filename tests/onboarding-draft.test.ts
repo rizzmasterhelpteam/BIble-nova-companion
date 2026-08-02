@@ -6,6 +6,7 @@ import {
   clearOnboardingDraft,
   getOnboardingDraftKey,
   LEGACY_ONBOARDING_DRAFT_KEY,
+  LEGACY_ONBOARDING_DRAFT_OWNER_KEY,
   loadOnboardingDraft,
   saveOnboardingDraft,
 } from "../src/lib/onboardingDraft";
@@ -29,8 +30,16 @@ describe("account-scoped onboarding drafts", () => {
     expect(loadOnboardingDraft("user-b")).toEqual({});
   });
 
-  it("migrates the legacy draft exactly once", () => {
+  it("discards an ambiguous legacy draft instead of assigning it to an account", () => {
     localStorage.setItem(LEGACY_ONBOARDING_DRAFT_KEY, JSON.stringify({ reason: "faith" }));
+    expect(loadOnboardingDraft("user-a")).toEqual({});
+    expect(localStorage.getItem(LEGACY_ONBOARDING_DRAFT_KEY)).toBeNull();
+    expect(loadOnboardingDraft("user-b")).toEqual({});
+  });
+
+  it("migrates a legacy draft once only when its owner is trustworthy", () => {
+    localStorage.setItem(LEGACY_ONBOARDING_DRAFT_KEY, JSON.stringify({ reason: "faith" }));
+    localStorage.setItem(LEGACY_ONBOARDING_DRAFT_OWNER_KEY, "user-a");
     expect(loadOnboardingDraft("user-a")).toEqual({ reason: "faith" });
     expect(localStorage.getItem(LEGACY_ONBOARDING_DRAFT_KEY)).toBeNull();
     expect(loadOnboardingDraft("user-b")).toEqual({});

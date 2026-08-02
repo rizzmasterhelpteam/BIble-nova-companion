@@ -28,6 +28,7 @@ type AuthContextType = {
   memoryPreferenceState: "loading" | "enabled" | "disabled";
   memoryPreferenceLoading: boolean;
   updateMemoryPreference: (enabled: boolean) => Promise<void>;
+  enableMemoryWithInitialNotes: (notes: string) => Promise<void>;
   updateShadowNotes: (notes: string) => Promise<void>;
   acceptPersistedShadowNotes: (notes: string | null) => void;
 };
@@ -50,6 +51,7 @@ const AuthContext = createContext<AuthContextType>({
   memoryPreferenceState: "loading",
   memoryPreferenceLoading: false,
   updateMemoryPreference: async () => {},
+  enableMemoryWithInitialNotes: async () => {},
   updateShadowNotes: async () => {},
   acceptPersistedShadowNotes: () => {},
 });
@@ -77,7 +79,6 @@ const clearLocalIdentityData = (id: string) => {
   storageRemove(`bible-nova-companion-profile-name-${id}`);
   storageRemove(`bible-nova-companion-profile-avatar-${id}`);
   storageRemove(`onboardingComplete_${id}`);
-  storageRemove("bible_nova_companion_onboarding_answers");
   storageRemove(`bible-nova-companion-onboarding-answers-${id}`);
   storageRemove(`bible-nova-companion-shadow-notes-${id}`);
 };
@@ -291,8 +292,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (isDisposed) return;
 
       const previousSessionToken = activeSessionToken;
+      const previousUserId = activeUserId;
       activeSessionToken = currentSession?.access_token || null;
-      if (previousSessionToken && !activeSessionToken) {
+      const nextUserId = currentSession?.user?.id || null;
+      if (previousSessionToken && (!activeSessionToken || (previousUserId && previousUserId !== nextUserId))) {
         invalidateApiSession();
         cancelNativeSubscriptionEntitlementSync();
         memoryRequestVersionRef.current += 1;
@@ -462,25 +465,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const deleteAccount = useCallback(async () => {
     const id = user?.id || null;
+    const accessToken = session?.access_token || null;
     invalidateApiSession();
     cancelNativeSubscriptionEntitlementSync();
     memoryRequestVersionRef.current += 1;
     window.dispatchEvent(new Event("bible-nova-account-shutdown"));
 
     if (user && isSupabaseConfigured) {
-      const accessToken = session?.access_token;
       if (!accessToken) {
         throw new Error("Missing active session. Please sign in again before deleting the account.");
       }
 
-      const response = await apiFetch("/api/account", {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const data = await response.json().catch(() => ({}));
-
-      if (!response.ok || data.deleted !== true) {
-        throw new Error(data.error || "Could not delete the account on the server.");
+      try {
+        const response = await apiFetch("/api/account", {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.deleted !== true) {
+          throw new Error(data.error || "Could not delete the account on the server.");
+        }
+      } catch (error) {
+        // Deletion did not complete: keep this signed-in session usable.
+        setApiAccessToken(accessToken);
+        throw error;
       }
     }
 
@@ -646,6 +654,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setShadowNotes(normalizeShadowNotes(trimmed));
   }, [confirmedMemoryEnabled, user]);
 
+  const enableMemoryWithInitialNotes = useCallback(async (notes: string) => {
+    const currentUserId = user?.id || null;
+    if (!currentUserId || !isSupabaseConfigured) {
+      throw new Error("Remembered preferences require a server connection.");
+    }
+    const response = await apiFetch("/api/shadow-notes", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
+      body: JSON.stringify({ memoryEnabled: true, initialNotes: notes }),
+    });
+    const data = (await response.json().catch(() => ({}))) as {
+      memoryEnabled?: boolean; shadowNotes?: string | null; error?: string;
+    };
+    if (!response.ok || data.memoryEnabled !== true) {
+      throw new Error(data.error || "Could not save your memory choice.");
+    }
+    if (activeMemoryUserIdRef.current === currentUserId) {
+      setMemoryEnabled(true);
+      setMemoryOwnerId(currentUserId);
+      setShadowNotes(typeof data.shadowNotes === "string" ? normalizeShadowNotes(data.shadowNotes) : null);
+    }
+  }, [user?.id]);
+
   const acceptPersistedShadowNotes = useCallback((notes: string | null) => {
     if (!confirmedMemoryEnabled) {
       setShadowNotes(null);
@@ -673,6 +704,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       memoryPreferenceState: memoryPreferenceLoading ? "loading" as const : confirmedMemoryEnabled ? "enabled" as const : "disabled" as const,
       memoryPreferenceLoading,
       updateMemoryPreference,
+      enableMemoryWithInitialNotes,
       updateShadowNotes,
       acceptPersistedShadowNotes,
     }),
@@ -692,7 +724,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       updateProfileName,
       user,
       shadowNotes,
-      updateMemoryPreference,
+    updateMemoryPreference, enableMemoryWithInitialNotes,
       updateShadowNotes,
       acceptPersistedShadowNotes,
     ],
