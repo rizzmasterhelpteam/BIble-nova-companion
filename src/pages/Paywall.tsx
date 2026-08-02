@@ -20,9 +20,11 @@ import {
   type SubscriptionPackage,
 } from "../lib/native/purchases";
 import { selectNewestConfiguredNativePurchase } from "../lib/native/subscriptionSync";
-import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
+import { storageGetJson, storageRemove, storageSet } from "../lib/webStorage";
 
 const PENDING_NATIVE_ENTITLEMENT_SYNC_KEY = "bible-nova-pending-native-entitlement-sync";
+const PENDING_NATIVE_ENTITLEMENT_MAX_AGE_MS = 30 * 60 * 1000;
+type PendingActivation = { userId: string; createdAt: number };
 
 type Plan = "monthly" | "yearly";
 
@@ -150,12 +152,21 @@ export default function Paywall() {
 
   useEffect(() => {
     if (!nativeStoreAvailable || !user?.id || snapshot.active) return;
-    const pending = storageGet(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY);
-    if (!pending) return;
+    const pending = storageGetJson<PendingActivation | null>(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY, null);
+    const isFresh = pending && pending.userId === user.id &&
+      Number.isFinite(pending.createdAt) && Date.now() - pending.createdAt < PENDING_NATIVE_ENTITLEMENT_MAX_AGE_MS;
+    if (!isFresh) {
+      if (pending) storageRemove(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY);
+      return;
+    }
     const timers = [2_000, 5_000].map((delay, index) => window.setTimeout(() => {
       void (async () => {
-        const result = index === 1 ? await restoreGooglePlayPurchase() : await refresh(true);
-        if (result.active) storageRemove(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY);
+        try {
+          const result = index === 1 ? await restoreGooglePlayPurchase() : await refresh(true);
+          if (result.active) storageRemove(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY);
+        } catch (error) {
+          console.warn("Pending Premium activation retry failed:", error);
+        }
       })();
     }, delay));
     return () => timers.forEach((timer) => window.clearTimeout(timer));

@@ -7,6 +7,8 @@ import { startup } from "../lib/startup";
 import { normalizeShadowNotes } from "../lib/shadowMemory";
 import { useAppStorage } from "./AppStorageContext";
 
+const PENDING_NATIVE_ENTITLEMENT_SYNC_KEY = "bible-nova-pending-native-entitlement-sync";
+
 type AuthContextType = {
   user: User | null;
   session: Session | null;
@@ -418,6 +420,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [session?.access_token, user?.id]);
 
   const logout = useCallback(async () => {
+    const pendingRaw = storageGet(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY);
+    try {
+      const pending = pendingRaw ? JSON.parse(pendingRaw) as { userId?: string } : null;
+      if (pending?.userId === user?.id) storageRemove(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY);
+    } catch {
+      storageRemove(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY);
+    }
     setUser(null);
     setSession(null);
     setIdentityKey(null);
@@ -431,7 +440,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (isSupabaseConfigured) {
       await supabase.auth.signOut();
     }
-  }, []);
+  }, [user?.id]);
 
   const deleteAccount = useCallback(async () => {
     const id = user?.id || null;

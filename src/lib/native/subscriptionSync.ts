@@ -17,29 +17,17 @@ let activeSync: { userId: string; generation: number; controller: AbortControlle
 let syncGeneration = 0;
 const NATIVE_ENTITLEMENT_SYNC_TIMEOUT_MS = 10_000;
 
-const withNativeEntitlementSyncTimeout = <T,>(promise: Promise<T>) =>
+const withNativeEntitlementSyncTimeout = <T,>(promise: Promise<T>, controller: AbortController) =>
   new Promise<T>((resolve, reject) => {
     let settled = false;
     const timeoutId = window.setTimeout(() => {
       if (settled) return;
       settled = true;
+      controller.abort();
       reject(new Error("Premium verification timed out."));
     }, NATIVE_ENTITLEMENT_SYNC_TIMEOUT_MS);
 
-    promise.then(
-      (value) => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timeoutId);
-        resolve(value);
-      },
-      (error) => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timeoutId);
-        reject(error);
-      },
-    );
+    promise.then(resolve, reject).finally(() => window.clearTimeout(timeoutId));
   });
 
 const getPurchaseTimestamp = (purchase: NativeSubscriptionPurchase) => {
@@ -106,8 +94,10 @@ export const refreshNativeSubscriptionEntitlement = (userId: string) => {
   const generation = ++syncGeneration;
   const controller = new AbortController();
   const isCurrent = () => activeSync?.userId === userId && activeSync.generation === generation && !controller.signal.aborted;
-  const promise = withNativeEntitlementSyncTimeout(syncNativeSubscriptionEntitlement(controller, isCurrent))
-    .finally(() => { if (isCurrent()) activeSync = null; });
+  const promise = withNativeEntitlementSyncTimeout(syncNativeSubscriptionEntitlement(controller, isCurrent), controller)
+    .finally(() => {
+      if (activeSync?.userId === userId && activeSync.generation === generation) activeSync = null;
+    });
   activeSync = { userId, generation, controller, promise };
   return promise;
 };
