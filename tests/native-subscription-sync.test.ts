@@ -68,7 +68,7 @@ describe("native subscription entitlement sync", () => {
       new Response(JSON.stringify({ subscription: { accessActive: true } }), { status: 200 }),
     );
 
-    await expect(refreshNativeSubscriptionEntitlement()).resolves.toBe(true);
+    await expect(refreshNativeSubscriptionEntitlement("test-user")).resolves.toBe(true);
     expect(apiFetch).toHaveBeenCalledWith(
       "/api/subscription/native-sync",
       expect.objectContaining({
@@ -89,7 +89,7 @@ describe("native subscription entitlement sync", () => {
       new Error("No active subscriptions were found to restore."),
     );
 
-    await expect(refreshNativeSubscriptionEntitlement()).rejects.toThrow(
+    await expect(refreshNativeSubscriptionEntitlement("test-user")).rejects.toThrow(
       "No active subscriptions were found to restore.",
     );
     expect(apiFetch).not.toHaveBeenCalled();
@@ -104,6 +104,6 @@ describe("native subscription entitlement sync", () => {
       subscription: { accessActive: false },
     }), { status: 200 }));
 
-    await expect(refreshNativeSubscriptionEntitlement()).resolves.toBe(false);
+    await expect(refreshNativeSubscriptionEntitlement("test-user")).resolves.toBe(false);
   });
 });
