@@ -200,8 +200,6 @@ export default function Paywall() {
         selectedNativePackage.androidBasePlanId,
         selectedNativePackage.productId,
       );
-      const verified = await refresh(true);
-      if (!verified.active) throw new Error("Your purchase was linked, but premium access is still being verified.");
       navigate("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Purchase could not be completed.");
@@ -245,7 +243,10 @@ export default function Paywall() {
     if (data.subscription?.accessActive !== true) {
       throw new Error("Google Play verified this purchase, but it is not currently active.");
     }
-    await refresh(true);
+    const verified = await refresh(true);
+    if (!verified.active) {
+      throw new Error("Your purchase was linked, but premium access is still being verified.");
+    }
     return data.subscription;
   };
 

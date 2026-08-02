@@ -14,6 +14,7 @@ import ee.forgr.capacitor.social.login.SocialLoginPlugin;
 public class MainActivity extends BridgeActivity implements ModifiedMainActivityForSocialLoginPlugin {
   @Override
   protected void onCreate(Bundle savedInstanceState) {
+    registerPlugin(NativeRuntimePlugin.class);
     super.onCreate(savedInstanceState);
     setVolumeControlStream(AudioManager.STREAM_MUSIC);
   }

@@ -76,7 +76,7 @@ const CapacityProgress = ({ value, muted = false }: { value: number; muted?: boo
 export default function ProfileCapacityCard({
   isOpen,
 }: ProfileCapacityCardProps) {
-  const { snapshot, refresh, restoreGooglePlayPurchase } = useEntitlement();
+  const { snapshot, refresh, restorationError, restoreGooglePlayPurchase } = useEntitlement();
   const navigate = useNavigate();
   const hasVerifiedVoiceAccess =
     snapshot.active &&
@@ -227,6 +227,11 @@ export default function ProfileCapacityCard({
           </p>
           {snapshot.active && verifiedLabel && (
             <p className="app-muted mt-1 text-[10px]">Last verified {verifiedLabel}</p>
+          )}
+          {restorationError && !snapshot.active && (
+            <p className="app-muted mt-2 text-[10px] leading-relaxed">
+              Google Play restoration needs another try: {restorationError}
+            </p>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
             <button

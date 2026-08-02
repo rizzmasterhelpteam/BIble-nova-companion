@@ -12,6 +12,9 @@ describe("remote Capacitor UI shell", () => {
     expect(readdirSync(shellDir).sort()).toEqual(["app-icon.png", "index.html", "native-error.html"]);
     expect(readFileSync(join(shellDir, "index.html"), "utf8")).not.toContain("assets/index-");
     expect(readFileSync(join(shellDir, "index.html"), "utf8")).toContain("Retry");
+    const errorShell = readFileSync(join(shellDir, "native-error.html"), "utf8");
+    expect(errorShell).toContain("https://biblecompanion.vercel.app/?nativeRetry=");
+    expect(errorShell).not.toContain("onclick=\"window.location.reload()\"");
   });
 
   it("configures Capacitor to load the Vercel UI remotely", () => {

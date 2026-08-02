@@ -8,10 +8,15 @@ import {
   getProvisionalEntitlement,
 } from "../lib/entitlementClient";
 import type { EntitlementSnapshot } from "../types/entitlement";
+import {
+  preserveEntitlementOnServerFailure,
+  repairInactiveEntitlement,
+} from "../lib/entitlementRepair";
 
 type EntitlementContextValue = {
   snapshot: EntitlementSnapshot;
   isRefreshing: boolean;
+  restorationError: string | null;
   refresh: (force?: boolean) => Promise<EntitlementSnapshot>;
   restoreGooglePlayPurchase: () => Promise<EntitlementSnapshot>;
 };
@@ -30,6 +35,7 @@ const emptySnapshot: EntitlementSnapshot = {
 const EntitlementContext = createContext<EntitlementContextValue>({
   snapshot: emptySnapshot,
   isRefreshing: false,
+  restorationError: null,
   refresh: async () => emptySnapshot,
   restoreGooglePlayPurchase: async () => emptySnapshot,
 });
@@ -38,6 +44,7 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
   const { user } = useAuth();
   const [snapshot, setSnapshot] = useState<EntitlementSnapshot>(emptySnapshot);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [restorationError, setRestorationError] = useState<string | null>(null);
   const requestVersionRef = useRef(0);
   const activeUserIdRef = useRef<string | null>(null);
   const nativeRepairAttemptedRef = useRef<string | null>(null);
@@ -57,6 +64,7 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
     const requestVersion = ++requestVersionRef.current;
     const previousSnapshot = snapshotRef.current;
     setIsRefreshing(true);
+    setRestorationError(null);
     setSnapshot((current) => ({
       ...current,
       state: "refreshing",
@@ -67,20 +75,24 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
       let serverSnapshot = await fetchEntitlementStatus(userId, { force });
       const canRepairNative =
         getPlatformAdapter().isNative &&
-        getPlatformAdapter().runtime.platform === "android" &&
+        getPlatformAdapter().kind === "android" &&
         !serverSnapshot.active &&
         nativeRepairAttemptedRef.current !== userId;
 
       if (canRepairNative) {
         nativeRepairAttemptedRef.current = userId;
-        try {
-          const { refreshNativeSubscriptionEntitlement } = await import("../lib/native/subscriptionSync");
-          const restored = await refreshNativeSubscriptionEntitlement();
-          if (restored) {
-            serverSnapshot = await fetchEntitlementStatus(userId, { force: true, bypassInFlight: true });
-          }
-        } catch (error) {
-          throw new Error(error instanceof Error ? error.message : "Google Play restoration failed.");
+        const repair = await repairInactiveEntitlement({
+          serverSnapshot,
+          canRepair: true,
+          restoreGooglePlayPurchase: async () => {
+            const { refreshNativeSubscriptionEntitlement } = await import("../lib/native/subscriptionSync");
+            return refreshNativeSubscriptionEntitlement();
+          },
+          refetchStatus: () => fetchEntitlementStatus(userId, { force: true, bypassInFlight: true }),
+        });
+        serverSnapshot = repair.snapshot;
+        if (repair.restorationError && requestVersion === requestVersionRef.current && activeUserIdRef.current === userId) {
+          setRestorationError(repair.restorationError);
         }
       }
 
@@ -96,13 +108,7 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
         return previousSnapshot;
       }
 
-      const message = error instanceof Error ? error.message : "Premium verification is temporarily unavailable.";
-      const preservedSnapshot: EntitlementSnapshot = {
-        ...previousSnapshot,
-        state: previousSnapshot.active ? "unknown" : "unknown",
-        active: previousSnapshot.active,
-        error: message,
-      };
+      const preservedSnapshot = preserveEntitlementOnServerFailure(previousSnapshot, error);
       setSnapshot(preservedSnapshot);
       return preservedSnapshot;
     } finally {
@@ -141,7 +147,7 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
   }, [refresh, user?.id]);
 
   const restoreGooglePlayPurchase = useCallback(async () => {
-    if (getPlatformAdapter().isNative && getPlatformAdapter().runtime.platform === "android") {
+    if (getPlatformAdapter().isNative && getPlatformAdapter().kind === "android") {
       nativeRepairAttemptedRef.current = user?.id || null;
       const { refreshNativeSubscriptionEntitlement } = await import("../lib/native/subscriptionSync");
       await refreshNativeSubscriptionEntitlement();
@@ -150,8 +156,8 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
   }, [refresh, user?.id]);
 
   const value = useMemo(
-    () => ({ snapshot, isRefreshing, refresh, restoreGooglePlayPurchase }),
-    [isRefreshing, refresh, restoreGooglePlayPurchase, snapshot],
+    () => ({ snapshot, isRefreshing, restorationError, refresh, restoreGooglePlayPurchase }),
+    [isRefreshing, refresh, restorationError, restoreGooglePlayPurchase, snapshot],
   );
 
   return <EntitlementContext.Provider value={value}>{children}</EntitlementContext.Provider>;

@@ -13,9 +13,9 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { HapticsProvider } from "./context/HapticsContext";
 import { MobileViewportProvider } from "./context/MobileViewportContext";
 import { VoiceSessionProvider } from "./context/VoiceSessionContext";
+import { NativeRuntimeProvider, useNativeRuntime } from "./context/NativeRuntimeContext";
 import { hideNativeSplashScreen } from "./lib/native/app";
 import { isNativePlatform } from "./lib/native/platform";
-import { getPlatformAdapter } from "./lib/native/platform";
 import { isNativeRuntimeCompatible } from "./lib/native/runtime";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { initializeNativeApp } from "./lib/native/app";
@@ -31,6 +31,7 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Onboarding from "./pages/Onboarding";
 import Paywall from "./pages/Paywall";
+import { MINIMUM_NATIVE_BRIDGE_VERSION } from "../platform-contract";
 
 const Breathe = lazy(() => import("./pages/Breathe"));
 const Intentions = lazy(() => import("./pages/Intentions"));
@@ -46,15 +47,18 @@ const PageFade = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-const AuthoritativeAuthGuard = ({ children }: { children: React.ReactNode }) => {
+export const AuthoritativeAuthGuard = ({ children }: { children: React.ReactNode }) => {
   const { user, isLoading, hasCompletedOnboarding } = useAuth();
   const { snapshot, isRefreshing, refresh } = useEntitlement();
   const location = useLocation();
 
   if (isLoading) return <AppBootShell message="Checking your secure session..." />;
   if (!user) return <Navigate to="/login" replace />;
-  if (!hasCompletedOnboarding && location.pathname !== "/onboarding") {
-    return <Navigate to="/onboarding" replace />;
+  if (!hasCompletedOnboarding) {
+    if (location.pathname !== "/onboarding") {
+      return <Navigate to="/onboarding" replace />;
+    }
+    return <>{children}</>;
   }
 
   if (snapshot.state === "initializing" || (snapshot.state === "refreshing" && !snapshot.active)) {
@@ -118,11 +122,81 @@ const AnimatedRoutes = () => {
   );
 };
 
+export const NativeRuntimeGate = ({
+  children,
+  runtime,
+  status,
+  minimumBridgeVersion = MINIMUM_NATIVE_BRIDGE_VERSION,
+}: {
+  children: React.ReactNode;
+  runtime: ReturnType<typeof useNativeRuntime>["runtime"];
+  status: ReturnType<typeof useNativeRuntime>["status"];
+  minimumBridgeVersion?: number;
+}) => {
+  if (status === "loading") {
+    return <AppBootShell message="Checking native app compatibility..." />;
+  }
+  if (!isNativeRuntimeCompatible(runtime, minimumBridgeVersion)) {
+    return <UpdateRequiredScreen runtime={runtime} />;
+  }
+  return <>{children}</>;
+};
+
+const CompatibleApplication = ({ children }: { children: React.ReactNode }) => {
+  useEffect(() => {
+    void initializeNativeApp().catch((error) => {
+      console.warn("Native initialization did not complete:", error);
+      startup.mark("native-initialization-failed");
+    });
+  }, []);
+
+  return <>{children}</>;
+};
+
+const RuntimeAwareApp = ({
+  hasPaintedReactShell,
+  onBootShellPainted,
+}: {
+  hasPaintedReactShell: boolean;
+  onBootShellPainted: () => void;
+}) => {
+  const { runtime, status } = useNativeRuntime();
+  const Router = isNativePlatform() ? HashRouter : BrowserRouter;
+
+  return (
+    <NativeRuntimeGate runtime={runtime} status={status}>
+      <CompatibleApplication>
+        <ToastProvider>
+          <MobileViewportProvider>
+            <HapticsProvider>
+              <AuthProvider>
+                <EntitlementProvider>
+                  <VoiceSessionProvider>
+                    <ErrorBoundary>
+                      <Router>
+                        <Suspense fallback={<RouteContentFallback />}>
+                          <AnimatedRoutes />
+                        </Suspense>
+                      </Router>
+                    </ErrorBoundary>
+                  </VoiceSessionProvider>
+                </EntitlementProvider>
+              </AuthProvider>
+            </HapticsProvider>
+
+            {!hasPaintedReactShell && <AppBootShell onPainted={onBootShellPainted} />}
+            <ToastViewport />
+            <ConnectivityStatus />
+          </MobileViewportProvider>
+        </ToastProvider>
+      </CompatibleApplication>
+    </NativeRuntimeGate>
+  );
+};
+
 export default function App() {
   const [hasPaintedReactShell, setHasPaintedReactShell] = useState(false);
   const isNativeApp = isNativePlatform();
-  const nativeRuntime = getPlatformAdapter().runtime;
-  const Router = isNativeApp ? HashRouter : BrowserRouter;
 
   const handleBootShellPainted = useCallback(() => {
     startup.mark("first-frame-painted");
@@ -132,10 +206,6 @@ export default function App() {
 
   useEffect(() => {
     startup.mark("app-mounted");
-    void initializeNativeApp().catch((error) => {
-      console.warn("Native initialization did not complete:", error);
-      startup.mark("native-initialization-failed");
-    });
 
     const root = document.documentElement;
     const isAndroid = isNativeAndroidDevice();
@@ -177,33 +247,12 @@ export default function App() {
   return (
     <AppStorageProvider>
       <ThemeProvider>
-      {!isNativeRuntimeCompatible(nativeRuntime) ? (
-        <UpdateRequiredScreen runtime={nativeRuntime} />
-      ) : (
-        <ToastProvider>
-          <MobileViewportProvider>
-            <HapticsProvider>
-              <AuthProvider>
-                <EntitlementProvider>
-                  <VoiceSessionProvider>
-                    <ErrorBoundary>
-                      <Router>
-                        <Suspense fallback={<RouteContentFallback />}>
-                          <AnimatedRoutes />
-                        </Suspense>
-                      </Router>
-                    </ErrorBoundary>
-                  </VoiceSessionProvider>
-                </EntitlementProvider>
-              </AuthProvider>
-            </HapticsProvider>
-
-            {!hasPaintedReactShell && <AppBootShell onPainted={handleBootShellPainted} />}
-            <ToastViewport />
-            <ConnectivityStatus />
-          </MobileViewportProvider>
-        </ToastProvider>
-      )}
+        <NativeRuntimeProvider>
+          <RuntimeAwareApp
+            hasPaintedReactShell={hasPaintedReactShell}
+            onBootShellPainted={handleBootShellPainted}
+          />
+        </NativeRuntimeProvider>
       </ThemeProvider>
     </AppStorageProvider>
   );
