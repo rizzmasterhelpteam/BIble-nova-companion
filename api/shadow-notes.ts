@@ -65,7 +65,14 @@ export default async function handler(req: any, res: any) {
       if (typeof body.memoryEnabled !== "boolean") {
         throw new HttpError("Memory preference must be true or false.", 400);
       }
-      res.status(200).json(await setShadowMemoryPreference(userId, body.memoryEnabled));
+      if (body.initialNotes !== undefined) {
+        assertStringLength(body.initialNotes, MAX_SHADOW_NOTES_CHARS, "Initial memory notes");
+      }
+      res.status(200).json(await setShadowMemoryPreference(
+        userId,
+        body.memoryEnabled,
+        typeof body.initialNotes === "string" ? body.initialNotes : undefined,
+      ));
       return;
     }
 

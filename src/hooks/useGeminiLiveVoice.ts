@@ -210,6 +210,7 @@ export function useGeminiLiveVoice(options: Options) {
   const speechSeenRef = useRef(false);
   const localTurnEndedRef = useRef(false);
   const connectionGenerationRef = useRef(0);
+  const operationGenerationRef = useRef(0);
   const tokenRef = useRef<string | null>(null);
   const assistantMessageIdRef = useRef<string | null>(null);
   const turnCompleteRef = useRef(false);
@@ -332,6 +333,7 @@ export function useGeminiLiveVoice(options: Options) {
     releaseReason = "user_end",
   ) => {
     intentionalStopRef.current = true;
+    operationGenerationRef.current += 1;
     activeRef.current = false;
     setIsSessionActive(false);
     if (expiryTimerRef.current !== null) window.clearTimeout(expiryTimerRef.current);
@@ -719,6 +721,8 @@ export function useGeminiLiveVoice(options: Options) {
   const start = useCallback(async (mode: VoiceStartMode = "fresh_start") => {
     if (startingRef.current) return startingRef.current;
     const operation = (async () => {
+      const operationGeneration = ++operationGenerationRef.current;
+      const isCurrentOperation = () => operationGeneration === operationGenerationRef.current && !intentionalStopRef.current;
       if (!liveReady) {
         setError(apiStatusConnectionError || "Voice streaming is temporarily unavailable.");
         setErrorCode("connection_failed");
@@ -749,9 +753,14 @@ export function useGeminiLiveVoice(options: Options) {
         if (!primeAudioForUserGesture()) throw new Error("Web Audio is unavailable.");
         const context = contextRef.current!;
         await context.resume();
+        if (!isCurrentOperation()) return;
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
         });
+        if (!isCurrentOperation()) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         streamRef.current = stream;
         transition("connecting");
         const recoverable = mode === "recovery_resume" &&
@@ -769,13 +778,16 @@ export function useGeminiLiveVoice(options: Options) {
           "Voice session request timed out.",
         );
         let response = await requestSession();
+        if (!isCurrentOperation()) return;
         if (response.status === 403 && getPlatformAdapter().isNative && getNativePlatform() === "android") {
           const { refreshNativeSubscriptionEntitlement } = await import("../lib/native/subscriptionSync");
           if (await refreshNativeSubscriptionEntitlement(userId).catch(() => false)) {
             response = await requestSession();
+            if (!isCurrentOperation()) return;
           }
         }
         const session = await parseResponse<SessionResponse>(response);
+        if (!isCurrentOperation()) return;
         const nextReservation = createVoiceReservation({
           handle: session.reservationHandle,
           expiresAt: session.reservationExpiresAt,
@@ -792,6 +804,11 @@ export function useGeminiLiveVoice(options: Options) {
           Math.max(1_000, session.remainingSeconds * 1_000),
         );
         await provisionAndConnect(null);
+        if (!isCurrentOperation()) {
+          sessionRef.current?.close();
+          sessionRef.current = null;
+          return;
+        }
         refreshIdleTimeout();
       } catch (caught) {
         stopMicrophone();
@@ -919,6 +936,12 @@ export function useGeminiLiveVoice(options: Options) {
   }, [clearPlayback, provisionAndConnect, refreshIdleTimeout, stop, stopMicrophone, transition]);
 
   useEffect(() => () => { void stop("ended", "component_unmount"); }, [stop]);
+
+  useEffect(() => {
+    const cancelAccountWork = () => { void stop("ended", "account_logout"); };
+    window.addEventListener("bible-nova-account-shutdown", cancelAccountWork);
+    return () => window.removeEventListener("bible-nova-account-shutdown", cancelAccountWork);
+  }, [stop]);
 
   return {
     state,

@@ -6,10 +6,8 @@ import { ChristianCross } from "../components/ChristianCross";
 import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
-import { storageGetJson, storageRemove, storageSet } from "../lib/webStorage";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
-
-const STORAGE_KEY = "bible_nova_companion_onboarding_answers";
+import { clearOnboardingDraft, loadOnboardingDraft, saveOnboardingDraft } from "../lib/onboardingDraft";
 
 const questions = [
   {
@@ -120,14 +118,14 @@ export default function Onboarding() {
       (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches),
   );
   const shouldAnimateLightly = !isPerformanceMode;
+  const { user, completeOnboarding, enableMemoryWithInitialNotes } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [prevStep, setPrevStep] = useState(-1);
-  const [answers, setAnswers] = useState<Record<string, string>>(() =>
-    storageGetJson<Record<string, string>>(STORAGE_KEY, {}),
-  );
+  const [answers, setAnswers] = useState<Record<string, string>>(() => user?.id ? loadOnboardingDraft(user.id) : {});
+  const [rememberPreferences, setRememberPreferences] = useState(false);
+  const [completionError, setCompletionError] = useState<string | null>(null);
   const [hasStarted, setHasStarted] = useState(() => Object.keys(answers).length > 0);
   const [showAnalysis, setShowAnalysis] = useState(false);
-  const { completeOnboarding, updateShadowNotes } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -141,8 +139,8 @@ export default function Onboarding() {
   }, []);
 
   useEffect(() => {
-    storageSet(STORAGE_KEY, JSON.stringify(answers));
-  }, [answers]);
+    if (user?.id) saveOnboardingDraft(user.id, answers);
+  }, [answers, user?.id]);
 
   const handleSelect = (optionId: string) => {
     const question = questions[currentStep];
@@ -174,20 +172,21 @@ export default function Onboarding() {
     setCurrentStep((prev) => prev - 1);
   };
 
-  const handleGetStarted = () => {
-    storageRemove(STORAGE_KEY);
-    completeOnboarding();
-    const analysis = getAnalysisSummary(answers);
-    void updateShadowNotes(analysis.overview).catch(() => undefined);
-    window.requestAnimationFrame(() => navigate("/", { replace: true }));
+  const handleGetStarted = async () => {
+    setCompletionError(null);
+    try {
+      if (rememberPreferences) await enableMemoryWithInitialNotes(getAnalysisSummary(answers).overview);
+      if (user?.id) clearOnboardingDraft(user.id);
+      completeOnboarding();
+      window.requestAnimationFrame(() => navigate("/", { replace: true }));
+    } catch (error) {
+      setCompletionError(error instanceof Error ? error.message : "Could not save your memory choice.");
+    }
   };
 
   const handleSkip = () => {
-    storageRemove(STORAGE_KEY);
+    if (user?.id) clearOnboardingDraft(user.id);
     completeOnboarding();
-    void updateShadowNotes(
-      "User chose default reflection preferences. Keep guidance gentle, scripture-grounded, and practical.",
-    ).catch(() => undefined);
     navigate("/", { replace: true });
   };
 
@@ -333,6 +332,19 @@ export default function Onboarding() {
           >
             Enter Bible Nova
           </motion.button>
+          <label className="app-panel mt-4 flex items-start gap-3 rounded-2xl border p-4 text-left">
+            <input
+              type="checkbox"
+              checked={rememberPreferences}
+              onChange={(event) => setRememberPreferences(event.target.checked)}
+              className="mt-1 h-4 w-4"
+            />
+            <span className="app-muted text-sm leading-relaxed">
+              <strong className="app-heading block">Remember my preferences across conversations</strong>
+              Optional. This stores a compact summary you can delete anytime in Settings.
+            </span>
+          </label>
+          {completionError && <p className="mt-3 text-center text-sm text-red-600" role="alert">{completionError}</p>}
         </motion.div>
       </div>
     );

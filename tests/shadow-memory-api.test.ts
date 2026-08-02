@@ -94,8 +94,23 @@ describe("shadow memory consent API", () => {
       response,
     );
 
-    expect(serverApi.setShadowMemoryPreference).toHaveBeenCalledWith("user-1", true);
+    expect(serverApi.setShadowMemoryPreference).toHaveBeenCalledWith("user-1", true, undefined);
     expect(response.body).toEqual({ memoryEnabled: true, shadowNotes: null });
+  });
+
+  it("enables consent and saves initial onboarding notes in one request", async () => {
+    serverApi.setShadowMemoryPreference.mockResolvedValue({
+      memoryEnabled: true,
+      shadowNotes: "User memory:\n- Preferred tone: gentle",
+    });
+    const response = createResponse();
+    await shadowMemoryHandler(
+      { method: "PUT", body: { memoryEnabled: true, initialNotes: "User memory:\n- Preferred tone: gentle" } },
+      response,
+    );
+    expect(serverApi.setShadowMemoryPreference).toHaveBeenCalledWith(
+      "user-1", true, "User memory:\n- Preferred tone: gentle",
+    );
   });
 
   it("refuses note persistence while memory is disabled", async () => {

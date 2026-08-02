@@ -427,9 +427,8 @@ export async function loadShadowMemoryProfile(userId: string): Promise<ShadowMem
     return { memoryEnabled: false, shadowNotes: null };
   }
 
-  // A row is created only after notes are first saved or the user explicitly
-  // changes this setting. Until then, memory is enabled by default.
-  const memoryEnabled = data?.memory_enabled !== false;
+  // A missing row is not consent. Only an explicit enabled row may expose notes.
+  const memoryEnabled = data?.memory_enabled === true;
   return {
     memoryEnabled,
     shadowNotes: memoryEnabled
@@ -462,39 +461,14 @@ export async function saveShadowNotes(userId: string, notes: string) {
 
   if (data) return normalizeShadowNotes(data.notes);
 
-  // New users have no row until their first meaningful memory update. Check
-  // again before creating one so an explicit opt-out is never overwritten.
-  const { data: profile, error: profileError } = await adminClient
-    .from(SHADOW_NOTES_TABLE)
-    .select("memory_enabled")
-    .eq("user_id", userId)
-    .maybeSingle<{ memory_enabled: boolean }>();
-  if (profileError) throw new Error(profileError.message);
-  if (profile?.memory_enabled === false) return null;
-
-  const { data: inserted, error: insertError } = await adminClient
-    .from(SHADOW_NOTES_TABLE)
-    .upsert(
-      {
-        user_id: userId,
-        memory_enabled: true,
-        notes: normalizedNotes,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id", ignoreDuplicates: true },
-    )
-    .select("memory_enabled, notes")
-    .maybeSingle<{ memory_enabled: boolean; notes: string | null }>();
-  if (insertError) throw new Error(insertError.message);
-
-  return inserted?.memory_enabled === true
-    ? normalizeShadowNotes(inserted.notes)
-    : null;
+  // No enabled row matched, so the user has not granted durable-memory consent.
+  return null;
 }
 
 export async function setShadowMemoryPreference(
   userId: string,
   memoryEnabled: boolean,
+  initialNotes?: string,
 ): Promise<ShadowMemoryProfile> {
   const adminClient = createSupabaseAdminClient();
   if (!adminClient) {
@@ -508,7 +482,10 @@ export async function setShadowMemoryPreference(
     .maybeSingle<{ memory_enabled: boolean; notes: string | null }>();
   if (loadError) throw new Error(loadError.message);
 
-  if (existing?.memory_enabled === true && memoryEnabled) {
+  const normalizedInitialNotes = memoryEnabled
+    ? normalizeShadowNotes(initialNotes) || ""
+    : "";
+  if (existing?.memory_enabled === true && memoryEnabled && !normalizedInitialNotes) {
     return {
       memoryEnabled: true,
       shadowNotes: normalizeShadowNotes(existing.notes),
@@ -523,7 +500,8 @@ export async function setShadowMemoryPreference(
         user_id: userId,
         memory_enabled: memoryEnabled,
         memory_consent_updated_at: now,
-        notes: "",
+        memory_consent_version: 1,
+        notes: normalizedInitialNotes,
         updated_at: now,
       },
       { onConflict: "user_id" },

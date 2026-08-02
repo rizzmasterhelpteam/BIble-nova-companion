@@ -32,6 +32,8 @@ import { normalizeShadowNotes } from "../src/lib/shadowMemory";
 describe("shadow memory database boundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    database.query.maybeSingle.mockReset();
+    database.query.single.mockReset();
     process.env.VITE_SUPABASE_URL = "https://example.supabase.co";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test-key";
     process.env.GROQ_API_KEY = "test-groq-key";
@@ -85,6 +87,22 @@ describe("shadow memory database boundary", () => {
     expect(database.query.upsert).not.toHaveBeenCalled();
   });
 
+  it("persists initial onboarding notes with the explicit opt-in", async () => {
+    database.query.single.mockResolvedValueOnce({
+      data: { memory_enabled: true, notes: "User memory:\n- Preferred tone: gentle" },
+      error: null,
+    });
+    await expect(setShadowMemoryPreference("user-1", true, "User memory:\n- Preferred tone: gentle"))
+      .resolves.toEqual({
+        memoryEnabled: true,
+        shadowNotes: normalizeShadowNotes("User memory:\n- Preferred tone: gentle"),
+      });
+    expect(database.query.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ notes: normalizeShadowNotes("User memory:\n- Preferred tone: gentle") }),
+      { onConflict: "user_id" },
+    );
+  });
+
   it("writes only through a memory-enabled row filter", async () => {
     database.query.maybeSingle.mockResolvedValueOnce({
       data: { notes: "Updated context" },
@@ -100,31 +118,22 @@ describe("shadow memory database boundary", () => {
     expect(database.query.eq).toHaveBeenCalledWith("memory_enabled", true);
   });
 
-  it("enables memory by default when a user has no preference row yet", async () => {
+  it("defaults missing memory preference to disabled", async () => {
     database.query.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
 
     await expect(loadShadowMemoryProfile("user-1")).resolves.toEqual({
-      memoryEnabled: true,
+      memoryEnabled: false,
       shadowNotes: null,
     });
   });
 
-  it("creates an enabled row for a new user's first saved memory", async () => {
+  it("does not create memory for a new user before opt-in", async () => {
     database.query.maybeSingle
       .mockResolvedValueOnce({ data: null, error: null })
-      .mockResolvedValueOnce({ data: null, error: null })
-      .mockResolvedValueOnce({
-        data: { memory_enabled: true, notes: "User memory:\n- Preferred tone: warm" },
-        error: null,
-      });
+      .mockResolvedValueOnce({ data: null, error: null });
 
-    await expect(saveShadowNotes("user-1", "User memory:\n- Preferred tone: warm")).resolves.toContain(
-      "Preferred tone: warm",
-    );
-    expect(database.query.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ user_id: "user-1", memory_enabled: true }),
-      { onConflict: "user_id", ignoreDuplicates: true },
-    );
+    await expect(saveShadowNotes("user-1", "User memory:\n- Preferred tone: warm")).resolves.toBeNull();
+    expect(database.query.upsert).not.toHaveBeenCalled();
   });
 
   it("does not recreate notes after an explicit memory opt-out", async () => {

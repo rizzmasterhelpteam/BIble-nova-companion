@@ -13,9 +13,21 @@ export const API_CONTRACT_MISMATCH_MESSAGE =
   "This app and its server are out of sync. Refresh the app or install the latest version.";
 let cachedAccessToken: string | null | undefined;
 let accessTokenRequest: Promise<string | null> | null = null;
+let sessionGeneration = 0;
+const activeControllers = new Set<AbortController>();
 
 export const setApiAccessToken = (accessToken: string | null) => {
   cachedAccessToken = accessToken;
+};
+
+export const invalidateApiSession = () => {
+  sessionGeneration += 1;
+  cachedAccessToken = null;
+  accessTokenRequest = null;
+  activeControllers.forEach((controller) =>
+    controller.abort(new DOMException("Account session changed.", "AbortError")),
+  );
+  activeControllers.clear();
 };
 
 const getApiAccessToken = async () => {
@@ -46,6 +58,7 @@ export const getApiUrl = (path: string) => {
 };
 
 export const apiFetch = async (path: string, init: RequestInit = {}) => {
+  const requestGeneration = sessionGeneration;
   const headers = new Headers(init.headers);
   if (
     !headers.has("X-Client-Request-Id") &&
@@ -55,12 +68,16 @@ export const apiFetch = async (path: string, init: RequestInit = {}) => {
   }
   if (!headers.has("Authorization") && isSupabaseConfigured) {
     const accessToken = await getApiAccessToken();
+    if (requestGeneration !== sessionGeneration) {
+      throw new DOMException("Account session changed.", "AbortError");
+    }
     if (accessToken) {
       headers.set("Authorization", `Bearer ${accessToken}`);
     }
   }
 
   const controller = new AbortController();
+  activeControllers.add(controller);
   const callerSignal = init.signal;
   const forwardAbort = () => controller.abort(callerSignal?.reason);
   if (callerSignal) {
@@ -72,6 +89,9 @@ export const apiFetch = async (path: string, init: RequestInit = {}) => {
   }, API_REQUEST_TIMEOUT_MS);
 
   try {
+    if (requestGeneration !== sessionGeneration) {
+      throw new DOMException("Account session changed.", "AbortError");
+    }
     const requestMethod = (init.method || "GET").toUpperCase();
     let response = await fetch(getApiUrl(path), {
       ...init,
@@ -94,12 +114,16 @@ export const apiFetch = async (path: string, init: RequestInit = {}) => {
       }
     }
 
+    if (requestGeneration !== sessionGeneration) {
+      throw new DOMException("Account session changed.", "AbortError");
+    }
     const contractVersion = response.headers.get("X-API-Contract-Version");
     if (contractVersion !== null && contractVersion !== String(API_CONTRACT_VERSION)) {
       throw new Error(API_CONTRACT_MISMATCH_MESSAGE);
     }
     return response;
   } finally {
+    activeControllers.delete(controller);
     globalThis.clearTimeout(timeoutId);
     callerSignal?.removeEventListener("abort", forwardAbort);
   }

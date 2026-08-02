@@ -4,6 +4,7 @@ import {
   createChatCompletion,
   createReflection,
   createShadowNotes,
+  classifySafetyRisk,
   EMOTIONAL_RESPONSE_FRAMEWORK,
 } from "../chat-api";
 
@@ -54,6 +55,16 @@ describe("chat provider reliability", () => {
     expect(systemPrompt.indexOf("VALIDATE")).toBeLessThan(systemPrompt.indexOf("ANCHOR"));
     expect(systemPrompt.indexOf("ANCHOR")).toBeLessThan(systemPrompt.indexOf("NEXT STEP"));
     expect(systemPrompt.indexOf("NEXT STEP")).toBeLessThan(systemPrompt.indexOf("CHECK-IN"));
+  });
+
+  it.each([
+    "I want to die",
+    "main marna chahta hoon",
+    "मैं मरना चाहता हूँ",
+  ])("uses the deterministic crisis-safe path for typed Chat: %s", async (content) => {
+    expect(classifySafetyRisk([{ role: "user", content }])).toBe("crisis-risk");
+    await expect(createChatCompletion([{ role: "user", content }])).resolves.toMatch(/safe|सुरक्षित/i);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("does not make the extra memory-summary request without consent", async () => {
