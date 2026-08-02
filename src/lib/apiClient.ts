@@ -95,7 +95,7 @@ export const apiFetch = async (path: string, init: RequestInit = {}) => {
     }
 
     const contractVersion = response.headers.get("X-API-Contract-Version");
-    if (contractVersion !== String(API_CONTRACT_VERSION)) {
+    if (contractVersion !== null && contractVersion !== String(API_CONTRACT_VERSION)) {
       throw new Error(API_CONTRACT_MISMATCH_MESSAGE);
     }
     return response;

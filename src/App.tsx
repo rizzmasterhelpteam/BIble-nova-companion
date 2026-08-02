@@ -127,12 +127,15 @@ export const NativeRuntimeGate = ({
   runtime,
   status,
   minimumBridgeVersion = MINIMUM_NATIVE_BRIDGE_VERSION,
+  onPainted,
 }: {
   children: React.ReactNode;
   runtime: ReturnType<typeof useNativeRuntime>["runtime"];
   status: ReturnType<typeof useNativeRuntime>["status"];
   minimumBridgeVersion?: number;
+  onPainted?: () => void;
 }) => {
+  useEffect(() => { onPainted?.(); }, [onPainted]);
   if (status === "loading") {
     return <AppBootShell message="Checking native app compatibility..." />;
   }
@@ -164,7 +167,7 @@ const RuntimeAwareApp = ({
   const Router = isNativePlatform() ? HashRouter : BrowserRouter;
 
   return (
-    <NativeRuntimeGate runtime={runtime} status={status}>
+    <NativeRuntimeGate runtime={runtime} status={status} onPainted={onBootShellPainted}>
       <CompatibleApplication>
         <ToastProvider>
           <MobileViewportProvider>

@@ -20,6 +20,9 @@ import {
   type SubscriptionPackage,
 } from "../lib/native/purchases";
 import { selectNewestConfiguredNativePurchase } from "../lib/native/subscriptionSync";
+import { storageRemove, storageSet } from "../lib/webStorage";
+
+const PENDING_NATIVE_ENTITLEMENT_SYNC_KEY = "bible-nova-pending-native-entitlement-sync";
 
 type Plan = "monthly" | "yearly";
 
@@ -136,7 +139,12 @@ export default function Paywall() {
           setSubscriptionSyncError(null);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (isMounted) {
+          setSubscriptionSyncReady(false);
+          setSubscriptionSyncError("Premium purchases are temporarily unavailable while verification is checked. Please try again shortly.");
+        }
+      });
     return () => { isMounted = false; };
   }, [nativeStoreAvailable]);
 
@@ -178,7 +186,7 @@ export default function Paywall() {
     !isLoading &&
     !isLoadingOffering &&
     nativeStoreAvailable &&
-    subscriptionSyncReady !== false &&
+    subscriptionSyncReady === true &&
     Boolean(selectedNativePackage);
   const selectedPlanLabel = selectedPlan === "yearly" ? "Yearly" : "Monthly";
 
@@ -195,11 +203,15 @@ export default function Paywall() {
         );
       }
       const purchase = await purchaseNativePackage(selectedNativePackage);
-      await syncNativeSubscriptionForAccount(
-        purchase,
-        selectedNativePackage.androidBasePlanId,
-        selectedNativePackage.productId,
-      );
+      storageSet(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY, JSON.stringify({ userId: user?.id, createdAt: Date.now() }));
+      try {
+        await syncNativeSubscriptionForAccount(purchase, selectedNativePackage.androidBasePlanId, selectedNativePackage.productId);
+        storageRemove(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY);
+      } catch (syncError) {
+        setError("Purchase completed. We're still activating Premium. Keep this app open and use Restore Purchases if it does not activate shortly.");
+        console.warn("Native purchase completed but entitlement linking is pending:", syncError);
+        return;
+      }
       navigate("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Purchase could not be completed.");

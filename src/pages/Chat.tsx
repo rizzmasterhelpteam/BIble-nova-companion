@@ -327,6 +327,8 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef(messages);
   const requestControllerRef = useRef<AbortController | null>(null);
+  const sendingRef = useRef(false);
+  const requestGenerationRef = useRef(0);
   const speechSessionRef = useRef<SpeechRecognitionSession | null>(null);
   const apiStatusRef = useRef<ApiStatus | null>(null);
   const handledRouteActionRef = useRef<string | null>(null);
@@ -557,6 +559,8 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   useEffect(() => {
     return () => {
       requestControllerRef.current?.abort();
+      requestGenerationRef.current += 1;
+      sendingRef.current = false;
       if (resizeFrameRef.current) {
         window.cancelAnimationFrame(resizeFrameRef.current);
       }
@@ -679,7 +683,8 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   const handleModeChange = useCallback((nextMode: HomeMode) => {
     if (nextMode === "voice" && isTyping) {
       requestControllerRef.current?.abort();
-      requestControllerRef.current = null;
+      requestGenerationRef.current += 1;
+      sendingRef.current = false;
       setIsTyping(false);
     }
     if (nextMode === "chat" && isVoiceMode) {
@@ -689,7 +694,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
   }, [isTyping, isVoiceMode, onModeChange]);
 
   const handleSend = useCallback(async (text: string) => {
-    if (isTyping || apiStatus?.chatReady !== true) return;
+    if (sendingRef.current || apiStatus?.chatReady !== true) return;
 
     const trimmedText = text.trim();
     if (!trimmedText) return;
@@ -701,8 +706,10 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
     }
 
     requestControllerRef.current?.abort();
+    const requestGeneration = ++requestGenerationRef.current;
     const controller = new AbortController();
     requestControllerRef.current = controller;
+    sendingRef.current = true;
 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -737,6 +744,8 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
         signal: controller.signal,
       });
 
+      if (requestGeneration !== requestGenerationRef.current) return;
+
       const responseText = await response.text();
       let data: { message?: string; shadowNotes?: string | null; error?: string };
 
@@ -765,6 +774,7 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
 
       appendAiMessage(data.message || "I could not form a response just now.");
     } catch (error) {
+      if (requestGeneration !== requestGenerationRef.current) return;
       if (error instanceof DOMException && error.name === "AbortError") {
         return;
       }
@@ -776,10 +786,13 @@ export default function Chat({ mode = "chat", onModeChange }: ChatProps) {
           : "I am sorry, I hit an unexpected problem while reflecting on that.";
       appendAiMessage(message, "error");
     } finally {
-      setIsTyping(false);
-      requestControllerRef.current = null;
-      if (shouldAutoFocusInputRef.current) {
-        textareaRef.current?.focus();
+      if (requestGeneration === requestGenerationRef.current) {
+        sendingRef.current = false;
+        setIsTyping(false);
+        if (requestControllerRef.current === controller) requestControllerRef.current = null;
+        if (shouldAutoFocusInputRef.current) {
+          textareaRef.current?.focus();
+        }
       }
     }
   }, [acceptPersistedShadowNotes, apiStatus?.chatReady, appendAiMessage, isRecording, isTyping, shadowNotes]);
