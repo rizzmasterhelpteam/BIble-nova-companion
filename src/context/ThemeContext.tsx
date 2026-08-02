@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { storageGet, storageSet } from "../lib/webStorage";
+import { updateNativeStatusBarTheme } from "../lib/native/app";
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -36,16 +37,23 @@ export function ThemeProvider({
     const mediaQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
     const applyTheme = (nextTheme: Theme) => {
-      root.classList.remove('light', 'dark');
       const resolvedTheme =
         nextTheme === 'system' ? (mediaQuery?.matches ? 'dark' : 'light') : nextTheme;
 
-      root.classList.add(resolvedTheme);
+      if (!root.classList.contains(resolvedTheme)) {
+        root.classList.remove('light', 'dark');
+        root.classList.add(resolvedTheme);
+      }
+      root.dataset.design = 'nocturne';
       root.style.colorScheme = resolvedTheme;
+      const themeColor = root.ownerDocument.querySelector<HTMLMetaElement>('#theme-color-meta');
+      if (themeColor) {
+        themeColor.content = resolvedTheme === 'dark' ? '#050b14' : '#d9e9f7';
+      }
+      void updateNativeStatusBarTheme(resolvedTheme);
     };
 
     applyTheme(theme);
-    root.dataset.design = 'nocturne';
 
     if (theme !== 'system' || !mediaQuery) {
       return;
@@ -60,6 +68,18 @@ export function ThemeProvider({
     mediaQuery.addListener && mediaQuery.addListener(handleChange);
     return () => mediaQuery.removeListener && mediaQuery.removeListener(handleChange);
   }, [theme]);
+
+  useEffect(() => {
+    const handleStorageRestore = () => {
+      const restoredTheme = storageGet(storageKey) as Theme | null;
+      if (restoredTheme === 'dark' || restoredTheme === 'light' || restoredTheme === 'system') {
+        setTheme(restoredTheme);
+      }
+    };
+
+    window.addEventListener('bible-nova-storage-restored', handleStorageRestore);
+    return () => window.removeEventListener('bible-nova-storage-restored', handleStorageRestore);
+  }, [storageKey]);
 
   const setThemeValue = useCallback((theme: Theme) => {
       storageSet(storageKey, theme);

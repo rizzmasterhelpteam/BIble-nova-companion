@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#05070b" />
+    <meta id="theme-color-meta" name="theme-color" content="#d9e9f7" />
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; base-uri 'self'; object-src 'none'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self' https://biblecompanion.vercel.app http://localhost:3000 http://localhost:5173 https://localhost capacitor://localhost https://*.supabase.co wss://*.supabase.co https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://accounts.google.com; media-src 'self' blob:; worker-src 'self' blob:; manifest-src 'self'; frame-src 'self' https://accounts.google.com https://*.supabase.co; form-action 'self' https://accounts.google.com"
@@ -13,6 +13,36 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Bible Nova" />
+    <script>
+      (() => {
+        const root = document.documentElement;
+        let storedTheme = null;
+        try {
+          storedTheme = window.localStorage.getItem("vite-ui-theme");
+        } catch {
+          storedTheme = null;
+        }
+
+        const systemTheme = window.matchMedia?.("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+        const resolvedTheme = storedTheme === "dark" || storedTheme === "light"
+          ? storedTheme
+          : systemTheme;
+
+        root.classList.toggle("dark", resolvedTheme === "dark");
+        root.classList.toggle("light", resolvedTheme !== "dark");
+        root.dataset.design = "nocturne";
+        root.style.colorScheme = resolvedTheme;
+        root.style.background = resolvedTheme === "dark" ? "#050b14" : "#d9e9f7";
+        const themeColor = document.getElementById("theme-color-meta");
+        if (themeColor) {
+          themeColor.setAttribute("content", resolvedTheme === "dark" ? "#050b14" : "#d9e9f7");
+        }
+        window.__BIBLE_NOVA_THEME_BOOTSTRAPPED__ = true;
+        root.dataset.startupStage = "theme-bootstrap-applied";
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -22,30 +52,41 @@
     <title>Bible Nova Companion</title>
     <style>
       :root {
-        color-scheme: light dark;
-        background: #000000;
+        color-scheme: light;
+        background: #d9e9f7;
+      }
+
+      :root.dark {
+        color-scheme: dark;
+        background: #050b14;
       }
 
       html,
       body {
         margin: 0;
         min-height: 100%;
-        background: #000000;
+        background: #d9e9f7;
+        color: #22324b;
       }
 
-      #startup-fallback {
+      html.dark,
+      html.dark body {
+        background: #050b14;
+        color: #ebf2ff;
+      }
+
+      #initial-app-shell {
         box-sizing: border-box;
-        display: none;
+        display: grid;
         min-height: 100vh;
         min-height: 100dvh;
         place-items: center;
         padding: 2rem;
-        color: #ebf2ff;
         font-family: Manrope, ui-sans-serif, system-ui, sans-serif;
         text-align: center;
       }
 
-      #startup-fallback.startup-fallback-visible {
+      #initial-app-shell.startup-fallback-visible {
         display: grid;
       }
 
@@ -57,8 +98,12 @@
         padding: 2rem 1.5rem;
         border: 1px solid rgba(111, 214, 255, 0.18);
         border-radius: 1.5rem;
-        background: rgba(8, 14, 24, 0.94);
+        background: rgba(255, 255, 255, 0.78);
         box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+      }
+
+      html.dark .startup-fallback-card {
+        background: rgba(8, 14, 24, 0.94);
       }
 
       .startup-fallback-logo {
@@ -100,7 +145,7 @@
   </head>
   <body>
     <div id="root">
-      <main id="startup-fallback" aria-live="polite" aria-busy="true">
+      <main id="initial-app-shell" aria-live="polite" aria-busy="true">
         <div class="startup-fallback-card">
           <img class="startup-fallback-logo" src="/favicon.png" alt="Bible Nova Companion" />
           <h1>Bible Nova</h1>
@@ -119,13 +164,15 @@
           reactMounted: false,
         };
         window.__BIBLE_NOVA_STARTUP__ = startup;
-        startup.stage = "index-loaded";
+        startup.stage = window.__BIBLE_NOVA_THEME_BOOTSTRAPPED__
+          ? "theme-bootstrap-applied"
+          : "index-loaded";
         document.documentElement.dataset.startupStage = startup.stage;
 
         window.setTimeout(() => {
           if (startup.reactMounted) return;
           startup.stage = "startup-failure";
-          const fallback = document.getElementById("startup-fallback");
+          const fallback = document.getElementById("initial-app-shell");
           const message = document.getElementById("startup-fallback-message");
           const retry = document.getElementById("startup-retry");
           const diagnosticId = document.getElementById("startup-fallback-id");

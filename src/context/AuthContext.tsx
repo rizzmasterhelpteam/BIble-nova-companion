@@ -12,6 +12,8 @@ type AuthContextType = {
   session: Session | null;
   isLoading: boolean;
   isSubscriptionResolved: boolean;
+  isSubscriptionRevalidating: boolean;
+  subscriptionRevalidationError: string | null;
   identityKey: string | null;
   profileName: string | null;
   profileAvatarUrl: string | null;
@@ -54,6 +56,8 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   isLoading: true,
   isSubscriptionResolved: false,
+  isSubscriptionRevalidating: false,
+  subscriptionRevalidationError: null,
   identityKey: null,
   profileName: null,
   profileAvatarUrl: null,
@@ -194,6 +198,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubscriptionResolved, setIsSubscriptionResolved] = useState(false);
+  const [isSubscriptionRevalidating, setIsSubscriptionRevalidating] = useState(false);
+  const [subscriptionRevalidationError, setSubscriptionRevalidationError] = useState<string | null>(null);
   const [identityKey, setIdentityKey] = useState<string | null>(null);
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
@@ -210,6 +216,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     let isDisposed = false;
     let anonymousSignOutInFlight = false;
     let activeSessionToken: string | null = null;
+    let activeUserId: string | null = null;
+    let subscriptionRequestVersion = 0;
 
     clearLegacyGuestState();
     const clearLegacyStateAfterRestore = () => clearLegacyGuestState();
@@ -259,19 +267,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const syncSubscriptionState = async (currentUser: User | null) => {
+    const syncSubscriptionState = async (
+      currentUser: User | null,
+      { initial = false }: { initial?: boolean } = {},
+    ) => {
       const id = currentUser?.id || null;
       if (!id) {
         if (!isDisposed) {
           setIsSubscribed(false);
           setIsSubscriptionResolved(true);
+          setIsSubscriptionRevalidating(false);
+          setSubscriptionRevalidationError(null);
         }
         return;
       }
 
       const requestSessionToken = activeSessionToken;
-      setIsSubscriptionResolved(false);
+      const requestVersion = ++subscriptionRequestVersion;
+      if (initial) setIsSubscriptionResolved(false);
+      setIsSubscriptionRevalidating(true);
+      setSubscriptionRevalidationError(null);
       let hasEntitlement = false;
+      let authoritativeResult = false;
 
       try {
         const response = await apiFetch("/api/subscription/native-sync", {
@@ -287,18 +304,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           throw new Error(data.error || "Premium verification failed.");
         }
         hasEntitlement = data.active === true;
+        authoritativeResult = true;
       } catch (error) {
-        // Access is intentionally fail-closed. Cached auth metadata and local
-        // storage can be stale after cancellation, expiry, or an account switch.
+        // A failed background refresh must not tear down an already-authorized
+        // screen. Initial access still fails closed below because it has no
+        // previously verified entitlement to preserve.
         console.warn("Could not verify authoritative subscription access:", error);
       }
 
-      if (!hasEntitlement && getPlatformAdapter().isNative) {
+      if (!authoritativeResult && getPlatformAdapter().isNative) {
         try {
           const { refreshNativeSubscriptionEntitlement } = await import(
             "../lib/native/subscriptionSync"
           );
           hasEntitlement = await refreshNativeSubscriptionEntitlement();
+          authoritativeResult = true;
           console.info("[Bible Nova subscription]", {
             event: "startup-native-entitlement-refresh",
             restored: hasEntitlement,
@@ -308,15 +328,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
       }
 
-      if (isDisposed || activeSessionToken !== requestSessionToken) return;
+      if (
+        isDisposed ||
+        activeSessionToken !== requestSessionToken ||
+        subscriptionRequestVersion !== requestVersion
+      ) {
+        return;
+      }
 
-      setStoredSubscriptionState(id, hasEntitlement);
-      if (!hasEntitlement) clearStoredSubscriptionSource(id);
-      setIsSubscribed(hasEntitlement);
+      if (authoritativeResult) {
+        setStoredSubscriptionState(id, hasEntitlement);
+        if (!hasEntitlement) clearStoredSubscriptionSource(id);
+        setIsSubscribed(hasEntitlement);
+        setSubscriptionRevalidationError(null);
+      } else if (initial) {
+        // There is no safe access state to preserve during the first check.
+        setStoredSubscriptionState(id, false);
+        clearStoredSubscriptionSource(id);
+        setIsSubscribed(false);
+        setSubscriptionRevalidationError("Premium access could not be verified. Please try again.");
+      } else {
+        setSubscriptionRevalidationError(
+          "Premium access could not be refreshed. Your current access is still available.",
+        );
+      }
+
       setIsSubscriptionResolved(true);
+      setIsSubscriptionRevalidating(false);
+      if (initial) startup.mark("subscription-initial-resolved");
     };
 
-    const restoreCachedSubscriptionState = (currentUser: User) => {
+    const restoreCachedSubscriptionState = (currentUser: User, blockUntilVerified: boolean) => {
       const id = currentUser.id;
       const storedSubscription = storageGet(`isSubscribed_${id}`) === "true";
       const storedSubscriptionSource = getStoredSubscriptionSource(id);
@@ -326,14 +368,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       setIsSubscribed(hasServerEntitlement || hasCachedNativeEntitlement);
       // Cached state is display-only. It must never unlock the main routes
-      // until the server confirms the entitlement row is still active.
-      setIsSubscriptionResolved(false);
+      // until the first authoritative check confirms the entitlement row.
+      if (blockUntilVerified) setIsSubscriptionResolved(false);
     };
 
     const clearActiveSession = async () => {
       if (isDisposed) return;
       setSession(null);
       setUser(null);
+      activeUserId = null;
       setIdentityKey(null);
       syncOnboardingState(null);
       syncProfileState(null);
@@ -359,17 +402,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       await clearActiveSession();
     };
 
-    const applyAuthenticatedUser = async (currentUser: User) => {
+    const applyAuthenticatedUser = async (currentUser: User, blockUntilVerified: boolean) => {
       if (currentUser.is_anonymous) {
         await rejectAnonymousSession();
         return;
       }
 
       setUser(currentUser);
+      activeUserId = currentUser.id;
       setIdentityKey(currentUser.id);
       syncOnboardingState(currentUser.id);
       syncProfileState(currentUser);
-      restoreCachedSubscriptionState(currentUser);
+      restoreCachedSubscriptionState(currentUser, blockUntilVerified);
     };
 
     const refreshAuthenticatedUser = async (currentSession: Session, initialUser: User) => {
@@ -392,7 +436,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const applySession = async (currentSession: Session | null) => {
+    const applySession = async (
+      currentSession: Session | null,
+      initialSessionResolution = false,
+    ) => {
       if (isDisposed) return;
 
       activeSessionToken = currentSession?.access_token || null;
@@ -406,8 +453,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // The session already contains the user needed to render onboarding and
         // paywall. Do not hold the first interactive frame on a second network
         // request; refresh profile/subscription metadata in the background.
-        await applyAuthenticatedUser(currentUser);
-        void syncSubscriptionState(currentUser);
+        const isNewIdentity = activeUserId !== currentUser.id;
+        const blockUntilVerified = initialSessionResolution || isNewIdentity;
+        await applyAuthenticatedUser(currentUser, blockUntilVerified);
+        void syncSubscriptionState(currentUser, { initial: blockUntilVerified });
         if (currentSession.access_token) {
           void refreshAuthenticatedUser(currentSession, currentUser);
         }
@@ -439,13 +488,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         if (isDisposed) return;
         if (error) console.warn("Supabase getSession error:", error.message);
-        await applySession(initialSession);
+        await applySession(initialSession, true);
       } catch (error) {
         if (!isDisposed) console.error("Failed to get session:", error);
       } finally {
         if (!isDisposed) {
           setIsLoading(false);
           startup.mark("session-resolution-completed");
+          startup.mark("auth-initial-resolved");
         }
       }
     };
@@ -476,7 +526,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               await rejectAnonymousSession();
               return;
             }
-            return syncSubscriptionState(currentUser);
+            return syncSubscriptionState(currentUser, { initial: false });
           })
           .catch((error) => {
             console.warn("Could not refresh session while syncing subscriptions:", error);
@@ -779,6 +829,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       session,
       isLoading,
       isSubscriptionResolved,
+      isSubscriptionRevalidating,
+      subscriptionRevalidationError,
       identityKey,
       profileName,
       profileAvatarUrl,
@@ -805,6 +857,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       isLoading,
       isSubscribed,
       isSubscriptionResolved,
+      isSubscriptionRevalidating,
+      subscriptionRevalidationError,
       memoryEnabled,
       memoryPreferenceLoading,
       logout,

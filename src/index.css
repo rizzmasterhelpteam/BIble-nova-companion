@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @keyframes app-route-enter {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0.98; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -11,6 +11,21 @@
 
 .native-android .app-route-enter {
   animation: none !important;
+}
+
+@keyframes app-boot-shell-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.app-boot-shell-spinner {
+  animation: app-boot-shell-pulse 1.4s ease-in-out infinite;
+}
+
+.app-performance-mode .app-boot-shell-spinner,
+.native-android .app-boot-shell-spinner {
+  animation: none;
+  opacity: 0.8;
 }
 
 @custom-variant dark (&:is(.dark *));

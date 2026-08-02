@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
@@ -34,6 +34,7 @@ import { getNativePlatform, getPlatformAdapter } from "../lib/native/platform";
 import { nativeStorage } from "../lib/native/storage";
 import { cn } from "../lib/utils";
 import { shouldHideBottomNavigation } from "../lib/mobileLayout";
+import RouteContentFallback from "./RouteContentFallback";
 import {
   DEFAULT_REMINDER_DAYS,
   DEFAULT_REMINDER_TIME,
@@ -513,7 +514,9 @@ export default function Layout() {
               transition={{ duration: prefersReducedMotion || isAndroidApp ? 0 : 0.2, ease: "easeOut" }}
               className="relative flex min-h-0 flex-1 flex-col"
             >
-              <Outlet />
+              <Suspense fallback={<RouteContentFallback />}>
+                <Outlet />
+              </Suspense>
             </motion.div>
           </AnimatePresence>
         </main>
