@@ -28,7 +28,10 @@ describe("remote runtime stability contracts", () => {
     const voice = read("src/components/voice/VoiceMode.tsx");
     expect(profile).toContain("useEntitlement");
     expect(profile).not.toContain("isSubscribed || usageState?.eligible");
-    expect(profile).toContain("hasVerifiedVoiceAccess");
+    expect(profile).toContain("canRequestVoiceUsage");
+    expect(profile).toContain("snapshot.active && snapshot.state !== \"unknown\"");
+    expect(profile).toContain('apiFetch("/api/voice/session"');
+    expect(profile).not.toContain("DEFAULT_LIMITS");
     expect(voice).toContain("useEntitlement");
   });
 

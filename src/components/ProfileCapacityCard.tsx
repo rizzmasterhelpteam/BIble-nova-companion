@@ -23,22 +23,14 @@ type UsageResponse = {
 type UsageState = {
   eligible: boolean;
   usage: VoiceUsageSummary | null;
-  maxSessionMinutes: number;
-  dailyMinutes: number;
-  monthlyMinutes: number;
+  maxSessionMinutes: number | null;
+  dailyMinutes: number | null;
+  monthlyMinutes: number | null;
 };
 
-const DEFAULT_LIMITS = {
-  maxSessionMinutes: 15,
-  dailyMinutes: 20,
-  monthlyMinutes: 180,
-};
-
-const asBoundedInteger = (value: unknown, fallback: number, minimum: number, maximum: number) => {
+const asDisplayInteger = (value: unknown) => {
   const number = Number(value);
-  return Number.isFinite(number)
-    ? Math.max(minimum, Math.min(maximum, Math.floor(number)))
-    : fallback;
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : null;
 };
 
 const formatResetDate = (value: string | null) => {
@@ -78,10 +70,10 @@ export default function ProfileCapacityCard({
 }: ProfileCapacityCardProps) {
   const { snapshot, refresh, restorationError, restoreGooglePlayPurchase } = useEntitlement();
   const navigate = useNavigate();
-  const hasVerifiedVoiceAccess =
-    snapshot.active &&
-    snapshot.state === "active" &&
-    (snapshot.source === "server" || snapshot.source === "google_play");
+  // The usage endpoint independently verifies entitlement on the server. Do
+  // not suppress a dashboard refresh just because the client is temporarily
+  // showing its signed-session snapshot while that verification completes.
+  const canRequestVoiceUsage = snapshot.active && snapshot.state !== "unknown";
   const hasActiveMembership = snapshot.active && snapshot.state !== "unknown";
   const membershipChecking = snapshot.state === "initializing" || (snapshot.state === "refreshing" && !snapshot.active);
   const [usageState, setUsageState] = useState<UsageState | null>(null);
@@ -109,7 +101,7 @@ export default function ProfileCapacityCard({
   };
 
   useEffect(() => {
-    if (!isOpen || !hasVerifiedVoiceAccess) {
+    if (!isOpen || !canRequestVoiceUsage) {
       setUsageState(null);
       return;
     }
@@ -132,9 +124,9 @@ export default function ProfileCapacityCard({
         setUsageState({
           eligible: data.eligible === true,
           usage: data.usage || null,
-          maxSessionMinutes: asBoundedInteger(limits.maxSessionMinutes, DEFAULT_LIMITS.maxSessionMinutes, 1, 15),
-          dailyMinutes: asBoundedInteger(limits.dailyMinutes, DEFAULT_LIMITS.dailyMinutes, 1, 240),
-          monthlyMinutes: asBoundedInteger(limits.monthlyMinutes, DEFAULT_LIMITS.monthlyMinutes, 1, 1_440),
+          maxSessionMinutes: asDisplayInteger(limits.maxSessionMinutes),
+          dailyMinutes: asDisplayInteger(limits.dailyMinutes),
+          monthlyMinutes: asDisplayInteger(limits.monthlyMinutes),
         });
       })
       .catch((caught) => {
@@ -146,9 +138,8 @@ export default function ProfileCapacityCard({
       });
 
     return () => controller.abort();
-  }, [hasVerifiedVoiceAccess, isOpen, reloadKey]);
+  }, [canRequestVoiceUsage, isOpen, reloadKey]);
 
-  const limits = usageState || DEFAULT_LIMITS;
   const usage = usageState?.usage || null;
   const membershipLabel = membershipChecking
     ? "Checking…"
@@ -173,19 +164,21 @@ export default function ProfileCapacityCard({
     ? "Loading…"
     : usage
       ? `${usage.monthlyRemainingMinutes} min left of ${usage.monthlyLimitMinutes} min`
-      : hasVerifiedVoiceAccess
+      : canRequestVoiceUsage
         ? "Unavailable"
         : "Premium only";
   const voiceRemaining = usage
     ? `${usage.monthlyUsedMinutes} min used this month`
-    : hasVerifiedVoiceAccess
+    : canRequestVoiceUsage
       ? "Usage unavailable"
       : error
         ? "Usage unavailable"
-        : `${limits.monthlyMinutes} min/month on Premium`;
-  const voiceMeta = usage
-    ? `Max time per session: ${limits.maxSessionMinutes} min`
-    : `Max time per session: ${limits.maxSessionMinutes} min · Daily: ${limits.dailyMinutes} min`;
+        : "Voice is included with Premium.";
+  const voiceMeta = usageState?.maxSessionMinutes
+    ? `Max time per session: ${usageState.maxSessionMinutes} min${
+      usageState.dailyMinutes ? ` · Daily: ${usageState.dailyMinutes} min` : ""
+    }`
+    : "Session limit unavailable";
 
   const membershipBadgeClass = useMemo(
     () => hasActiveMembership
@@ -308,7 +301,7 @@ export default function ProfileCapacityCard({
               <p className="app-muted mt-2 text-[10px]">
                 {error
                   ? "Could not refresh usage right now."
-                  : hasVerifiedVoiceAccess
+                  : canRequestVoiceUsage
                     ? "Renews with your next Premium billing cycle."
                     : "Voice is included with Premium."}
               </p>

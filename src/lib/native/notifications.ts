@@ -1,7 +1,7 @@
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { PushNotifications } from "@capacitor/push-notifications";
 import type { PluginListenerHandle } from "@capacitor/core";
-import { getNativePlatform, isNativePlatform } from "./platform";
+import { isNativePlatform } from "./platform";
 
 const DAILY_REFLECTION_NOTIFICATION_ID = 1001;
 const DAILY_REFLECTION_NOTIFICATION_IDS = Array.from(
@@ -9,9 +9,6 @@ const DAILY_REFLECTION_NOTIFICATION_IDS = Array.from(
   (_, index) => DAILY_REFLECTION_NOTIFICATION_ID + index,
 );
 let pushListenerHandles: PluginListenerHandle[] = [];
-
-const EXACT_ALARM_PERMISSION_ERROR =
-  "Allow Android's ‘Alarms & reminders’ permission, then turn the daily reminder on again.";
 
 export const getDailyReflectionReminderId = (day: number) =>
   DAILY_REFLECTION_NOTIFICATION_ID + day - 1;
@@ -39,25 +36,6 @@ export async function requestLocalNotificationPermission() {
   return requested.display === "granted";
 }
 
-const hasExactAlarmPermission = async () => {
-  if (getNativePlatform() !== "android") return true;
-
-  const permission = await LocalNotifications.checkExactNotificationSetting();
-  return permission.exact_alarm === "granted";
-};
-
-const ensureExactAlarmPermission = async () => {
-  if (await hasExactAlarmPermission()) return;
-
-  // Android 12+ sends the user to the app's “Alarms & reminders” settings.
-  // Without this permission, recurring weekday alarms may be dropped or
-  // rescheduled as a Doze-delayed alarm that users never see on time.
-  const requested = await LocalNotifications.changeExactNotificationSetting();
-  if (requested.exact_alarm !== "granted") {
-    throw new Error(EXACT_ALARM_PERMISSION_ERROR);
-  }
-};
-
 export async function scheduleDailyReflectionReminder(hour = 8, minute = 0, days = [1, 2, 3, 4, 5, 6, 7]) {
   const normalizedDays = [...new Set(days)]
     .filter((day) => Number.isInteger(day) && day >= 1 && day <= 7)
@@ -68,8 +46,6 @@ export async function scheduleDailyReflectionReminder(hour = 8, minute = 0, days
   }
 
   if (!(await requestLocalNotificationPermission())) return false;
-  await ensureExactAlarmPermission();
-
   const notifications = normalizedDays.map((day) => ({
     id: getDailyReflectionReminderId(day),
     title: "Bible Nova Companion",
@@ -77,9 +53,6 @@ export async function scheduleDailyReflectionReminder(hour = 8, minute = 0, days
     schedule: {
       on: { weekday: day, hour, minute },
       repeats: true,
-      // Android otherwise defers scheduled work aggressively while a phone is
-      // idle. The plugin falls back safely when exact alarms are unavailable.
-      allowWhileIdle: true,
     },
   }));
 
@@ -116,19 +89,9 @@ export async function getDailyReflectionReminderStatus() {
   }
 
   const permission = await LocalNotifications.checkPermissions();
-  const exactAlarmGranted = await hasExactAlarmPermission();
   if (permission.display !== "granted") {
     return {
       permissionGranted: false,
-      exactAlarmGranted,
-      schedules: [] as DailyReflectionReminderSchedule[],
-    };
-  }
-
-  if (!exactAlarmGranted) {
-    return {
-      permissionGranted: true,
-      exactAlarmGranted: false,
       schedules: [] as DailyReflectionReminderSchedule[],
     };
   }
@@ -156,7 +119,7 @@ export async function getDailyReflectionReminderStatus() {
     .filter(({ day }) => day >= 1 && day <= 7)
     .sort((left, right) => left.day - right.day);
 
-  return { permissionGranted: true, exactAlarmGranted: true, schedules };
+  return { permissionGranted: true, schedules };
 }
 
 export async function registerForPushNotifications(onToken?: (token: string) => void) {

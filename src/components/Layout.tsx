@@ -193,13 +193,9 @@ export default function Layout() {
 
       if (wantsReminder) {
         const status = await platform.reminders.getStatus();
-        if (!status.permissionGranted || status.exactAlarmGranted === false) {
+        if (!status.permissionGranted) {
           if (showError) {
-            setNotificationError(
-              !status.permissionGranted
-                ? "Allow notification permission to use daily reminders."
-                : "Allow Android's ‘Alarms & reminders’ permission, then turn the daily reminder on again.",
-            );
+            setNotificationError("Allow notification permission to use daily reminders.");
           }
         } else {
           const scheduleMatches =

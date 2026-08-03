@@ -6,8 +6,6 @@ const localNotifications = vi.hoisted(() => ({
   schedule: vi.fn(),
   cancel: vi.fn(),
   getPending: vi.fn(),
-  checkExactNotificationSetting: vi.fn(),
-  changeExactNotificationSetting: vi.fn(),
 }));
 
 vi.mock("@capacitor/local-notifications", () => ({
@@ -46,8 +44,6 @@ describe("native daily reminder scheduling", () => {
     vi.clearAllMocks();
     localNotifications.checkPermissions.mockResolvedValue({ display: "granted" });
     localNotifications.requestPermissions.mockResolvedValue({ display: "granted" });
-    localNotifications.checkExactNotificationSetting.mockResolvedValue({ exact_alarm: "granted" });
-    localNotifications.changeExactNotificationSetting.mockResolvedValue({ exact_alarm: "granted" });
     localNotifications.schedule.mockResolvedValue({ notifications: [] });
     localNotifications.cancel.mockResolvedValue(undefined);
   });
@@ -68,7 +64,6 @@ describe("native daily reminder scheduling", () => {
           schedule: {
             on: { weekday: 2, hour: 7, minute: 30 },
             repeats: true,
-            allowWhileIdle: true,
           },
         }),
         expect.objectContaining({
@@ -76,7 +71,6 @@ describe("native daily reminder scheduling", () => {
           schedule: {
             on: { weekday: 6, hour: 7, minute: 30 },
             repeats: true,
-            allowWhileIdle: true,
           },
         }),
       ],
@@ -101,15 +95,12 @@ describe("native daily reminder scheduling", () => {
     expect(localNotifications.cancel).not.toHaveBeenCalled();
   });
 
-  it("opens Android alarm settings when exact alarms are disabled", async () => {
-    localNotifications.checkExactNotificationSetting.mockResolvedValue({ exact_alarm: "denied" });
-    localNotifications.changeExactNotificationSetting.mockResolvedValue({ exact_alarm: "denied" });
-
-    await expect(scheduleDailyReflectionReminder(8, 0, [1])).rejects.toThrow(
-      "Alarms & reminders",
-    );
-    expect(localNotifications.changeExactNotificationSetting).toHaveBeenCalledTimes(1);
-    expect(localNotifications.schedule).not.toHaveBeenCalled();
+  it("schedules reminders without Android exact-alarm access", async () => {
+    localNotifications.getPending.mockResolvedValue({
+      notifications: [{ id: 1001, schedule: { on: { weekday: 1, hour: 8, minute: 0 } } }],
+    });
+    await expect(scheduleDailyReflectionReminder(8, 0, [1])).resolves.toBe(true);
+    expect(localNotifications.schedule).toHaveBeenCalledTimes(1);
   });
 
   it("reads the actual pending weekday, time, and permission state", async () => {
@@ -122,7 +113,6 @@ describe("native daily reminder scheduling", () => {
 
     await expect(getDailyReflectionReminderStatus()).resolves.toEqual({
       permissionGranted: true,
-      exactAlarmGranted: true,
       schedules: [{ id: 1001, day: 4, hour: 19, minute: 15 }],
     });
   });
