@@ -52,6 +52,19 @@ describe("AuthoritativeAuthGuard", () => {
     expect(markup).not.toContain("Membership check");
   });
 
+  it("keeps a completed inactive user on Paywall instead of redirecting in a loop", () => {
+    authState.value = { user: { id: "new-user" }, isLoading: false, hasCompletedOnboarding: true };
+    const markup = renderToStaticMarkup(
+      <MemoryRouter initialEntries={["/paywall"]}>
+        <AuthoritativeAuthGuard>
+          <div data-screen="paywall">Paywall screen</div>
+        </AuthoritativeAuthGuard>
+      </MemoryRouter>,
+    );
+
+    expect(markup).toContain("Paywall screen");
+  });
+
   it("shows Update Required when the installed bridge is older than the hosted UI minimum", () => {
     const markup = renderToStaticMarkup(
       <NativeRuntimeGate

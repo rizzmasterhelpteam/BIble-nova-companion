@@ -70,7 +70,10 @@ export const AuthoritativeAuthGuard = ({ children }: { children: React.ReactNode
   if (!snapshot.active && snapshot.state === "inactive" && location.pathname !== "/paywall") {
     return <Navigate to="/paywall" replace />;
   }
-  if (hasCompletedOnboarding && (location.pathname === "/onboarding" || location.pathname === "/paywall")) {
+  // An inactive member must stay on Paywall. Redirecting Paywall back to Home
+  // here creates a Home -> Paywall -> Home loop that can render as a blank
+  // WebView after onboarding.
+  if (snapshot.active && hasCompletedOnboarding && (location.pathname === "/onboarding" || location.pathname === "/paywall")) {
     return <Navigate to="/" replace />;
   }
   return <>{children}</>;
