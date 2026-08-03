@@ -73,6 +73,11 @@ describe("Voice mode interface", () => {
     expect(voiceSessionSource).toContain('availability.reason === "reservation_resume"');
   });
 
+  it("uses bounded reconnects instead of immediately releasing a transient initial connection failure", () => {
+    expect(voiceHookSource).toContain('setError("Voice is reconnecting…")');
+    expect(voiceHookSource).toContain("scheduleReconnect();");
+  });
+
   it("repairs native premium access only after eligibility rejects it", () => {
     const eligibilityIndex = voiceHookSource.indexOf("let response = await requestSession();");
     const repairIndex = voiceHookSource.indexOf("refreshNativeSubscriptionEntitlement");

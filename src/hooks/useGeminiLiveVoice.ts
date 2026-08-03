@@ -816,6 +816,22 @@ export function useGeminiLiveVoice(options: Options) {
         const known = caught as Error & { reason?: VoiceErrorCode; retryAfterSeconds?: number | null };
         const fallback = safeError(caught);
         const code = known.reason || fallback.code;
+        // A first Gemini WebSocket failure can be transient on Android WebView.
+        // Keep the valid reservation and use the bounded reconnect path, which
+        // mints a fresh ephemeral token instead of immediately ending Voice.
+        if (
+          code === "connection_failed" &&
+          reservationRef.current &&
+          activeRef.current &&
+          appActiveRef.current &&
+          !intentionalStopRef.current
+        ) {
+          setError("Voice is reconnecting…");
+          setErrorCode("connection_failed");
+          transition("reconnecting");
+          scheduleReconnect();
+          return;
+        }
         setError(known.message || fallback.message);
         setErrorCode(code);
         if (known.retryAfterSeconds) setRetryUntil(Date.now() + known.retryAfterSeconds * 1_000);
@@ -827,7 +843,7 @@ export function useGeminiLiveVoice(options: Options) {
     })().finally(() => { startingRef.current = null; });
     startingRef.current = operation;
     return operation;
-  }, [apiStatusConnectionError, closeAudioContext, liveReady, onReservationChange, primeAudioForUserGesture, provisionAndConnect, refreshIdleTimeout, releaseReservation, stop, stopMicrophone, transition, userId]);
+  }, [apiStatusConnectionError, closeAudioContext, liveReady, onReservationChange, primeAudioForUserGesture, provisionAndConnect, refreshIdleTimeout, releaseReservation, scheduleReconnect, stop, stopMicrophone, transition, userId]);
 
   const toggleMute = useCallback(() => {
     const next = !mutedRef.current;
