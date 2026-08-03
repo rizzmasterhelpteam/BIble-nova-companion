@@ -43,6 +43,14 @@ describe("Voice mode interface", () => {
     expect(voiceOrbSource).toContain('thinking: "reflecting"');
   });
 
+  it("keeps live Voice status and controls in fixed positions between states", () => {
+    expect(voiceModeSource).not.toContain("key={live.state}");
+    expect(voiceModeSource).toContain('min-h-[9.5rem]');
+    expect(voiceModeSource).toContain('"grid w-full grid-cols-3 gap-2"');
+    expect(voiceModeSource).toContain('<span aria-hidden="true" />');
+    expect(appStylesSource).toContain("voice-orb--performance .voice-assistant-ripple");
+  });
+
   it("limits audio feedback work on performance-mode devices", () => {
     expect(voiceModeSource).toContain("enableInputLevel: !isPerformanceMode");
     expect(voiceHookSource).toContain("INPUT_LEVEL_UPDATE_INTERVAL_MS = 90");
