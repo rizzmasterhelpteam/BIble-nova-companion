@@ -21,8 +21,6 @@ import {
   ChevronRight,
   Vibrate,
   VibrateOff,
-  BellRing,
-  BellOff,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useTheme } from "../context/ThemeContext";
@@ -31,32 +29,14 @@ import { useHaptics } from "../context/HapticsContext";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { useVoiceSession } from "../context/VoiceSessionContext";
 import { getNativePlatform, getPlatformAdapter } from "../lib/native/platform";
-import { nativeStorage } from "../lib/native/storage";
 import { cn } from "../lib/utils";
 import { shouldHideBottomNavigation } from "../lib/mobileLayout";
 import RouteContentFallback from "./RouteContentFallback";
 import ProfileCapacityCard from "./ProfileCapacityCard";
 import {
-  DEFAULT_REMINDER_DAYS,
-  DEFAULT_REMINDER_TIME,
-  normalizeReminderDays,
-  normalizeReminderTime,
-  parseReminderTime,
-  parseStoredReminderDays,
+  AUTOMATIC_REMINDER_DAYS,
+  getAutomaticReminderTime,
 } from "../lib/dailyReminderPreferences";
-
-const DAILY_REMINDER_STORAGE_KEY = "bible-nova-companion-daily-reminders";
-const REMINDER_TIME_STORAGE_KEY = "bible-nova-companion-reminder-time";
-const REMINDER_DAYS_STORAGE_KEY = "bible-nova-companion-reminder-days";
-const REMINDER_DAY_OPTIONS = [
-  { id: 1, label: "S", name: "Sunday" },
-  { id: 2, label: "M", name: "Monday" },
-  { id: 3, label: "T", name: "Tuesday" },
-  { id: 4, label: "W", name: "Wednesday" },
-  { id: 5, label: "T", name: "Thursday" },
-  { id: 6, label: "F", name: "Friday" },
-  { id: 7, label: "S", name: "Saturday" },
-];
 
 const makeAvatarDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -128,18 +108,11 @@ export default function Layout() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
-  const [dailyRemindersEnabled, setDailyRemindersEnabled] = useState(false);
-  const [reminderTime, setReminderTime] = useState(DEFAULT_REMINDER_TIME);
-  const [reminderDays, setReminderDays] = useState<number[]>([...DEFAULT_REMINDER_DAYS]);
-  const [reminderPreferencesReady, setReminderPreferencesReady] = useState(false);
-  const [isUpdatingReminder, setIsUpdatingReminder] = useState(false);
-  const [notificationError, setNotificationError] = useState<string | null>(null);
   const [memoryPreferenceError, setMemoryPreferenceError] = useState<string | null>(null);
   const settingsDialogRef = React.useRef<HTMLDivElement>(null);
   const settingsTriggerRef = React.useRef<HTMLButtonElement>(null);
-  const settingsOpenRef = React.useRef(settingsOpen);
-  const reminderOperationInFlightRef = React.useRef(false);
-  settingsOpenRef.current = settingsOpen;
+  const automaticReminderUserRef = React.useRef<string | null>(null);
+  const automaticReminderInFlightRef = React.useRef(false);
   const prefersReducedMotion = useReducedMotion();
   const displayName = profileName || user?.email?.split("@")[0] || "Unknown";
   const accountInitial = displayName.trim().charAt(0).toUpperCase() || "?";
@@ -172,183 +145,35 @@ export default function Layout() {
     }
   }, [platform.isNative, resetKeyboardState]);
 
-  const reconcileDailyReminderPreferences = React.useCallback(async (showError: boolean) => {
-    if (!nativeControlsAvailable || reminderOperationInFlightRef.current) return;
+  const ensureAutomaticDailyReminder = React.useCallback(async () => {
+    const userId = user?.id;
+    if (
+      !nativeControlsAvailable ||
+      !userId ||
+      automaticReminderUserRef.current === userId ||
+      automaticReminderInFlightRef.current
+    ) return;
 
-    reminderOperationInFlightRef.current = true;
-    setIsUpdatingReminder(true);
-    if (showError) setNotificationError(null);
-
+    automaticReminderInFlightRef.current = true;
+    const { hour, minute } = getAutomaticReminderTime(userId);
     try {
-      const [enabledValue, storedTime, storedDays] = await Promise.all([
-        nativeStorage.get(DAILY_REMINDER_STORAGE_KEY),
-        nativeStorage.get(REMINDER_TIME_STORAGE_KEY),
-        nativeStorage.get(REMINDER_DAYS_STORAGE_KEY),
-      ]);
-      const normalizedTime = normalizeReminderTime(storedTime);
-      const normalizedDays = parseStoredReminderDays(storedDays);
-      const { hour, minute } = parseReminderTime(normalizedTime);
-      const wantsReminder = enabledValue === "true";
-      let enabled = false;
-
-      if (wantsReminder) {
-        const status = await platform.reminders.getStatus();
-        if (!status.permissionGranted || status.exactAlarmGranted === false) {
-          if (showError) {
-            setNotificationError(
-              !status.permissionGranted
-                ? "Allow notification permission to use daily reminders."
-                : "Allow Android's ‘Alarms & reminders’ permission, then turn the daily reminder on again.",
-            );
-          }
-        } else {
-          const scheduleMatches =
-            status.schedules.length === normalizedDays.length &&
-            normalizedDays.every((day) =>
-              status.schedules.some(
-                (schedule) =>
-                  schedule.id === platform.reminders.getId(day) &&
-                  schedule.day === day &&
-                  schedule.hour === hour &&
-                  schedule.minute === minute,
-              ),
-            );
-
-          if (!scheduleMatches) {
-            enabled = await platform.reminders.schedule({ hour, minute, days: normalizedDays });
-            if (!enabled && showError) {
-              setNotificationError("Android could not restore the daily reminder.");
-            }
-          } else {
-            enabled = true;
-          }
-        }
-      }
-
-      await Promise.all([
-        nativeStorage.set(REMINDER_TIME_STORAGE_KEY, normalizedTime),
-        nativeStorage.set(REMINDER_DAYS_STORAGE_KEY, JSON.stringify(normalizedDays)),
-      ]);
-      setDailyRemindersEnabled(enabled);
-      setReminderTime(normalizedTime);
-      setReminderDays(normalizedDays);
+      const scheduled = await platform.reminders.schedule({
+        hour,
+        minute,
+        days: AUTOMATIC_REMINDER_DAYS,
+        notificationSeed: userId,
+      });
+      if (scheduled) automaticReminderUserRef.current = userId;
     } catch (error) {
-      if (showError) {
-        setNotificationError(
-          error instanceof Error ? error.message : "Could not refresh daily reminders.",
-        );
-      }
+      console.warn("Automatic daily reminder could not be scheduled:", error);
     } finally {
-      reminderOperationInFlightRef.current = false;
-      setIsUpdatingReminder(false);
-      setReminderPreferencesReady(true);
+      automaticReminderInFlightRef.current = false;
     }
-  }, [nativeControlsAvailable, platform]);
+  }, [nativeControlsAvailable, platform, user?.id]);
 
   useEffect(() => {
-    void reconcileDailyReminderPreferences(false);
-  }, [reconcileDailyReminderPreferences]);
-
-  useEffect(() => {
-    if (!nativeControlsAvailable) return;
-    return platform.appState.subscribe(({ active }) => {
-      if (active) void reconcileDailyReminderPreferences(settingsOpenRef.current);
-    });
-  }, [nativeControlsAvailable, platform, reconcileDailyReminderPreferences]);
-
-  useEffect(() => {
-    if (settingsOpen) void reconcileDailyReminderPreferences(true);
-  }, [reconcileDailyReminderPreferences, settingsOpen]);
-
-  const handleDailyReminderToggle = async () => {
-    if (!reminderPreferencesReady || reminderOperationInFlightRef.current) return;
-    reminderOperationInFlightRef.current = true;
-    setIsUpdatingReminder(true);
-    setNotificationError(null);
-    const next = !dailyRemindersEnabled;
-
-    try {
-      if (next) {
-        const nextDays = reminderDays.length ? reminderDays : [...DEFAULT_REMINDER_DAYS];
-        const nextTime = normalizeReminderTime(reminderTime);
-        const { hour, minute } = parseReminderTime(nextTime);
-        const scheduled = await platform.reminders.schedule({ hour, minute, days: nextDays });
-        if (!scheduled) {
-          throw new Error("Allow notifications to turn on daily reminders.");
-        }
-        await Promise.all([
-          nativeStorage.set(DAILY_REMINDER_STORAGE_KEY, "true"),
-          nativeStorage.set(REMINDER_TIME_STORAGE_KEY, nextTime),
-          nativeStorage.set(REMINDER_DAYS_STORAGE_KEY, JSON.stringify(nextDays)),
-        ]);
-        setReminderTime(nextTime);
-        setReminderDays(nextDays);
-      } else {
-        await platform.reminders.cancel();
-        await nativeStorage.set(DAILY_REMINDER_STORAGE_KEY, "false");
-      }
-
-      setDailyRemindersEnabled(next);
-    } catch (error) {
-      setNotificationError(error instanceof Error ? error.message : "Could not update reminders.");
-    } finally {
-      reminderOperationInFlightRef.current = false;
-      setIsUpdatingReminder(false);
-    }
-  };
-
-  const handleTimeChange = async (newTime: string) => {
-    if (reminderOperationInFlightRef.current) return;
-    if (normalizeReminderTime(newTime) !== newTime) {
-      setNotificationError("Choose a valid reminder time.");
-      return;
-    }
-
-    reminderOperationInFlightRef.current = true;
-    setIsUpdatingReminder(true);
-    setNotificationError(null);
-    try {
-      if (dailyRemindersEnabled) {
-        const { hour, minute } = parseReminderTime(newTime);
-        const scheduled = await platform.reminders.schedule({ hour, minute, days: reminderDays });
-        if (!scheduled) throw new Error("Could not reschedule reminders.");
-      }
-      await nativeStorage.set(REMINDER_TIME_STORAGE_KEY, newTime);
-      setReminderTime(newTime);
-    } catch (error) {
-      setNotificationError(error instanceof Error ? error.message : "Could not update reminder time.");
-    } finally {
-      reminderOperationInFlightRef.current = false;
-      setIsUpdatingReminder(false);
-    }
-  };
-
-  const handleDaysChange = async (newDays: number[]) => {
-    if (reminderOperationInFlightRef.current) return;
-    setNotificationError(null);
-    const normalizedDays = normalizeReminderDays(newDays);
-    if (normalizedDays.length === 0) {
-      setNotificationError("Keep at least one reminder day selected.");
-      return;
-    }
-
-    reminderOperationInFlightRef.current = true;
-    setIsUpdatingReminder(true);
-    try {
-      if (dailyRemindersEnabled) {
-        const { hour, minute } = parseReminderTime(reminderTime);
-        const scheduled = await platform.reminders.schedule({ hour, minute, days: normalizedDays });
-        if (!scheduled) throw new Error("Could not reschedule reminders.");
-      }
-      await nativeStorage.set(REMINDER_DAYS_STORAGE_KEY, JSON.stringify(normalizedDays));
-      setReminderDays(normalizedDays);
-    } catch (error) {
-      setNotificationError(error instanceof Error ? error.message : "Could not update reminder days.");
-    } finally {
-      reminderOperationInFlightRef.current = false;
-      setIsUpdatingReminder(false);
-    }
-  };
+    void ensureAutomaticDailyReminder();
+  }, [ensureAutomaticDailyReminder]);
 
   const handleMemoryPreferenceToggle = async () => {
     if (memoryPreferenceLoading) return;
@@ -477,7 +302,6 @@ export default function Layout() {
     setDeleteConfirmOpen(false);
     setDeleteError(null);
     setIsDeletingAccount(false);
-    setNotificationError(null);
     setMemoryPreferenceError(null);
   }, [settingsOpen]);
 
@@ -708,110 +532,6 @@ export default function Layout() {
                       </span>
                     </button>
 
-                    {nativeControlsAvailable && (
-                      <div className="mt-3 space-y-3">
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={dailyRemindersEnabled}
-                          aria-busy={isUpdatingReminder}
-                          onClick={handleDailyReminderToggle}
-                          disabled={!reminderPreferencesReady || isUpdatingReminder}
-                          className="flex w-full items-center justify-between rounded-[1.4rem] border px-4 py-3.5 text-left transition-colors hover:bg-[color:var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-wait disabled:opacity-60"
-                          style={{
-                            background: "var(--app-card-soft)",
-                            borderColor: "var(--app-card-border)",
-                          }}
-                        >
-                          <span className="flex items-center gap-3">
-                            <span className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: "var(--app-accent-soft)", color: "var(--app-accent)" }}>
-                              {dailyRemindersEnabled ? <BellRing className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
-                            </span>
-                            <span>
-                              <span className="app-heading block text-[14px] font-medium">Daily reminder</span>
-                              <span className="app-muted block text-[11px]">A quiet reflection prompt.</span>
-                            </span>
-                          </span>
-                          <span
-                            className="relative h-6 w-11 rounded-full border transition-colors"
-                            style={{
-                              background: dailyRemindersEnabled ? "var(--app-accent)" : "var(--app-secondary-bg)",
-                              borderColor: dailyRemindersEnabled ? "var(--app-accent)" : "var(--app-secondary-border)",
-                            }}
-                          >
-                            <span className="absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white transition-transform" style={{ left: dailyRemindersEnabled ? "1.45rem" : "0.2rem" }} />
-                          </span>
-                        </button>
-
-                        <AnimatePresence>
-                          {dailyRemindersEnabled && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: "auto", opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="overflow-hidden"
-                            >
-                              <div
-                                className="flex flex-col gap-3 rounded-[1.4rem] border px-4 py-3.5 mt-2"
-                                style={{
-                                  background: "var(--app-card-soft)",
-                                  borderColor: "var(--app-card-border)",
-                                }}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="app-heading block text-[13px] font-medium">Time</span>
-                                  <input
-                                    type="time"
-                                    value={reminderTime}
-                                    onChange={(e) => void handleTimeChange(e.target.value)}
-                                    disabled={isUpdatingReminder}
-                                    aria-label="Daily reminder time"
-                                    className="rounded-lg border px-2 py-1 text-[13px] app-heading focus-visible:outline-none disabled:opacity-60"
-                                    style={{
-                                      background: "var(--app-secondary-bg)",
-                                      borderColor: "var(--app-secondary-border)",
-                                    }}
-                                  />
-                                </div>
-                                <div className="h-px w-full bg-[color:var(--app-divider)]" />
-                                <div className="flex justify-between gap-1">
-                                  {REMINDER_DAY_OPTIONS.map((day) => {
-                                    const isSelected = reminderDays.includes(day.id);
-                                    return (
-                                      <button
-                                        key={day.id}
-                                        type="button"
-                                        aria-label={`${day.name} reminder`}
-                                        aria-pressed={isSelected}
-                                        disabled={isUpdatingReminder}
-                                        onClick={() => {
-                                          const newDays = isSelected
-                                            ? reminderDays.filter((d) => d !== day.id)
-                                            : [...reminderDays, day.id].sort();
-                                          void handleDaysChange(newDays);
-                                        }}
-                                        className="flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:opacity-60"
-                                        style={{
-                                          background: isSelected ? "var(--app-accent)" : "var(--app-secondary-bg)",
-                                          color: isSelected ? "white" : "var(--app-text-muted)",
-                                        }}
-                                      >
-                                        {day.label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                        {notificationError && (
-                          <p role="alert" className="rounded-xl px-3 py-2 text-[12px] leading-relaxed text-[color:var(--app-danger)]" style={{ background: "var(--app-danger-soft)" }}>
-                            {notificationError}
-                          </p>
-                        )}
-                      </div>
-                    )}
                   </section>
 
                   <section>

@@ -8,9 +8,9 @@ const getNetworkStatus = async (): Promise<NetworkStatus> => {
   return { connected: status.connected, connectionType: status.connectionType };
 };
 
-const scheduleReminder = async ({ hour, minute, days }: ReminderSchedule) => {
+const scheduleReminder = async ({ hour, minute, days, notificationSeed }: ReminderSchedule) => {
   const { scheduleDailyReflectionReminder } = await import("../lib/native/notifications");
-  return scheduleDailyReflectionReminder(hour, minute, days);
+  return scheduleDailyReflectionReminder(hour, minute, days, notificationSeed);
 };
 
 const cancelReminder = async () => {

@@ -1113,6 +1113,16 @@
     box-shadow: none;
   }
 
+  /* Android WebViews can struggle to composite several animated shadows and
+     ripples while Gemini playback is decoding. Keep the state colours, but
+     make the performance-mode orb a stable visual so the surrounding controls
+     never hitch during a spoken response. */
+  .voice-page .voice-orb--performance .voice-listening-ring,
+  .voice-page .voice-orb--performance .voice-assistant-ripple,
+  .voice-page .voice-orb--performance .voice-orb-core {
+    animation: none !important;
+  }
+
   @keyframes voice-listening-ripple {
     0% {
       opacity: 0;

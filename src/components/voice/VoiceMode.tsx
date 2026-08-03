@@ -11,7 +11,6 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { motion } from "motion/react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../lib/apiClient";
 import { getPlatformAdapter } from "../../lib/native/platform";
@@ -416,22 +415,14 @@ export default function VoiceMode({
                 className="mb-5"
               />
 
-              <motion.div
-                key={live.state}
-                className="voice-status-copy flex flex-col items-center"
-                initial={isPerformanceMode ? false : { opacity: 0, y: 5 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={isPerformanceMode
-                  ? { duration: 0 }
-                  : { duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              >
-                <h2 className="voice-state-title app-heading max-w-[20ch] font-serif text-[clamp(2rem,10vw,2.375rem)] font-semibold leading-tight tracking-[-0.02em] sm:text-[48px]">
+              <div className="voice-status-copy flex min-h-[9.5rem] w-full flex-col items-center">
+                <h2 className="voice-state-title app-heading min-h-[2.5em] max-w-[20ch] font-serif text-[clamp(2rem,10vw,2.375rem)] font-semibold leading-tight tracking-[-0.02em] sm:text-[48px]">
                   {STATE_HEADLINES[live.state]}
                 </h2>
-                <p className="voice-state-description app-muted mt-2 max-w-md text-[15px] leading-relaxed sm:text-[17px]">
+                <p className="voice-state-description app-muted mt-2 min-h-[4.5rem] max-w-md text-[15px] leading-relaxed sm:min-h-[3.5rem] sm:text-[17px]">
                   {STATE_DESCRIPTIONS[live.state]}
                 </p>
-              </motion.div>
+              </div>
 
             </div>
           </div>
@@ -509,12 +500,7 @@ export default function VoiceMode({
               </div>
             ) : canControlMicrophone ? (
               <div className={cn(
-                "grid w-full gap-2",
-                live.state === "assistant-speaking" ||
-                  live.state === "listening" ||
-                  live.state === "user-speaking"
-                  ? "grid-cols-3"
-                  : "grid-cols-2",
+                "grid w-full grid-cols-3 gap-2",
               )}>
                 <button
                   type="button"
@@ -548,7 +534,7 @@ export default function VoiceMode({
                     <Send className="h-4 w-4" />
                     <span>Done speaking</span>
                   </button>
-                ) : null}
+                ) : <span aria-hidden="true" />}
                 <button
                   type="button"
                   onClick={() => void handleEnd()}

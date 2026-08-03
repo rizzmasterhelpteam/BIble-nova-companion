@@ -17,9 +17,15 @@
   </head>
   <body>
     <main role="alert">
-      <h1>Your reflection space is offline.</h1>
-      <p>Reconnect to the internet and try again. Your account data has not been changed.</p>
+      <h1 id="title">Bible Nova could not start.</h1>
+      <p id="message">The app bundle could not be loaded. Retry to start again.</p>
       <button type="button" onclick="window.location.replace('https://biblecompanion.vercel.app/?nativeRetry=' + Date.now())">Retry</button>
     </main>
+    <script>
+      if (navigator.onLine === false) {
+        document.getElementById("title").textContent = "No internet connection";
+        document.getElementById("message").textContent = "Reconnect to the internet, then tap Retry. Your account data has not been changed.";
+      }
+    </script>
   </body>
 </html>

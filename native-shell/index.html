@@ -18,15 +18,27 @@
     </style>
   </head>
   <body>
-    <main role="status" aria-live="polite">
+    <main id="startup" role="status" aria-live="polite">
       <img src="app-icon.png" alt="" />
-      <h1>Opening your reflection space</h1>
-      <p>Connecting securely to Bible Nova Companion…</p>
+      <h1 id="title">Opening your reflection space</h1>
+      <p id="message">Connecting securely to Bible Nova Companion…</p>
       <p class="status" id="diagnostics">Native shell ready.</p>
       <button type="button" onclick="window.location.reload()">Retry</button>
     </main>
     <script>
-      if (window.Capacitor) document.getElementById("diagnostics").textContent = "Secure native bridge ready.";
+      const startup = document.getElementById("startup");
+      const title = document.getElementById("title");
+      const message = document.getElementById("message");
+      const diagnostics = document.getElementById("diagnostics");
+
+      if (navigator.onLine === false) {
+        startup.setAttribute("role", "alert");
+        title.textContent = "No internet connection";
+        message.textContent = "Bible Nova needs an internet connection to open your reflection space.";
+        diagnostics.textContent = "Reconnect, then tap Retry.";
+      } else if (window.Capacitor) {
+        diagnostics.textContent = "Secure native bridge ready.";
+      }
     </script>
   </body>
 </html>
