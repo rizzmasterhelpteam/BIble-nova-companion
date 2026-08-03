@@ -167,7 +167,6 @@ export default function ProfileCapacityCard({
   const usagePercent = usage
     ? Math.min(100, Math.round((usage.monthlyUsedMinutes / Math.max(1, usage.monthlyLimitMinutes)) * 100))
     : 0;
-  const resetLabel = formatResetDate(usage?.monthlyResetAt || null);
   const membershipExpiryLabel = formatResetDate(snapshot.expiresAt);
   const verifiedLabel = formatVerifiedTime(snapshot.verifiedAt);
   const voiceValue = isLoading
@@ -307,7 +306,11 @@ export default function ProfileCapacityCard({
                 <span className="app-muted text-right">{voiceMeta}</span>
               </div>
               <p className="app-muted mt-2 text-[10px]">
-                {resetLabel ? `Resets ${resetLabel}` : error ? "Could not refresh usage right now." : hasVerifiedVoiceAccess ? "Usage refreshes when this panel opens." : "Voice is included with Premium."}
+                {error
+                  ? "Could not refresh usage right now."
+                  : hasVerifiedVoiceAccess
+                    ? "Renews with your next Premium billing cycle."
+                    : "Voice is included with Premium."}
               </p>
             </div>
           </div>
