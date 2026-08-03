@@ -18,23 +18,24 @@ vi.mock("../src/lib/native/platform", () => ({
 
 import {
   cancelDailyReflectionReminder,
+  DAILY_REFLECTION_NOTIFICATION_MESSAGES,
   getDailyReflectionReminderStatus,
+  getDailyReflectionNotificationMessage,
   scheduleDailyReflectionReminder,
 } from "../src/lib/native/notifications";
 import {
-  DEFAULT_REMINDER_DAYS,
-  DEFAULT_REMINDER_TIME,
+  AUTOMATIC_REMINDER_DAYS,
+  getAutomaticReminderTime,
   normalizeReminderDays,
-  normalizeReminderTime,
-  parseStoredReminderDays,
 } from "../src/lib/dailyReminderPreferences";
 
 describe("daily reminder preferences", () => {
-  it("recovers invalid, empty, and malformed stored values", () => {
-    expect(normalizeReminderTime("25:72")).toBe(DEFAULT_REMINDER_TIME);
-    expect(normalizeReminderTime("07:30")).toBe("07:30");
-    expect(parseStoredReminderDays("[]")).toEqual(DEFAULT_REMINDER_DAYS);
-    expect(parseStoredReminderDays("not-json")).toEqual(DEFAULT_REMINDER_DAYS);
+  it("uses all days and gives each account a stable evening time", () => {
+    expect(AUTOMATIC_REMINDER_DAYS).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(getAutomaticReminderTime("user-a")).toEqual(getAutomaticReminderTime("user-a"));
+    expect(getAutomaticReminderTime("user-a").hour).toBeGreaterThanOrEqual(18);
+    expect(getAutomaticReminderTime("user-a").hour).toBeLessThanOrEqual(21);
+    expect([0, 15, 30, 45]).toContain(getAutomaticReminderTime("user-a").minute);
     expect(normalizeReminderDays([7, 2, 2, 0, 8, "3"])).toEqual([2, 7]);
   });
 });
@@ -84,6 +85,19 @@ describe("native daily reminder scheduling", () => {
         { id: 1007 },
       ],
     });
+  });
+
+  it("uses one of ten varied messages for each scheduled day", async () => {
+    localNotifications.getPending.mockResolvedValue({
+      notifications: [{ id: 1001, schedule: { on: { weekday: 1, hour: 19, minute: 0 } } }],
+    });
+
+    await expect(scheduleDailyReflectionReminder(19, 0, [1], "user-a")).resolves.toBe(true);
+    const scheduledBody = localNotifications.schedule.mock.calls[0][0].notifications[0].body;
+
+    expect(DAILY_REFLECTION_NOTIFICATION_MESSAGES).toHaveLength(10);
+    expect(scheduledBody).toBe(getDailyReflectionNotificationMessage("user-a", 1));
+    expect(DAILY_REFLECTION_NOTIFICATION_MESSAGES).toContain(scheduledBody);
   });
 
   it("does not modify schedules when notification permission is denied", async () => {

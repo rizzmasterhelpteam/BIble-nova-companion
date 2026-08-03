@@ -27,6 +27,7 @@ export type ReminderSchedule = {
   hour: number;
   minute: number;
   days: number[];
+  notificationSeed?: string;
 };
 
 export type ReminderStatus = {
