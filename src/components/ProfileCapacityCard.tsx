@@ -184,8 +184,8 @@ export default function ProfileCapacityCard({
         ? "Usage unavailable"
         : `${limits.monthlyMinutes} min/month on Premium`;
   const voiceMeta = usage
-    ? `Max session: ${limits.maxSessionMinutes} min`
-    : `Max session: ${limits.maxSessionMinutes} min · Daily: ${limits.dailyMinutes} min`;
+    ? `Max time per session: ${limits.maxSessionMinutes} min`
+    : `Max time per session: ${limits.maxSessionMinutes} min · Daily: ${limits.dailyMinutes} min`;
 
   const membershipBadgeClass = useMemo(
     () => hasActiveMembership

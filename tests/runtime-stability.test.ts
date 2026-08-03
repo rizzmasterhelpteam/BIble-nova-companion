@@ -37,4 +37,10 @@ describe("remote runtime stability contracts", () => {
     expect(profile).toContain("Renews with your next Premium billing cycle.");
     expect(profile).not.toContain("Resets ${resetLabel}");
   });
+
+  it("labels the Voice limit as time per session", () => {
+    const profile = read("src/components/ProfileCapacityCard.tsx");
+    expect(profile).toContain("Max time per session:");
+    expect(profile).not.toContain("Max session:");
+  });
 });
