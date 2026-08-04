@@ -633,7 +633,6 @@ export default function Paywall() {
             variants={isPerformanceMode ? undefined : itemVariants}
             className="mt-8 flex flex-col items-center gap-2"
           >
-            <p className="app-muted text-center text-xs">Signed into the wrong account?</p>
             <button
               type="button"
               onClick={handleSignOut}

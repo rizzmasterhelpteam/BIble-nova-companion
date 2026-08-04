@@ -11,7 +11,8 @@ describe("Paywall account escape hatch", () => {
     expect(paywallSource).toContain("logout");
     expect(paywallSource).toContain("await logout()");
     expect(paywallSource).toContain('navigate("/login", { replace: true })');
-    expect(paywallSource).toContain("Signed into the wrong account?");
+    expect(paywallSource).not.toContain("Signed into the wrong account?");
+    expect(paywallSource).toContain('"Sign out"');
   });
 
   it("explains the premium and Voice allowance clearly", () => {
