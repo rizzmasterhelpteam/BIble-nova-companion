@@ -17,7 +17,11 @@ describe("deep production hardening contracts", () => {
     expect(read("api/status.ts")).toContain("requireAuthenticatedRequest");
     expect(read("api/subscription/[action].ts")).toContain('action === "native-sync"');
     expect(read("api/subscription/[action].ts")).toContain("getSubscriptionAccessStatus");
-    expect(read("vercel.json")).toContain('"destination": "/api/status?mode=ready"');
+    const vercelConfig = JSON.parse(read("vercel.json"));
+    expect(vercelConfig.rewrites).toContainEqual({
+      source: "/api/status/ready",
+      destination: "/api/status?mode=ready",
+    });
   });
 
   it("does not auto-schedule reminders from the app shell", () => {
