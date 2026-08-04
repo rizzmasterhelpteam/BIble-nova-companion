@@ -18,14 +18,14 @@ vi.mock("../server-security", () => ({
     message: error.message,
   }),
   getVoiceSessionAvailability,
-  getVoiceUsageLimits: () => ({ dailyMinutes: 60, monthlyMinutes: 180, resetOffsetMinutes: 330 }),
+  getVoiceUsageLimits: () => ({ dailyMinutes: 300, monthlyMinutes: 300, resetOffsetMinutes: 330 }),
   hashVoiceReservationHandle: (handle?: string) =>
     handle && handle.length >= 32 ? handle[0].repeat(64) : null,
   releaseVoiceSessionLease,
   requireAuthenticatedRequest,
 }));
 vi.mock("../voice-config", () => ({
-  getVoiceSessionConfig: () => ({ maxMinutes: 15, idleTimeoutSeconds: 45 }),
+  getVoiceSessionConfig: () => ({ maxMinutes: 30, idleTimeoutSeconds: 45 }),
 }));
 
 import voiceSessionHandler from "../api/voice/session";
@@ -79,9 +79,9 @@ describe("turn-based Voice session API", () => {
       retryAfterSeconds: null,
       canRenew: false,
       usage: {
-        monthlyLimitMinutes: 180,
+        monthlyLimitMinutes: 300,
         monthlyUsedMinutes: 15,
-        monthlyRemainingMinutes: 165,
+        monthlyRemainingMinutes: 285,
         monthlyResetAt: "2026-09-01T00:00:00.000Z",
       },
     });
@@ -92,14 +92,14 @@ describe("turn-based Voice session API", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject({
       eligible: true,
-      usage: { monthlyUsedMinutes: 15, monthlyRemainingMinutes: 165 },
-      limits: { maxSessionMinutes: 15, dailyMinutes: 60, monthlyMinutes: 180 },
+      usage: { monthlyUsedMinutes: 15, monthlyRemainingMinutes: 285 },
+      limits: { maxSessionMinutes: 30, dailyMinutes: 300, monthlyMinutes: 300 },
     });
     expect(getVoiceSessionAvailability).toHaveBeenCalledWith(
       "user-1",
-      15,
-      60,
-      180,
+      30,
+      300,
+      300,
       330,
       null,
     );
@@ -128,9 +128,9 @@ describe("turn-based Voice session API", () => {
       retryAfterSeconds: null,
       canRenew: false,
       usage: {
-        monthlyLimitMinutes: 180,
+        monthlyLimitMinutes: 300,
         monthlyUsedMinutes: 20,
-        monthlyRemainingMinutes: 160,
+        monthlyRemainingMinutes: 280,
         monthlyResetAt: "2026-08-01T00:00:00.000Z",
       },
     });
@@ -155,17 +155,17 @@ describe("turn-based Voice session API", () => {
     expect(releaseVoiceSessionLease).toHaveBeenCalledWith("user-1", "p".repeat(64));
     expect(getVoiceSessionAvailability).toHaveBeenCalledWith(
       "user-1",
-      15,
-      60,
-      180,
+      30,
+      300,
+      300,
       330,
       null,
     );
     expect(acquireVoiceSessionLease).toHaveBeenCalledWith(
       "user-1",
-      15,
-      60,
-      180,
+      30,
+      300,
+      300,
       330,
       "r".repeat(64),
     );
@@ -174,7 +174,7 @@ describe("turn-based Voice session API", () => {
       resumed: false,
       sessionMinutes: 10,
       idleTimeoutSeconds: 45,
-      usage: expect.objectContaining({ monthlyRemainingMinutes: 150 }),
+      usage: expect.objectContaining({ monthlyRemainingMinutes: 270 }),
     });
   });
 
@@ -201,9 +201,9 @@ describe("turn-based Voice session API", () => {
     expect(response.statusCode).toBe(200);
     expect(acquireVoiceSessionLease).toHaveBeenCalledWith(
       "user-1",
-      15,
-      60,
-      180,
+      30,
+      300,
+      300,
       330,
       "h".repeat(64),
     );
@@ -293,10 +293,10 @@ describe("turn-based Voice session API", () => {
       retryAfterSeconds: 86_400,
       canRenew: false,
       usage: {
-        monthlyLimitMinutes: 180,
-        monthlyUsedMinutes: 180,
+        monthlyLimitMinutes: 300,
+        monthlyUsedMinutes: 300,
         monthlyRemainingMinutes: 0,
-        monthlyResetAt: "2026-08-01T00:00:00.000Z",
+        monthlyResetAt: "2026-09-01T00:00:00.000Z",
       },
     });
     const response = createResponse();

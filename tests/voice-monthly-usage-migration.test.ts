@@ -15,6 +15,13 @@ const dailyCapRemovalSource = readFileSync(
   ),
   "utf8",
 );
+const billingCycleSource = readFileSync(
+  new URL(
+    "../supabase/migrations/20260804190000_increase_voice_allowance_and_anchor_billing_cycle.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 describe("monthly Voice usage migration", () => {
   it("enforces monthly reservations in both acquisition and availability RPCs", () => {
@@ -40,5 +47,14 @@ describe("monthly Voice usage migration", () => {
     expect(dailyCapRemovalSource).not.toContain("v_daily_used_minutes >= p_daily_minutes");
     expect(dailyCapRemovalSource).not.toContain("'daily_limit'::text");
     expect(dailyCapRemovalSource).toContain("p_daily_minutes not between p_max_minutes and 1440");
+  });
+
+  it("uses a 300-minute billing-cycle allowance and permits 30-minute sessions", () => {
+    expect(billingCycleSource).toContain("p_max_minutes not between 1 and 30");
+    expect(billingCycleSource).toContain("billing_cycle_start_at timestamptz");
+    expect(billingCycleSource).toContain("private.get_voice_billing_cycle_anchor(p_user_id)");
+    expect(billingCycleSource).toContain("v_cycle_reset_at");
+    expect(billingCycleSource).not.toContain("v_daily_used_minutes");
+    expect(billingCycleSource).not.toContain("'daily_limit'::text");
   });
 });

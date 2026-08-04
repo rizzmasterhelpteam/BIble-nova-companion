@@ -139,7 +139,6 @@ describe("server security", () => {
   it.each([
     ["Active premium subscription required", 403],
     ["Voice session already active", 409],
-    ["Daily voice allowance reached", 429],
     ["Monthly voice allowance reached", 429],
   ])("maps protected Voice lease rejection '%s' to HTTP %i", async (message, statusCode) => {
     rpcMock.mockResolvedValueOnce({ data: null, error: { message } });
@@ -188,19 +187,19 @@ describe("server security", () => {
     });
   });
 
-  it("removes the separate daily Voice cap while keeping monthly limits configurable", () => {
+  it("uses a fixed 300-minute billing-cycle allowance with no daily cap", () => {
     const previousMonthly = process.env.VOICE_MONTHLY_MAX_MINUTES;
     try {
       process.env.VOICE_MONTHLY_MAX_MINUTES = "180";
       expect(getVoiceUsageLimits(10)).toMatchObject({
-        dailyMinutes: 180,
-        monthlyMinutes: 180,
+        dailyMinutes: 300,
+        monthlyMinutes: 300,
       });
 
-      process.env.VOICE_MONTHLY_MAX_MINUTES = "5";
+      process.env.VOICE_MONTHLY_MAX_MINUTES = "420";
       expect(getVoiceUsageLimits(10)).toMatchObject({
-        dailyMinutes: 10,
-        monthlyMinutes: 10,
+        dailyMinutes: 300,
+        monthlyMinutes: 300,
       });
     } finally {
       if (previousMonthly === undefined) delete process.env.VOICE_MONTHLY_MAX_MINUTES;

@@ -60,7 +60,7 @@ Set these in Vercel for the environments you deploy to:
 - `GOOGLE_TTS_SERVICE_ACCOUNT_JSON` required server-only Google Cloud service-account JSON with Text-to-Speech access
 - `GOOGLE_TTS_LANGUAGE_CODE` optional language code; defaults to `en-AU`
 - `GOOGLE_TTS_VOICE_NAME` optional voice; defaults to `en-AU-Chirp3-HD-Algenib`
-- `VOICE_SESSION_MAX_MINUTES` optional voice-session limit from 1–15 minutes; defaults to `15`
+- `VOICE_SESSION_MAX_MINUTES` optional voice-session limit from 1–30 minutes; defaults to `30`
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` required server-only JSON credentials for verified Android subscriptions
 - `VITE_API_BASE_URL` required in native mobile builds, set to your Vercel site URL
 - Capacitor Android release builds package only the verified native shell and load the authenticated UI from the production Vercel URL. Set `CAPACITOR_LIVE_RELOAD=true` with a local URL for development only; production builds must not use Capacitor `server.url` to load a Preview origin. If Vercel is unavailable, the shell shows its retry/update surface; the complete app is not available offline.

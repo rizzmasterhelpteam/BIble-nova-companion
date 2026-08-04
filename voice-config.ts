@@ -1,12 +1,12 @@
-export const DEFAULT_VOICE_SESSION_MAX_MINUTES = 15;
+export const DEFAULT_VOICE_SESSION_MAX_MINUTES = 30;
 export const DEFAULT_VOICE_IDLE_TIMEOUT_SECONDS = 45;
 
 export const getVoiceSessionMaxMinutes = () => {
   const configured = Number(
     process.env.VOICE_SESSION_MAX_MINUTES || DEFAULT_VOICE_SESSION_MAX_MINUTES,
   );
-  return Number.isFinite(configured) && configured >= 1 && configured <= 15
-    ? Math.floor(configured)
+  return Number.isFinite(configured)
+    ? Math.max(DEFAULT_VOICE_SESSION_MAX_MINUTES, Math.min(30, Math.floor(configured)))
     : DEFAULT_VOICE_SESSION_MAX_MINUTES;
 };
 

@@ -179,6 +179,7 @@ type VerifiedGooglePlaySubscription = {
   offerId?: string;
   orderId?: string;
   expiryTime?: string;
+  billingCycleStartAt?: string;
   status: EntitlementState;
 };
 
@@ -279,6 +280,7 @@ const verifyGooglePlaySubscription = async (
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   const data = (await response.json().catch(() => ({}))) as {
+    startTime?: string;
     subscriptionState?: string;
     acknowledgementState?: string;
     lineItems?: Array<{
@@ -324,6 +326,11 @@ const verifyGooglePlaySubscription = async (
   const productId = lineItem.productId!;
   const expiryTime = lineItem?.expiryTime;
   const expiry = expiryTime ? Date.parse(expiryTime) : NaN;
+  const subscriptionStart = data.startTime ? Date.parse(data.startTime) : NaN;
+  const billingCycleStartAt = Number.isFinite(subscriptionStart)
+    && subscriptionStart <= Date.now() + 5 * 60 * 1_000
+    ? new Date(subscriptionStart).toISOString()
+    : undefined;
   const status = mapGooglePlaySubscriptionState(data.subscriptionState);
 
   if ((status === "active" || status === "grace_period" || status === "canceled") &&
@@ -388,6 +395,7 @@ const verifyGooglePlaySubscription = async (
     offerId: lineItem.offerDetails?.offerId,
     orderId: verifiedOrderId,
     expiryTime,
+    billingCycleStartAt,
     status,
   };
 };
@@ -1000,6 +1008,7 @@ export async function syncNativeSubscription(
       p_status: verifiedPurchase.status,
       p_expiry_time: verifiedPurchase.expiryTime,
       p_verified_at: linkedAt,
+      p_billing_cycle_start_at: verifiedPurchase.billingCycleStartAt || null,
     },
   );
 

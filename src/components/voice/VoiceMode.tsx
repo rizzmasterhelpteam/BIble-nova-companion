@@ -191,7 +191,6 @@ export default function VoiceMode({
     : 0;
   const cooldownActive =
     (live.errorCode === "session_active" ||
-      live.errorCode === "daily_limit" ||
       live.errorCode === "monthly_limit") &&
     cooldownSeconds > 0;
   const cooldownMinutes = Math.max(1, Math.ceil(cooldownSeconds / 60));

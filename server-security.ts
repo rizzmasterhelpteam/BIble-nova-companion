@@ -237,8 +237,8 @@ export const getSubscriptionAccessStatus = async (
 export const acquireVoiceSessionLease = async (
   userId: string,
   maxMinutes: number,
-  dailyMinutes = 20,
-  monthlyMinutes = 180,
+  dailyMinutes = 300,
+  monthlyMinutes = 300,
   resetOffsetMinutes = 330,
   handleHash = "",
 ) => {
@@ -259,9 +259,6 @@ export const acquireVoiceSessionLease = async (
     }
     if (message.includes("already active")) {
       throw new HttpError("A Voice session is already active for this account.", 409);
-    }
-    if (message.includes("daily voice allowance")) {
-      throw new HttpError("Your daily Voice allowance has been reached.", 429);
     }
     if (message.includes("monthly voice allowance")) {
       throw new HttpError("Your monthly Voice allowance has been reached.", 429);
@@ -296,11 +293,9 @@ export const hashVoiceReservationHandle = (handle: string | null | undefined) =>
 };
 
 export const getVoiceUsageLimits = (maxMinutes: number) => {
-  const configuredMonthlyMinutes = Number(process.env.VOICE_MONTHLY_MAX_MINUTES || 180);
+  const monthlyAllowanceMinutes = 300;
   const configuredOffset = Number(process.env.VOICE_DAILY_RESET_OFFSET_MINUTES || 330);
-  const monthlyMinutes = Number.isFinite(configuredMonthlyMinutes)
-    ? Math.max(maxMinutes, Math.min(1_440, Math.floor(configuredMonthlyMinutes)))
-    : Math.max(maxMinutes, 180);
+  const monthlyMinutes = Math.max(maxMinutes, monthlyAllowanceMinutes);
 
   // Keep the legacy RPC parameter populated, but mirror the monthly budget so
   // it cannot create a separate daily cap. The database migration ignores the
@@ -322,7 +317,6 @@ export type VoiceAvailability = {
     | "available"
     | "subscription_required"
     | "session_active"
-    | "daily_limit"
     | "monthly_limit"
     | "reservation_resume";
   retryAfterSeconds: number | null;

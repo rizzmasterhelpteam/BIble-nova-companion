@@ -55,7 +55,6 @@ const reasonForStatus = (statusCode: number, message: string) => {
   if (statusCode === 403) return "subscription_required";
   if (statusCode === 409) return "session_active";
   if (statusCode === 429 && message.toLowerCase().includes("monthly")) return "monthly_limit";
-  if (statusCode === 429 && message.toLowerCase().includes("daily")) return "daily_limit";
   return "connection_failed";
 };
 
@@ -313,19 +312,15 @@ export default async function handler(req: any, res: any) {
     }
 
     if (!availability.available) {
-      const usageLimitReached =
-        availability.reason === "daily_limit" || availability.reason === "monthly_limit";
+      const usageLimitReached = availability.reason === "monthly_limit";
       const status = usageLimitReached ? 429 : 409;
       if (availability.retryAfterSeconds) {
         res.setHeader?.("Retry-After", String(availability.retryAfterSeconds));
       }
       return res.status(status).json({
-        error:
-          availability.reason === "monthly_limit"
-            ? "Your monthly Voice allowance has been reached."
-            : availability.reason === "daily_limit"
-            ? "Your daily Voice allowance has been reached."
-            : "A Voice session is already active for this account.",
+        error: availability.reason === "monthly_limit"
+          ? "Your monthly Voice allowance has been reached."
+          : "A Voice session is already active for this account.",
         reason: availability.reason,
         retryAfterSeconds: availability.retryAfterSeconds,
         usage: availability.usage,

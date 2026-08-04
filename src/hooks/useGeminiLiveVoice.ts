@@ -38,7 +38,6 @@ export type VoiceStartMode = "fresh_start" | "recovery_resume";
 type VoiceErrorCode =
   | "subscription_required"
   | "session_active"
-  | "daily_limit"
   | "monthly_limit"
   | "recovery_unavailable"
   | "permission_denied"
@@ -801,9 +800,9 @@ export function useGeminiLiveVoice(options: Options) {
           ? session.sessionMinutes
           : Math.max(1, Math.ceil(session.remainingSeconds / 60));
         setSessionNotice(
-          sessionMinutes < 15
+          sessionMinutes < 30
             ? `You have up to ${sessionMinutes} minute${sessionMinutes === 1 ? "" : "s"} for this Voice session.`
-            : "You have up to 15 minutes for this Voice session.",
+            : "You have up to 30 minutes for this Voice session.",
         );
         activeRef.current = true;
         setIsSessionActive(true);

@@ -16,12 +16,15 @@ afterEach(() => {
 });
 
 describe("Voice session configuration", () => {
-  it("defaults the session limit to 15 minutes", () => {
+  it("defaults the session limit to 30 minutes", () => {
     process.env.VOICE_SESSION_MAX_MINUTES = "invalid";
     expect(getVoiceSessionConfig().maxMinutes).toBe(
       DEFAULT_VOICE_SESSION_MAX_MINUTES,
     );
-    expect(DEFAULT_VOICE_SESSION_MAX_MINUTES).toBe(15);
+    expect(DEFAULT_VOICE_SESSION_MAX_MINUTES).toBe(30);
+
+    process.env.VOICE_SESSION_MAX_MINUTES = "15";
+    expect(getVoiceSessionConfig().maxMinutes).toBe(30);
   });
 
   it("uses a bounded server-supplied idle timeout", () => {
