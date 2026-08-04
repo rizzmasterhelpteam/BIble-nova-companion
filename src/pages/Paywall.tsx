@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useEntitlement } from "../context/EntitlementContext";
-import { Check, Star, AlertCircle, ShieldCheck, Sparkles, HeartHandshake, Lock, BookOpen } from "lucide-react";
+import { Check, Star, AlertCircle, ShieldCheck, Sparkles, HeartHandshake, Lock, BookOpen, LogOut } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
@@ -68,11 +68,12 @@ export default function Paywall() {
   const [subscriptionSyncError, setSubscriptionSyncError] = useState<string | null>(null);
   const [offeringReloadKey, setOfferingReloadKey] = useState(0);
   const [subscriptionSyncReady, setSubscriptionSyncReady] = useState<boolean | null>(null);
-  const { session, user } = useAuth();
+  const { session, user, logout } = useAuth();
   const { snapshot, refresh, restoreGooglePlayPurchase } = useEntitlement();
   const navigate = useNavigate();
   const yearlyRef = useRef<HTMLButtonElement | null>(null);
   const monthlyRef = useRef<HTMLButtonElement | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   useEffect(() => {
     if (!snapshot.active) return;
@@ -321,6 +322,20 @@ export default function Paywall() {
     }
   };
 
+  const handleSignOut = async () => {
+    if (isSigningOut) return;
+    setIsSigningOut(true);
+    setError(null);
+    try {
+      await logout();
+      navigate("/login", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sign out. Please try again.");
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
   const handlePlanKey = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "ArrowRight" || event.key === "ArrowDown") {
       event.preventDefault();
@@ -566,6 +581,23 @@ export default function Paywall() {
               </div>
             </motion.div>
           )}
+
+          <motion.div
+            variants={isPerformanceMode ? undefined : itemVariants}
+            className="mt-8 flex flex-col items-center gap-2"
+          >
+            <p className="app-muted text-center text-xs">Signed into the wrong account?</p>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={isSigningOut}
+              aria-busy={isSigningOut}
+              className="touch-target app-ghost-button inline-flex items-center gap-2 rounded-pill px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              <LogOut className="h-4 w-4" />
+              {isSigningOut ? "Signing out..." : "Sign out"}
+            </button>
+          </motion.div>
 
           <motion.p
             variants={isPerformanceMode ? undefined : itemVariants}
