@@ -29,13 +29,7 @@ const createResponse = () => {
 describe("status endpoint cache policy", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getApiStatus.mockReturnValue({
-      chatReady: true,
-      prayerReady: true,
-      speechReady: true,
-      ttsReady: true,
-      voiceReady: true,
-    });
+    getApiStatus.mockReturnValue({ chatReady: true, voiceReady: true });
   });
 
   it("sets no-store headers on GET responses", () => {
@@ -48,7 +42,8 @@ describe("status endpoint cache policy", () => {
     expect(response.headers.get("Pragma")).toBe("no-cache");
     expect(response.headers.get("Expires")).toBe("0");
     expect(response.headers.get("Access-Control-Allow-Headers")).toContain("Cache-Control");
-    expect(response.body).toMatchObject({ voiceReady: true, ttsReady: true });
+    expect(response.body).toEqual({ ok: true });
+    expect(response.body).not.toHaveProperty("voiceReady");
   });
 
   it("sets no-store headers on OPTIONS responses", () => {

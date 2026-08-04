@@ -30,7 +30,7 @@
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
         { "key": "Permissions-Policy", "value": "microphone=(self), camera=(), geolocation=()" },
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self' https://biblecompanion.vercel.app https://*.supabase.co wss://*.supabase.co https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://accounts.google.com; media-src 'self' blob:; worker-src 'self' blob:; manifest-src 'self'; frame-src 'self' https://accounts.google.com https://*.supabase.co; form-action 'self' https://accounts.google.com" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'sha256-o3vw7KF0LYKNNtUZ58Qzd+8ocOtmjWB0Ea1qS8Nrums=' 'sha256-pta9L383YDNHLzuJbaMg5YUk1Aznhej4FBbV8jv/12c=' 'wasm-unsafe-eval'; connect-src 'self' https://biblecompanion.vercel.app https://*.supabase.co wss://*.supabase.co https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://accounts.google.com; media-src 'self' blob:; worker-src 'self' blob:; manifest-src 'self'; frame-src 'self' https://accounts.google.com https://*.supabase.co; form-action 'self' https://accounts.google.com" },
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin-allow-popups" },
         { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains" }
       ]
@@ -53,10 +53,6 @@
     {
       "source": "/api/voice/respond",
       "destination": "/api/chat?mode=voice"
-    },
-    {
-      "source": "/api/subscription/status",
-      "destination": "/api/subscription/native-sync"
     },
     {
       "source": "/(.*)",

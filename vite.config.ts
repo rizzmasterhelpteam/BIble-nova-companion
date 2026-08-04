@@ -74,7 +74,26 @@ const localApiPlugin = () => ({
           sendJson(res, 405, { error: 'Method not allowed.' });
           return;
         }
-        sendJson(res, 200, getApiStatus());
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+
+      if (pathname === '/api/status/ready') {
+        if (req.method !== 'GET') {
+          sendJson(res, 405, { error: 'Method not allowed.' });
+          return;
+        }
+        try {
+          const { userId, ip } = await requireAuthenticatedRequest(req);
+          await enforceRateLimits([
+            { key: `api-readiness:user:${userId}`, limit: 30 },
+            { key: `api-readiness:ip:${ip}`, limit: 60 },
+          ]);
+          sendJson(res, 200, getApiStatus());
+        } catch (error) {
+          const details = getHttpErrorDetails(error);
+          sendJson(res, details.statusCode, { error: details.message });
+        }
         return;
       }
 

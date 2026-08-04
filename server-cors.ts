@@ -13,16 +13,12 @@ type ResponseLike = {
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://biblecompanion.vercel.app",
-  "http://localhost:5173",
-  "http://localhost:4173",
-  "http://localhost:3000",
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:4173",
-  "https://localhost",
-  "http://localhost",
   "capacitor://localhost",
   "ionic://localhost",
 ];
+
+const isProduction = () =>
+  process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production";
 
 const getHeader = (req: RequestLike, name: string) => {
   const headers = req.headers || {};
@@ -44,11 +40,21 @@ const splitConfiguredOrigins = (value: string | undefined) =>
     .filter(Boolean) || [];
 
 const getAllowedOrigins = () => {
-  const vercelOrigin = process.env.VERCEL_URL
+  const vercelOrigin = !isProduction() && process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL.trim().replace(/^https?:\/\//, "").replace(/\/$/, "")}`
     : "";
+  const developmentOrigins = isProduction() ? [] : [
+    "http://localhost:5173",
+    "http://localhost:4173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:4173",
+    "https://localhost",
+    "http://localhost",
+  ];
   return new Set([
     ...DEFAULT_ALLOWED_ORIGINS,
+    ...developmentOrigins,
     ...splitConfiguredOrigins(process.env.APP_ORIGIN),
     ...splitConfiguredOrigins(process.env.VITE_APP_ORIGIN),
     ...splitConfiguredOrigins(process.env.CAPACITOR_ANDROID_ORIGIN),
@@ -59,19 +65,9 @@ const getAllowedOrigins = () => {
   ]);
 };
 
-const matchesConfiguredPreviewPattern = (origin: string) => {
-  const pattern = process.env.VERCEL_PREVIEW_ORIGIN_PATTERN?.trim();
-  if (!pattern) return false;
-  try {
-    return new RegExp(pattern).test(origin);
-  } catch {
-    return false;
-  }
-};
-
 export const isAllowedApiOrigin = (origin: string) => {
   const normalizedOrigin = origin.trim().replace(/\/$/, "");
-  return getAllowedOrigins().has(normalizedOrigin) || matchesConfiguredPreviewPattern(normalizedOrigin);
+  return getAllowedOrigins().has(normalizedOrigin);
 };
 
 export const setApiCorsHeaders = (
@@ -80,6 +76,18 @@ export const setApiCorsHeaders = (
   methods: string,
   allowedHeaders: string,
 ) => {
+  const suppliedRequestId = getHeader(req, "x-request-id")?.trim();
+  const requestId = suppliedRequestId && /^[a-zA-Z0-9._:-]{1,80}$/.test(suppliedRequestId)
+    ? suppliedRequestId
+    : randomUUID();
+  res.setHeader?.("X-Request-ID", requestId);
+  res.setHeader?.("X-API-Contract-Version", String(API_CONTRACT_VERSION));
+  res.setHeader?.("Content-Type", "application/json; charset=utf-8");
+  res.setHeader?.("Cache-Control", "no-store, max-age=0");
+  res.setHeader?.("Access-Control-Expose-Headers", "X-API-Contract-Version, X-Request-ID, Retry-After");
+  res.setHeader?.("Access-Control-Allow-Methods", methods);
+  res.setHeader?.("Access-Control-Allow-Headers", allowedHeaders);
+
   const origin = getHeader(req, "origin")?.trim();
   if (origin && !isAllowedApiOrigin(origin)) {
     res.status?.(403)?.json?.({ error: "Origin not allowed." });
@@ -90,14 +98,5 @@ export const setApiCorsHeaders = (
     res.setHeader?.("Access-Control-Allow-Origin", origin);
     res.setHeader?.("Vary", "Origin");
   }
-  const suppliedRequestId = getHeader(req, "x-request-id")?.trim();
-  const requestId = suppliedRequestId && /^[a-zA-Z0-9._:-]{1,80}$/.test(suppliedRequestId)
-    ? suppliedRequestId
-    : randomUUID();
-  res.setHeader?.("X-Request-ID", requestId);
-  res.setHeader?.("X-API-Contract-Version", String(API_CONTRACT_VERSION));
-  res.setHeader?.("Access-Control-Expose-Headers", "X-API-Contract-Version, X-Request-ID, Retry-After");
-  res.setHeader?.("Access-Control-Allow-Methods", methods);
-  res.setHeader?.("Access-Control-Allow-Headers", allowedHeaders);
   return true;
 };

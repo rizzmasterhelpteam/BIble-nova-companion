@@ -62,7 +62,7 @@ export const createApiStatusLoader = (
     }
 
     if (!apiStatusPromise) {
-      const requestUrl = forceRefresh ? `/api/status?refresh=${Date.now()}` : "/api/status";
+      const requestUrl = forceRefresh ? `/api/status/ready?refresh=${Date.now()}` : "/api/status/ready";
       const cacheMode: RequestCache = "no-store";
       let responseStatus: number | null = null;
       let responseOk: boolean | null = null;

@@ -101,11 +101,10 @@ describe("server security", () => {
     expect(key).not.toContain("203.0.113.44");
   });
 
-  it("uses the server-only service key as a safe fallback salt", () => {
+  it("requires a dedicated IP salt instead of reusing the service key", () => {
     delete process.env.RATE_LIMIT_IP_SALT;
-    const key = getRateLimitStorageKey("subscription-sync:ip:203.0.113.44");
-    expect(key).toMatch(/^subscription-sync:ip:[a-f0-9]{64}$/);
-    expect(key).not.toContain("203.0.113.44");
+    expect(() => getRateLimitStorageKey("subscription-sync:ip:203.0.113.44"))
+      .toThrowError("Rate limiting requires server persistence configuration.");
   });
 
   it("uses the persistent RPC and rejects denied windows", async () => {

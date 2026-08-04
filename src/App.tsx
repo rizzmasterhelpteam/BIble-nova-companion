@@ -157,7 +157,14 @@ const RuntimeUnavailableScreen = () => (
       <p className="app-kicker">App check</p>
       <h1 className="app-heading mt-3 text-2xl font-serif">Could not check the installed app</h1>
       <p className="app-muted mt-3 text-sm">Please retry. Update is only required when the installed bridge is confirmed to be too old.</p>
-      <button type="button" className="touch-target mt-5 rounded-pill px-5 py-3 text-sm font-semibold" style={{ background: "var(--app-accent)", color: "var(--app-accent-contrast)" }} onClick={() => window.location.reload()}>
+      <button
+        type="button"
+        className="touch-target mt-5 rounded-pill px-5 py-3 text-sm font-semibold"
+        style={{ background: "var(--app-accent)", color: "var(--app-accent-contrast)" }}
+        onClick={() => {
+          window.location.replace(`https://biblecompanion.vercel.app/?nativeRetry=${Date.now()}`);
+        }}
+      >
         Retry
       </button>
     </div>

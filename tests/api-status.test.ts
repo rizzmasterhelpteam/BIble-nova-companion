@@ -32,7 +32,7 @@ describe("API readiness status loading", () => {
     const loadApiStatus = createApiStatusLoader(fetcher, logger);
 
     await expect(loadApiStatus()).resolves.toMatchObject({ voiceReady: true });
-    expect(fetcher).toHaveBeenCalledWith("/api/status", {
+    expect(fetcher).toHaveBeenCalledWith("/api/status/ready", {
       cache: "no-store",
       headers: { "Cache-Control": "no-cache" },
     });
@@ -54,7 +54,7 @@ describe("API readiness status loading", () => {
     await loadApiStatus(true);
 
     const [requestUrl, requestInit] = fetcher.mock.calls[1] as [string, RequestInit];
-    expect(requestUrl).toMatch(/^\/api\/status\?refresh=\d+$/);
+    expect(requestUrl).toMatch(/^\/api\/status\/ready\?refresh=\d+$/);
     expect(requestInit.cache).toBe("no-store");
     expect(new Headers(requestInit.headers).get("Cache-Control")).toBe("no-cache");
   });

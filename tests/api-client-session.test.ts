@@ -6,7 +6,7 @@ vi.mock("../src/lib/supabase", () => ({
   supabase: {},
 }));
 
-import { apiFetch, invalidateApiSession } from "../src/lib/apiClient";
+import { apiFetch, invalidateApiSession, API_CONTRACT_MISSING_MESSAGE } from "../src/lib/apiClient";
 
 describe("API account generation", () => {
   it("rejects a response that arrives after account invalidation", async () => {
@@ -31,5 +31,16 @@ describe("API account generation", () => {
     invalidateApiSession();
     expect(signal?.aborted).toBe(true);
     await expect(request).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("rejects an API response that omits the contract version", async () => {
+    let requestHeaders: Headers | undefined;
+    vi.stubGlobal("fetch", vi.fn((_url, init: RequestInit) => {
+      requestHeaders = new Headers(init.headers);
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    }));
+
+    await expect(apiFetch("/api/status")).rejects.toThrow(API_CONTRACT_MISSING_MESSAGE);
+    expect(requestHeaders?.get("X-Client-Request-Id")).toBeTruthy();
   });
 });

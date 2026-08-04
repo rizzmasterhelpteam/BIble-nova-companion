@@ -11,6 +11,8 @@ const shouldUseConfiguredApiBaseUrl =
 export const API_REQUEST_TIMEOUT_MS = 30_000;
 export const API_CONTRACT_MISMATCH_MESSAGE =
   "This app and its server are out of sync. Refresh the app or install the latest version.";
+export const API_CONTRACT_MISSING_MESSAGE =
+  "The server did not identify its API version. Refresh the app and try again.";
 let cachedAccessToken: string | null | undefined;
 let accessTokenRequest: Promise<string | null> | null = null;
 let sessionGeneration = 0;
@@ -64,11 +66,10 @@ export const getApiUrl = (path: string) => {
 export const apiFetch = async (path: string, init: RequestInit = {}) => {
   const requestGeneration = sessionGeneration;
   const headers = new Headers(init.headers);
-  if (
-    !headers.has("X-Client-Request-Id") &&
-    (path === "/api/transcribe" || path.startsWith("/api/voice/"))
-  ) {
-    headers.set("X-Client-Request-Id", crypto.randomUUID());
+  if (!headers.has("X-Client-Request-Id")) {
+    const requestId = globalThis.crypto?.randomUUID?.()
+      || `request-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    headers.set("X-Client-Request-Id", requestId);
   }
   if (!headers.has("Authorization") && isSupabaseConfigured) {
     const accessToken = await getApiAccessToken();
@@ -125,7 +126,10 @@ export const apiFetch = async (path: string, init: RequestInit = {}) => {
       throw new DOMException("Account session changed.", "AbortError");
     }
     const contractVersion = response.headers.get("X-API-Contract-Version");
-    if (contractVersion !== null && contractVersion !== String(API_CONTRACT_VERSION)) {
+    if (!contractVersion) {
+      throw new Error(API_CONTRACT_MISSING_MESSAGE);
+    }
+    if (contractVersion !== String(API_CONTRACT_VERSION)) {
       throw new Error(API_CONTRACT_MISMATCH_MESSAGE);
     }
     return response;

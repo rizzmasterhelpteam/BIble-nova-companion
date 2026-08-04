@@ -2,13 +2,12 @@ import { getNativeSubscriptionClientErrorMessage, syncNativeSubscription } from 
 import {
   enforceRateLimits,
   getHttpErrorDetails,
-  getSubscriptionAccessStatus,
   requireAuthenticatedRequest,
 } from "../../server-security.js";
 import { setApiCorsHeaders } from "../../server-cors.js";
 
 export default async function handler(req: any, res: any) {
-  if (!setApiCorsHeaders(req, res, "GET, POST, OPTIONS", "Content-Type, Authorization")) return;
+  if (!setApiCorsHeaders(req, res, "POST, OPTIONS", "Content-Type, Authorization")) return;
   res.setHeader?.("Cache-Control", "private, no-store, no-cache, max-age=0");
   res.setHeader?.("Pragma", "no-cache");
 
@@ -17,33 +16,13 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  if (req.method !== "GET" && req.method !== "POST") {
+  if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed." });
     return;
   }
 
   try {
     const { userId, ip } = await requireAuthenticatedRequest(req);
-    if (req.method === "GET") {
-      await enforceRateLimits([
-        { key: `subscription-status:user:${userId}`, limit: 60 },
-        { key: `subscription-status:ip:${ip}`, limit: 120 },
-      ]);
-      const status = await getSubscriptionAccessStatus(userId);
-      res.status(200).json({
-        state: status.state,
-        active: status.active,
-        status: status.status,
-        source: status.source,
-        productId: status.productId,
-        expiresAt: status.expiresAt,
-        verifiedAt: status.verifiedAt,
-        reconciliationRecommended: status.reconciliationRecommended,
-        checkedAt: new Date().toISOString(),
-      });
-      return;
-    }
-
     await enforceRateLimits([
       { key: `subscription-sync:user:${userId}`, limit: 10 },
       { key: `subscription-sync:ip:${ip}`, limit: 20 },
@@ -62,7 +41,7 @@ export default async function handler(req: any, res: any) {
     );
     if (details.retryAfterSeconds) res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
     res.status(details.statusCode).json({
-      error: req.method === "POST" && details.statusCode >= 500
+      error: details.statusCode >= 500
         ? getNativeSubscriptionClientErrorMessage(error)
         : details.message,
     });

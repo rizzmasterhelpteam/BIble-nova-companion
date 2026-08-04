@@ -25,6 +25,8 @@ describe("API CORS policy", () => {
     delete process.env.APP_ORIGIN;
     delete process.env.VERCEL_PREVIEW_ORIGINS;
     delete process.env.VERCEL_PREVIEW_ORIGIN_PATTERN;
+    delete process.env.VERCEL_ENV;
+    process.env.NODE_ENV = "test";
   });
 
   it("allows the production web origin and reflects it without a wildcard", () => {
@@ -42,8 +44,13 @@ describe("API CORS policy", () => {
   });
 
   it("allows the bundled Capacitor localhost origin", () => {
-    expect(isAllowedApiOrigin("https://localhost")).toBe(true);
     expect(isAllowedApiOrigin("capacitor://localhost")).toBe(true);
+  });
+
+  it("does not include localhost defaults in production", () => {
+    process.env.NODE_ENV = "production";
+    expect(isAllowedApiOrigin("http://localhost:5173")).toBe(false);
+    expect(isAllowedApiOrigin("https://biblecompanion.vercel.app")).toBe(true);
   });
 
   it("rejects an unconfigured cross-site origin", () => {

@@ -1,4 +1,3 @@
-import { getApiStatus } from "../server-api.js";
 import { setApiCorsHeaders } from "../server-cors.js";
 
 const setStatusHeaders = (res: any) => {
@@ -21,5 +20,7 @@ export default function handler(req: any, res: any) {
     return;
   }
 
-  res.status(200).json(getApiStatus());
+  // Keep public liveness intentionally non-sensitive. Provider readiness and
+  // configuration details belong behind the authenticated readiness route.
+  res.status(200).json({ ok: true });
 }

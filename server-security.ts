@@ -46,8 +46,10 @@ export const getClientIp = (req: RequestLike) => {
 };
 
 const getSupabaseServerConfig = () => {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  // Never fall back to VITE_* here. Vite variables are intentionally exposed
+  // to the browser and must not be accepted as server configuration.
+  const url = process.env.SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_ANON_KEY;
   if (!url || !anonKey || url.includes("placeholder.supabase.co")) {
     throw new HttpError("Authentication is not configured on the server.", 503);
   }
@@ -55,7 +57,7 @@ const getSupabaseServerConfig = () => {
 };
 
 export const getSupabaseAdminClient = (): SupabaseClient => {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const url = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceRoleKey || url.includes("placeholder.supabase.co")) {
     throw new HttpError("Server persistence is not configured.", 503);
@@ -387,11 +389,9 @@ export const getServerShadowNotes = async (userId: string) => {
 
 export const getRateLimitStorageKey = (key: string) => {
   if (!key.includes(":ip:")) return key;
-  // A dedicated salt is preferred, but the persistent limiter already
-  // requires the server-only service role. Falling back to it keeps IP keys
-  // non-reversible and prevents a missing optional env var from blocking
-  // critical authenticated flows such as subscription linking.
-  const salt = process.env.RATE_LIMIT_IP_SALT || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Keep the IP-hash salt independent from credentials. Reusing a service
+  // role key couples rate-limit identity to a secret that may be rotated.
+  const salt = process.env.RATE_LIMIT_IP_SALT;
   if (!salt) {
     throw new HttpError("Rate limiting requires server persistence configuration.", 503);
   }
@@ -421,6 +421,9 @@ export const enforceRateLimits = async (rules: RateLimitRule[], windowMs = RATE_
   });
 
   if (error) {
+    if (error.message.toLowerCase().includes("jwt issued at future")) {
+      console.error("Persistent rate-limit check rejected the server Supabase credential timestamp.");
+    }
     console.error("Persistent rate-limit check failed:", error.message);
     throw new HttpError("Rate limiting is temporarily unavailable. Please try again shortly.", 503);
   }
