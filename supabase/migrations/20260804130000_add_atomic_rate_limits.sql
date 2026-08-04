@@ -64,8 +64,9 @@ begin
 
   -- Validate the entire request before touching a bucket.
   for v_rule in
-    select value, ordinality
-    from pg_catalog.jsonb_array_elements(p_rules) with ordinality
+    select rules.value, rules.ordinality
+    from pg_catalog.jsonb_array_elements(p_rules)
+      with ordinality as rules(value, ordinality)
   loop
     if pg_catalog.jsonb_typeof(v_rule.value) <> 'object'
       or pg_catalog.jsonb_typeof(v_rule.value -> 'key') <> 'string'
@@ -94,15 +95,15 @@ begin
     v_keys := pg_catalog.array_append(v_keys, v_key);
   end loop;
 
-  select duplicate_key
+  select duplicates.duplicate_key
   into v_duplicate_key
   from (
-    select key as duplicate_key
+    select keys.key as duplicate_key
     from pg_catalog.unnest(v_keys) as keys(key)
-    group by key
+    group by keys.key
     having pg_catalog.count(*) > 1
     limit 1
-  ) duplicates;
+  ) as duplicates;
 
   if v_duplicate_key is not null then
     raise exception 'Duplicate rate-limit key';
@@ -110,9 +111,9 @@ begin
 
   -- Acquire all bucket locks in a deterministic order to avoid deadlocks.
   for v_key in
-    select key
+    select keys.key
     from pg_catalog.unnest(v_keys) as keys(key)
-    order by key
+    order by keys.key
   loop
     perform pg_catalog.pg_advisory_xact_lock(
       pg_catalog.hashtextextended(v_key, 0)
@@ -124,8 +125,9 @@ begin
   perform private.cleanup_expired_rate_limit_buckets(100);
 
   for v_rule in
-    select value, ordinality
-    from pg_catalog.jsonb_array_elements(p_rules) with ordinality
+    select rules.value, rules.ordinality
+    from pg_catalog.jsonb_array_elements(p_rules)
+      with ordinality as rules(value, ordinality)
   loop
     v_key := pg_catalog.btrim(v_rule.value ->> 'key');
     v_limit := (v_rule.value ->> 'limit')::integer;
@@ -165,7 +167,7 @@ begin
       else greatest(
         1,
         pg_catalog.ceil(
-          pg_catalog.extract(epoch from (v_bucket.expires_at - v_now))
+          extract(epoch from (v_bucket.expires_at - v_now))
         )::integer
       )
     end;
