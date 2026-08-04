@@ -43,10 +43,9 @@ app.get("/api/status", (_req, res) => {
 
 app.get("/api/status/ready", async (req, res) => {
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
       { key: `api-readiness:user:${userId}`, limit: 30 },
-      { key: `api-readiness:ip:${ip}`, limit: 60 },
     ]);
     res.setHeader("Cache-Control", "no-store, no-cache, max-age=0");
     res.json(getApiStatus());
@@ -74,10 +73,9 @@ app.post("/api/shadow-notes", shadowNotesHandler);
 app.options("/api/shadow-notes", shadowNotesHandler);
 app.delete("/api/account", async (req, res) => {
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
       { key: `account:user:${userId}`, limit: 3 },
-      { key: `account:ip:${ip}`, limit: 6 },
     ]);
     await deleteSupabaseAccount(req.headers.authorization);
     res.json({ deleted: true });
@@ -89,10 +87,9 @@ app.delete("/api/account", async (req, res) => {
 
 app.get(["/api/subscription/native-sync", "/api/subscription/status"], async (req, res) => {
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
       { key: `subscription-status:user:${userId}`, limit: 60 },
-      { key: `subscription-status:ip:${ip}`, limit: 120 },
     ]);
     const status = await getSubscriptionAccessStatus(userId);
     res.setHeader("Cache-Control", "private, no-store, no-cache, max-age=0");
@@ -115,10 +112,9 @@ app.get(["/api/subscription/native-sync", "/api/subscription/status"], async (re
 
 app.post("/api/subscription/native-sync", async (req, res) => {
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
       { key: `subscription-sync:user:${userId}`, limit: 10 },
-      { key: `subscription-sync:ip:${ip}`, limit: 20 },
     ]);
     const subscription = await syncNativeSubscription(req.headers.authorization, req.body || {});
     res.json({ subscription });
@@ -131,10 +127,9 @@ app.post("/api/subscription/native-sync", async (req, res) => {
 app.get("/api/models", async (req, res) => {
   res.setHeader("Cache-Control", "private, no-store, no-cache, max-age=0");
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
       { key: `models:user:${userId}`, limit: 10 },
-      { key: `models:ip:${ip}`, limit: 20 },
     ]);
     const data = await fetchAvailableModels();
     res.json(data);
@@ -149,10 +144,9 @@ app.get("/api/models", async (req, res) => {
 
 app.post("/api/generate", async (req, res) => {
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
       { key: `generate:user:${userId}`, limit: 20 },
-      { key: `generate:ip:${ip}`, limit: 40 },
     ]);
     const { prompt } = req.body;
     assertStringLength(prompt, 2_000, "Prompt");

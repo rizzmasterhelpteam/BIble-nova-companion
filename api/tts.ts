@@ -43,13 +43,12 @@ export default async function handler(req: any, res: any) {
   let userHash = "unverified";
   try {
     const authStartedAt = Date.now();
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     timings.auth = Date.now() - authStartedAt;
     userHash = createHash("sha256").update(userId).digest("hex").slice(0, 12);
     const rateLimitStartedAt = Date.now();
     await enforceRateLimits([
       { key: `tts:user:${userId}`, limit: getVoiceRateLimit("VOICE_TTS_RATE_LIMIT") },
-      { key: `tts:ip:${ip}`, limit: getVoiceRateLimit("VOICE_TTS_RATE_LIMIT") },
     ], getVoiceRateLimitWindowMs());
     timings["rate-limit"] = Date.now() - rateLimitStartedAt;
     const { text, voiceLanguage: requestedVoiceLanguage } = getBody(req);

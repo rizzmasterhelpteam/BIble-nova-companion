@@ -8,7 +8,8 @@ describe("deep production hardening contracts", () => {
     const source = read("server-security.ts");
     expect(source).not.toContain("process.env.VITE_SUPABASE_URL");
     expect(source).not.toContain("process.env.VITE_SUPABASE_ANON_KEY");
-    expect(source).toContain("process.env.RATE_LIMIT_IP_SALT");
+    expect(source).not.toContain("process.env.RATE_LIMIT_IP_SALT");
+    expect(source).toContain("Account-based rate limiting");
   });
 
   it("keeps provider readiness private and stays within the Hobby function limit", () => {

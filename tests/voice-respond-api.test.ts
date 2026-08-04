@@ -101,7 +101,6 @@ describe("Voice response API", () => {
     expect(requireAuthenticatedRequest).toHaveBeenCalledOnce();
     expect(enforceRateLimits).toHaveBeenCalledWith([
       { key: "voice-respond:user:user-1", limit: 60 },
-      { key: "voice-respond:ip:127.0.0.1", limit: 60 },
     ], 600_000);
   });
 

@@ -68,7 +68,6 @@ describe("status endpoint cache policy", () => {
     expect(requireAuthenticatedRequest).toHaveBeenCalledOnce();
     expect(enforceRateLimits).toHaveBeenCalledWith([
       { key: "api-readiness:user:user-1", limit: 30 },
-      { key: "api-readiness:ip:127.0.0.1", limit: 60 },
     ]);
   });
 

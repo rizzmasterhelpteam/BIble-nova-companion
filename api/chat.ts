@@ -88,7 +88,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const authStartedAt = Date.now();
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     timings.auth = Date.now() - authStartedAt;
     userHash = hashUserId(userId);
     const body = getBody(req);
@@ -102,10 +102,6 @@ export default async function handler(req: any, res: any) {
       {
         key: `${voiceMode ? "voice-respond" : "chat"}:user:${userId}`,
         limit: voiceMode ? getVoiceRateLimit("VOICE_RESPOND_RATE_LIMIT") : 30,
-      },
-      {
-        key: `${voiceMode ? "voice-respond" : "chat"}:ip:${ip}`,
-        limit: voiceMode ? getVoiceRateLimit("VOICE_RESPOND_RATE_LIMIT") : 60,
       },
     ], voiceMode ? getVoiceRateLimitWindowMs() : undefined);
     timings["rate-limit"] = Date.now() - rateLimitStartedAt;
