@@ -55,6 +55,10 @@
       "destination": "/api/chat?mode=voice"
     },
     {
+      "source": "/api/status/ready",
+      "destination": "/api/status?mode=ready"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

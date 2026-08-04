@@ -1,6 +1,11 @@
--- Process all request rate-limit buckets atomically.
+-- Add the transactional rate-limit RPC without removing the legacy RPC yet.
+-- Migration safety requires this order:
+--   1. apply this migration;
+--   2. deploy and verify the server that calls check_rate_limits(jsonb);
+--   3. apply 20260804160000_remove_legacy_rate_limit_rpc_after_rollout.sql.
 -- The application uses this one-call API so user and IP buckets cannot
--- diverge. The old single-bucket RPC is removed at the end of this migration.
+-- diverge. Keeping the old RPC during the deployment window prevents either
+-- the old or new server from losing its database contract.
 create or replace function private.cleanup_expired_rate_limit_buckets(p_max_rows integer default 500)
 returns integer
 language plpgsql
@@ -178,8 +183,6 @@ begin
   return query select v_allowed, v_retry_after_seconds, v_diagnostics;
 end;
 $$;
-
-drop function if exists public.check_rate_limit(text, integer, integer);
 
 revoke all privileges on function public.check_rate_limits(jsonb)
   from public, anon, authenticated;

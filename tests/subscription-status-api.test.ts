@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const enforceRateLimits = vi.hoisted(() => vi.fn());
 const getSubscriptionAccessStatus = vi.hoisted(() => vi.fn());
 const requireAuthenticatedRequest = vi.hoisted(() => vi.fn());
+const syncNativeSubscription = vi.hoisted(() => vi.fn());
+const getNativeSubscriptionClientErrorMessage = vi.hoisted(() => vi.fn(() => "Subscription sync failed."));
 
 vi.mock("../server-security", () => ({
   enforceRateLimits,
@@ -11,10 +13,16 @@ vi.mock("../server-security", () => ({
     message: error.message,
   }),
   getSubscriptionAccessStatus,
+  getNativeSubscriptionClientErrorMessage,
   requireAuthenticatedRequest,
+  syncNativeSubscription,
+}));
+vi.mock("../server-api", () => ({
+  getNativeSubscriptionClientErrorMessage,
+  syncNativeSubscription,
 }));
 
-import subscriptionStatusHandler from "../api/subscription/status";
+import subscriptionHandler from "../api/subscription/[action]";
 
 const createResponse = () => {
   const headers = new Map<string, string>();
@@ -58,7 +66,7 @@ describe("subscription status API", () => {
     });
     const { response, headers } = createResponse();
 
-    await subscriptionStatusHandler({ method: "GET", headers: {} }, response);
+    await subscriptionHandler({ method: "GET", query: { action: "status" }, headers: {} }, response);
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject({
@@ -86,7 +94,7 @@ describe("subscription status API", () => {
     });
     const { response } = createResponse();
 
-    await subscriptionStatusHandler({ method: "GET", headers: {} }, response);
+    await subscriptionHandler({ method: "GET", query: { action: "status" }, headers: {} }, response);
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject({
@@ -105,7 +113,7 @@ describe("subscription status API", () => {
     );
     const { response } = createResponse();
 
-    await subscriptionStatusHandler({ method: "GET", headers: {} }, response);
+    await subscriptionHandler({ method: "GET", query: { action: "status" }, headers: {} }, response);
 
     expect(response.statusCode).toBe(401);
     expect(response.body).toEqual({ error: "Authentication is required." });
@@ -118,9 +126,34 @@ describe("subscription status API", () => {
     );
     const { response } = createResponse();
 
-    await subscriptionStatusHandler({ method: "GET", headers: {} }, response);
+    await subscriptionHandler({ method: "GET", query: { action: "status" }, headers: {} }, response);
 
     expect(response.statusCode).toBe(503);
     expect(response.body).toEqual({ error: "Premium verification is temporarily unavailable." });
+  });
+
+  it("keeps native purchase sync on the same dynamic function", async () => {
+    syncNativeSubscription.mockResolvedValue({ status: "active" });
+    const { response } = createResponse();
+
+    await subscriptionHandler({
+      method: "POST",
+      query: { action: "native-sync" },
+      headers: { authorization: "Bearer token" },
+      body: { productId: "biblenova" },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({ subscription: { status: "active" } });
+    expect(syncNativeSubscription).toHaveBeenCalledWith("Bearer token", { productId: "biblenova" });
+  });
+
+  it("rejects unknown subscription actions", async () => {
+    const { response } = createResponse();
+
+    await subscriptionHandler({ method: "GET", query: { action: "unknown" }, headers: {} }, response);
+
+    expect(response.statusCode).toBe(404);
+    expect(response.body).toEqual({ error: "Subscription action not found." });
   });
 });

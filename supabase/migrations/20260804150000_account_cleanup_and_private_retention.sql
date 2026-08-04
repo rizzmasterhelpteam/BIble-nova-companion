@@ -28,32 +28,43 @@ grant select, insert, update, delete on table private.voice_token_idempotency, p
 
 create or replace function public.cleanup_expired_voice_token_idempotency()
 returns void
-language plpgsql security definer set search_path = public, private as $$
+language plpgsql security definer set search_path = '' as $$
 begin
   update private.voice_session_leases as leases
-  set ended_at = coalesce(leases.ended_at, now())
+  set ended_at = coalesce(leases.ended_at, pg_catalog.clock_timestamp())
   from private.voice_token_idempotency as requests
-  where requests.expires_at <= now()
+  where requests.expires_at <= pg_catalog.clock_timestamp()
     and requests.lease_id = leases.id
     and requests.response is null
     and leases.ended_at is null;
-  delete from private.voice_token_idempotency where expires_at <= now();
+  delete from private.voice_token_idempotency
+  where expires_at <= pg_catalog.clock_timestamp();
 end;
 $$;
+
+revoke all privileges on function public.cleanup_expired_voice_token_idempotency()
+  from public, anon, authenticated;
+grant execute on function public.cleanup_expired_voice_token_idempotency()
+  to service_role;
 
 create or replace function public.release_voice_session_lease(
   p_user_id uuid, p_handle_hash text
 )
 returns boolean
-language sql security definer set search_path = public, private as $$
+language sql security definer set search_path = '' as $$
   update private.voice_session_leases
-  set ended_at = coalesce(ended_at, now())
+  set ended_at = coalesce(ended_at, pg_catalog.clock_timestamp())
   where user_id = p_user_id
     and handle_hash = p_handle_hash
     and ended_at is null
-    and expires_at > now()
+    and expires_at > pg_catalog.clock_timestamp()
   returning true;
 $$;
+
+revoke all privileges on function public.release_voice_session_lease(uuid, text)
+  from public, anon, authenticated;
+grant execute on function public.release_voice_session_lease(uuid, text)
+  to service_role;
 
 -- Keep account deletion and private-table retention in the database boundary.
 -- The service role calls the deletion function before removing auth.users so
@@ -80,10 +91,10 @@ begin
   delete from public.security_events where user_id = p_user_id;
   delete from public.subscriptions where user_id = p_user_id;
   delete from public.subscription_entitlements where user_id = p_user_id;
-  delete from public.promo_redemptions where user_id = p_user_id;
 
   delete from private.voice_token_idempotency where user_id = p_user_id;
-  delete from private.voice_renewal_claims where user_id = p_user_id;
+  -- voice_renewal_claims has no user_id; its lease_id foreign key cascades
+  -- when the user's Voice leases are removed below.
   delete from private.voice_session_leases where user_id = p_user_id;
   delete from private.rate_limit_buckets
     where key like '%:user:' || p_user_id::text

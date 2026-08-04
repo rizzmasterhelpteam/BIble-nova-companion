@@ -8,10 +8,10 @@ contracts around it explicit:
   are never server fallbacks.
 - Production CORS uses exact origins. Localhost is development-only and
   preview origins must be supplied as an explicit exact-origin list.
-- `/api/status` is public liveness only. Authenticated `/api/status/ready`
-  returns provider readiness for the app.
-- `/api/subscription/status` is a read-only authenticated route; purchase
-  mutation is kept at `/api/subscription/native-sync`.
+- `/api/status` is public liveness only. `/api/status/ready` rewrites into
+  the same function with an authenticated readiness mode.
+- `/api/subscription/status` and `/api/subscription/native-sync` share one
+  dynamic Vercel function while retaining separate public URLs.
 - Every API request receives a client request ID and every API response gets a
   contract version, request ID, JSON content type, and no-store policy from the
   shared CORS boundary.
@@ -50,8 +50,17 @@ re-run the audit on every dependency update rather than using `audit fix --force
 
 Review and apply the new migrations to a staging project first, then production:
 
-1. `20260804150000_account_cleanup_and_private_retention.sql`
-2. `20260804150100_repair_canonical_voice_rpcs.sql`
+1. `20260804130000_add_atomic_rate_limits.sql` (adds the new RPC and keeps
+   the old RPC during deployment)
+2. `20260804131500_remove_legacy_voice_rpc_overloads.sql`
+3. `20260804133000_remove_shadow_memory_rollback_backup.sql` after consent
+   cleanup has been verified
+4. `20260804150000_account_cleanup_and_private_retention.sql`
+5. `20260804150100_repair_canonical_voice_rpcs.sql`
+
+Deploy the matching server and verify production requests before applying
+`20260804160000_remove_legacy_rate_limit_rpc_after_rollout.sql`. That final
+post-deployment migration removes only the old single-bucket rate-limit RPC.
 
 Verify the six-argument Voice functions, private table grants/RLS, the account
 cleanup function, and the absence of the old memory rollback backup. Do not

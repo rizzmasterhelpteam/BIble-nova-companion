@@ -18,7 +18,9 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ];
 
 const isProduction = () =>
-  process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production";
+  process.env.VERCEL_ENV
+    ? process.env.VERCEL_ENV === "production"
+    : process.env.NODE_ENV === "production";
 
 const getHeader = (req: RequestLike, name: string) => {
   const headers = req.headers || {};

@@ -11,11 +11,13 @@ describe("deep production hardening contracts", () => {
     expect(source).toContain("process.env.RATE_LIMIT_IP_SALT");
   });
 
-  it("keeps provider readiness private and subscriptions split by operation", () => {
+  it("keeps provider readiness private and stays within the Hobby function limit", () => {
     expect(read("api/status.ts")).toContain("res.status(200).json({ ok: true })");
-    expect(read("api/status/ready.ts")).toContain("requireAuthenticatedRequest");
-    expect(read("api/subscription/native-sync.ts")).toContain('"POST, OPTIONS"');
-    expect(read("api/subscription/status.ts")).toContain("getSubscriptionAccessStatus");
+    expect(read("api/status.ts")).toContain('getQueryValue(req, "mode") === "ready"');
+    expect(read("api/status.ts")).toContain("requireAuthenticatedRequest");
+    expect(read("api/subscription/[action].ts")).toContain('action === "native-sync"');
+    expect(read("api/subscription/[action].ts")).toContain("getSubscriptionAccessStatus");
+    expect(read("vercel.json")).toContain('"destination": "/api/status?mode=ready"');
   });
 
   it("does not auto-schedule reminders from the app shell", () => {
@@ -31,6 +33,8 @@ describe("deep production hardening contracts", () => {
     const voiceMigration = read("supabase/migrations/20260804150100_repair_canonical_voice_rpcs.sql");
     expect(accountMigration).toContain("public.delete_account_data");
     expect(accountMigration).toContain("drop table if exists private.user_shadow_notes_backup_20260803");
+    expect(accountMigration).not.toContain("public.promo_redemptions");
+    expect(accountMigration).not.toContain("voice_renewal_claims where user_id");
     expect(voiceMigration).toContain("p_handle_hash text");
     expect(voiceMigration).toContain("status = 'canceled'");
     expect(voiceMigration).toContain("not between 1 and 15");
