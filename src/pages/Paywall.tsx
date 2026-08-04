@@ -464,25 +464,28 @@ export default function Paywall() {
                 <Mic className="app-accent h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <p className="app-kicker text-[10px] font-semibold uppercase tracking-[0.16em]">Voice Mode included</p>
-                <h2 className="app-heading mt-1 text-lg font-serif">Speak naturally when typing feels like too much.</h2>
+                <p className="app-kicker text-[10px] font-semibold uppercase tracking-[0.16em]">Premium Voice Mode</p>
+                <h2 className="app-heading mt-1 text-lg font-serif">Be heard. Think clearly. Go deeper.</h2>
+                <p className="app-muted mt-2 text-sm leading-relaxed">
+                  Have calm, hands-free conversations for the moments when typing is not enough—talk things through, reflect, or pray naturally.
+                </p>
               </div>
             </div>
             <div className="mt-5 grid grid-cols-2 gap-3">
               <div className="rounded-2xl border p-3" style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}>
-                <p className="app-muted text-[10px] font-semibold uppercase tracking-wider">Allowance</p>
+                <p className="app-muted text-[10px] font-semibold uppercase tracking-wider">Voice allowance</p>
                 <p className="app-heading mt-1 text-xl font-semibold">5 hours</p>
                 <p className="app-muted text-[11px]">per billing cycle</p>
               </div>
               <div className="rounded-2xl border p-3" style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}>
-                <p className="app-muted text-[10px] font-semibold uppercase tracking-wider">Per session</p>
+                <p className="app-muted text-[10px] font-semibold uppercase tracking-wider">Session length</p>
                 <p className="app-heading mt-1 text-xl font-semibold">30 minutes</p>
                 <p className="app-muted text-[11px]">maximum length</p>
               </div>
             </div>
             <div className="app-muted mt-4 flex items-start gap-2 text-xs leading-relaxed">
               <Clock3 className="app-accent mt-0.5 h-4 w-4 shrink-0" />
-              <span>No daily Voice cap. Use your allowance whenever you need it; it resets on your subscription billing date.</span>
+              <span>Use your allowance when it matters. There is no daily cap, and your time renews with each subscription billing cycle.</span>
             </div>
           </motion.div>
 
