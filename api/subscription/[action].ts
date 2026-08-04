@@ -28,7 +28,7 @@ const getAction = (req: any) => {
 
 export default async function handler(req: any, res: any) {
   const action = getAction(req);
-  const methods = action === "native-sync" ? "POST, OPTIONS" : "GET, OPTIONS";
+  const methods = action === "native-sync" ? "GET, POST, OPTIONS" : "GET, OPTIONS";
   if (!setApiCorsHeaders(req, res, methods, "Content-Type, Authorization, Cache-Control")) return;
 
   res.setHeader?.("Cache-Control", "private, no-store, no-cache, max-age=0");
@@ -71,6 +71,39 @@ export default async function handler(req: any, res: any) {
   }
 
   if (action === "native-sync") {
+    if (req.method === "GET") {
+      try {
+        const { userId } = await requireAuthenticatedRequest(req);
+        await enforceRateLimits([
+          { key: `subscription-status:user:${userId}`, limit: 60 },
+        ]);
+        const status = await getSubscriptionAccessStatus(userId);
+        res.status(200).json({
+          state: status.state,
+          active: status.active,
+          status: status.status,
+          source: status.source,
+          productId: status.productId,
+          expiresAt: status.expiresAt,
+          verifiedAt: status.verifiedAt,
+          reconciliationRecommended: status.reconciliationRecommended,
+          subscription: {
+            status: status.status,
+            source: status.source,
+            productId: status.productId || undefined,
+            trialEndsAt: status.expiresAt || undefined,
+            accessActive: status.active,
+          },
+          checkedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        const details = getHttpErrorDetails(error);
+        if (details.retryAfterSeconds) res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
+        res.status(details.statusCode).json({ error: details.message });
+      }
+      return;
+    }
+
     if (req.method !== "POST") {
       res.status(405).json({ error: "Method not allowed." });
       return;
