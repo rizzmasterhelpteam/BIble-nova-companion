@@ -36,7 +36,7 @@ import {
 } from "./src/lib/voiceSpeechFormatter.js";
 import { hasGeminiLiveConfig } from "./gemini-live-config.js";
 import { API_CONTRACT_VERSION, MINIMUM_NATIVE_BRIDGE_VERSION } from "./platform-contract.js";
-import { HttpError } from "./server-security.js";
+import { HttpError, isPremiumTestAccount } from "./server-security.js";
 export {
   createReflection,
   getClientErrorMessage,
@@ -1012,15 +1012,25 @@ export async function syncNativeSubscription(
     throw new HttpError("Could not persist the verified subscription entitlement.", 503);
   }
 
-  const authoritativeSubscription: UserSubscriptionMetadata = {
-    ...nextSubscription,
-    status: entitlement.status,
-    productId: entitlement.product_id,
-    planId: entitlement.base_plan_id || undefined,
-    orderId: entitlement.order_id || undefined,
-    trialEndsAt: entitlement.expiry_time || undefined,
-    accessActive: stateUnlocksPremium(entitlement.status, entitlement.expiry_time),
-  };
+  const permanentTestAccess = await isPremiumTestAccount(data.user.id);
+  const authoritativeSubscription: UserSubscriptionMetadata = permanentTestAccess.active
+    ? {
+        status: "active",
+        source: "server_test_allowlist",
+        productId: "developer_test",
+        linkedAt,
+        platform,
+        accessActive: true,
+      }
+    : {
+        ...nextSubscription,
+        status: entitlement.status,
+        productId: entitlement.product_id,
+        planId: entitlement.base_plan_id || undefined,
+        orderId: entitlement.order_id || undefined,
+        trialEndsAt: entitlement.expiry_time || undefined,
+        accessActive: stateUnlocksPremium(entitlement.status, entitlement.expiry_time),
+      };
 
   const { error: updateError } = await adminClient.auth.admin.updateUserById(data.user.id, {
     app_metadata: {

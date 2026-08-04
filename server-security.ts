@@ -157,23 +157,32 @@ export type SubscriptionAccessStatus = {
   reconciliationRecommended: boolean;
 };
 
-export const getSubscriptionAccessStatus = async (
-  userId: string,
-): Promise<SubscriptionAccessStatus> => {
+export const isPremiumTestAccount = async (userId: string) => {
   const client = getSupabaseAdminClient();
-  const { data: testAccount, error: testAccountError } = await client
+  const { data, error } = await client
     .from("premium_test_accounts")
     .select("created_at")
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (testAccountError) {
-    // The table is introduced by a forward migration. Keep normal billing
-    // checks working during the deploy window if the migration is not live yet.
-    console.warn("Premium test-account lookup unavailable:", testAccountError.message);
+  if (error) {
+    console.warn("Premium test-account lookup unavailable:", error.message);
+    return { active: false, createdAt: null as string | null };
   }
 
-  if (testAccount && !testAccountError) {
+  return {
+    active: Boolean(data),
+    createdAt: data?.created_at || null,
+  };
+};
+
+export const getSubscriptionAccessStatus = async (
+  userId: string,
+): Promise<SubscriptionAccessStatus> => {
+  const client = getSupabaseAdminClient();
+  const testAccount = await isPremiumTestAccount(userId);
+
+  if (testAccount.active) {
     return {
       active: true,
       state: "active",
@@ -181,7 +190,7 @@ export const getSubscriptionAccessStatus = async (
       source: "server",
       productId: null,
       expiresAt: null,
-      verifiedAt: testAccount.created_at || null,
+      verifiedAt: testAccount.createdAt,
       reconciliationRecommended: false,
     };
   }
