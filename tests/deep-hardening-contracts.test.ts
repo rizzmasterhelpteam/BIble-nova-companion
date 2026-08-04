@@ -33,6 +33,14 @@ describe("deep production hardening contracts", () => {
       source: "/api/subscription/native-sync",
       destination: "/api/status?mode=subscription-native-sync",
     });
+    expect(vercelConfig.headers).toContainEqual({
+      source: "/",
+      headers: [
+        { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        { key: "Pragma", value: "no-cache" },
+        { key: "Expires", value: "0" },
+      ],
+    });
   });
 
   it("auto-schedules account-scoped reminders without exposing a settings switch", () => {
