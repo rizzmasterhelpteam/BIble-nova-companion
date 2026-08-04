@@ -34,6 +34,10 @@ const getQueryValue = (req: any, key: string) => {
 const isReadinessRequest = (req: any) => getQueryValue(req, "mode") === "ready";
 const isSubscriptionStatusRequest = (req: any) => getQueryValue(req, "mode") === "subscription-status";
 const isSubscriptionNativeSyncRequest = (req: any) => getQueryValue(req, "mode") === "subscription-native-sync";
+const hasAuthenticatedStatusRequest = (req: any) => {
+  const authorization = req?.headers?.authorization || req?.headers?.Authorization;
+  return typeof authorization === "string" && authorization.trim().length > 0;
+};
 
 export default async function handler(req: any, res: any) {
   if (!setApiCorsHeaders(req, res, "GET, POST, OPTIONS", "Content-Type, Authorization, Cache-Control")) return;
@@ -113,7 +117,7 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  if (!isReadinessRequest(req)) {
+  if (!isReadinessRequest(req) && !hasAuthenticatedStatusRequest(req)) {
     // Keep public liveness intentionally non-sensitive. Provider readiness and
     // configuration details belong behind the authenticated readiness mode.
     res.status(200).json({ ok: true });
