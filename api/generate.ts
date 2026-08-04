@@ -38,10 +38,9 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
       { key: `generate:user:${userId}`, limit: 20 },
-      { key: `generate:ip:${ip}`, limit: 40 },
     ]);
     const { prompt } = getBody(req);
     assertStringLength(prompt, 2_000, "Prompt");

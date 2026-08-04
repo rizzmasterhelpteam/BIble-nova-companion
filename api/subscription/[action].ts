@@ -46,10 +46,9 @@ export default async function handler(req: any, res: any) {
     }
 
     try {
-      const { userId, ip } = await requireAuthenticatedRequest(req);
+      const { userId } = await requireAuthenticatedRequest(req);
       await enforceRateLimits([
         { key: `subscription-status:user:${userId}`, limit: 60 },
-        { key: `subscription-status:ip:${ip}`, limit: 120 },
       ]);
       const status = await getSubscriptionAccessStatus(userId);
       res.status(200).json({
@@ -78,10 +77,9 @@ export default async function handler(req: any, res: any) {
     }
 
     try {
-      const { userId, ip } = await requireAuthenticatedRequest(req);
+      const { userId } = await requireAuthenticatedRequest(req);
       await enforceRateLimits([
         { key: `subscription-sync:user:${userId}`, limit: 10 },
-        { key: `subscription-sync:ip:${ip}`, limit: 20 },
       ]);
       const subscription = await syncNativeSubscription(req.headers.authorization, req.body || {});
       res.status(200).json({ subscription });

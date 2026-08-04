@@ -36,10 +36,9 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
       { key: `live-shadow-notes:user:${userId}`, limit: 10 },
-      { key: `live-shadow-notes:ip:${ip}`, limit: 20 },
     ]);
 
     const memoryProfile = await loadShadowMemoryProfile(userId);

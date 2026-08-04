@@ -84,10 +84,9 @@ const localApiPlugin = () => ({
           return;
         }
         try {
-          const { userId, ip } = await requireAuthenticatedRequest(req);
+          const { userId } = await requireAuthenticatedRequest(req);
           await enforceRateLimits([
             { key: `api-readiness:user:${userId}`, limit: 30 },
-            { key: `api-readiness:ip:${ip}`, limit: 60 },
           ]);
           sendJson(res, 200, getApiStatus());
         } catch (error) {
@@ -104,10 +103,9 @@ const localApiPlugin = () => ({
         }
 
         try {
-          const { userId, ip } = await requireAuthenticatedRequest(req);
+          const { userId } = await requireAuthenticatedRequest(req);
           await enforceRateLimits([
             { key: `voice-shadow-notes:user:${userId}`, limit: 10 },
-            { key: `voice-shadow-notes:ip:${ip}`, limit: 20 },
           ]);
           const memoryProfile = await loadShadowMemoryProfile(userId);
           if (!memoryProfile.memoryEnabled) {
@@ -163,10 +161,9 @@ const localApiPlugin = () => ({
         }
 
         try {
-          const { userId, ip } = await requireAuthenticatedRequest(req);
+          const { userId } = await requireAuthenticatedRequest(req);
           await enforceRateLimits([
             { key: `chat:user:${userId}`, limit: 30 },
-            { key: `chat:ip:${ip}`, limit: 60 },
           ]);
           const { messages, shadowNotes } = await readJsonBody(req);
           if (shadowNotes !== undefined && shadowNotes !== null) {
@@ -190,11 +187,10 @@ const localApiPlugin = () => ({
         }
 
         try {
-          const { userId, ip } = await requireAuthenticatedRequest(req);
+          const { userId } = await requireAuthenticatedRequest(req);
           const isRead = req.method === 'GET';
           await enforceRateLimits([
             { key: `shadow-notes:${req.method?.toLowerCase()}:user:${userId}`, limit: isRead ? 60 : 20 },
-            { key: `shadow-notes:${req.method?.toLowerCase()}:ip:${ip}`, limit: isRead ? 120 : 40 },
           ]);
           if (isRead) {
             sendJson(res, 200, await loadShadowMemoryProfile(userId));
@@ -238,10 +234,9 @@ const localApiPlugin = () => ({
         }
 
         try {
-          const { userId, ip } = await requireAuthenticatedRequest(req);
+          const { userId } = await requireAuthenticatedRequest(req);
           await enforceRateLimits([
             { key: `generate:user:${userId}`, limit: 20 },
-            { key: `generate:ip:${ip}`, limit: 40 },
           ]);
           const { prompt } = await readJsonBody(req);
           assertStringLength(prompt, 2_000, 'Prompt');
@@ -263,10 +258,9 @@ const localApiPlugin = () => ({
         }
 
         try {
-          const { userId, ip } = await requireAuthenticatedRequest(req);
+          const { userId } = await requireAuthenticatedRequest(req);
           await enforceRateLimits([
             { key: `transcribe:user:${userId}`, limit: 10 },
-            { key: `transcribe:ip:${ip}`, limit: 20 },
           ]);
           const { audio, language } = await readJsonBody(req);
           assertStringLength(audio, 8 * 1024 * 1024, 'Audio');
@@ -291,10 +285,9 @@ const localApiPlugin = () => ({
         }
 
         try {
-          const { userId, ip } = await requireAuthenticatedRequest(req);
+          const { userId } = await requireAuthenticatedRequest(req);
           await enforceRateLimits([
             { key: `account:user:${userId}`, limit: 3 },
-            { key: `account:ip:${ip}`, limit: 6 },
           ]);
           await deleteSupabaseAccount(req.headers.authorization);
           sendJson(res, 200, { deleted: true });
@@ -308,10 +301,9 @@ const localApiPlugin = () => ({
       if (pathname === '/api/subscription/status' || pathname === '/api/subscription/native-sync') {
         if (pathname === '/api/subscription/status' && req.method === 'GET') {
           try {
-            const { userId, ip } = await requireAuthenticatedRequest(req);
+            const { userId } = await requireAuthenticatedRequest(req);
             await enforceRateLimits([
               { key: `subscription-status:user:${userId}`, limit: 60 },
-              { key: `subscription-status:ip:${ip}`, limit: 120 },
             ]);
             const status = await getSubscriptionAccessStatus(userId);
             res.setHeader('Cache-Control', 'private, no-store, no-cache, max-age=0');
@@ -339,10 +331,9 @@ const localApiPlugin = () => ({
         }
 
         try {
-          const { userId, ip } = await requireAuthenticatedRequest(req);
+          const { userId } = await requireAuthenticatedRequest(req);
           await enforceRateLimits([
             { key: `subscription-sync:user:${userId}`, limit: 10 },
-            { key: `subscription-sync:ip:${ip}`, limit: 20 },
           ]);
           const payload = await readJsonBody(req);
           const subscription = await syncNativeSubscription(req.headers.authorization, payload || {});
@@ -361,10 +352,9 @@ const localApiPlugin = () => ({
         }
 
         try {
-          const { userId, ip } = await requireAuthenticatedRequest(req);
+          const { userId } = await requireAuthenticatedRequest(req);
           await enforceRateLimits([
             { key: `models:user:${userId}`, limit: 10 },
-            { key: `models:ip:${ip}`, limit: 20 },
           ]);
           const data = await fetchAvailableModels();
           res.setHeader('Cache-Control', 'private, no-store, no-cache, max-age=0');

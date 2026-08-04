@@ -180,13 +180,12 @@ export default async function handler(req: any, res: any) {
 
   try {
     const authStartedAt = Date.now();
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     timings.auth = Date.now() - authStartedAt;
     const userHash = createHash("sha256").update(userId).digest("hex").slice(0, 12);
     const rateLimitStartedAt = Date.now();
     await enforceRateLimits([
       { key: `transcribe:user:${userId}`, limit: getVoiceRateLimit("VOICE_TRANSCRIBE_RATE_LIMIT") },
-      { key: `transcribe:ip:${ip}`, limit: getVoiceRateLimit("VOICE_TRANSCRIBE_RATE_LIMIT") },
     ], getVoiceRateLimitWindowMs());
     timings["rate-limit"] = Date.now() - rateLimitStartedAt;
     const parseStartedAt = Date.now();

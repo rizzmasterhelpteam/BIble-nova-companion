@@ -50,10 +50,9 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
       { key: `api-readiness:user:${userId}`, limit: 30 },
-      { key: `api-readiness:ip:${ip}`, limit: 60 },
     ]);
     res.status(200).json(getApiStatus());
   } catch (error) {

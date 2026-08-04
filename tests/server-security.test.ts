@@ -33,7 +33,6 @@ describe("server security", () => {
     process.env.SUPABASE_URL = "https://example.supabase.co";
     process.env.SUPABASE_ANON_KEY = "test-anon-key";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
-    process.env.RATE_LIMIT_IP_SALT = "test-salt";
     getClaimsMock.mockReset();
     getUserMock.mockReset();
     getClaimsMock.mockResolvedValue({ data: null, error: new Error("legacy key") });
@@ -95,16 +94,9 @@ describe("server security", () => {
     expect(getUserMock).not.toHaveBeenCalled();
   });
 
-  it("hashes IP keys so raw client addresses are never persisted", () => {
-    const key = getRateLimitStorageKey("chat:ip:203.0.113.44");
-    expect(key).toMatch(/^chat:ip:[a-f0-9]{64}$/);
-    expect(key).not.toContain("203.0.113.44");
-  });
-
-  it("requires a dedicated IP salt instead of reusing the service key", () => {
-    delete process.env.RATE_LIMIT_IP_SALT;
+  it("rejects IP buckets so authenticated limits remain account-scoped", () => {
     expect(() => getRateLimitStorageKey("subscription-sync:ip:203.0.113.44"))
-      .toThrowError("Rate limiting requires server persistence configuration.");
+      .toThrowError("Account-based rate limiting requires a user-scoped key.");
   });
 
   it("uses the persistent RPC and rejects denied windows", async () => {
@@ -129,17 +121,17 @@ describe("server security", () => {
     });
   });
 
-  it("checks user and IP buckets in one atomic RPC call", async () => {
+  it("checks account-scoped buckets in one atomic RPC call", async () => {
     rpcMock.mockResolvedValueOnce({ data: [{ allowed: true, retry_after_seconds: 0 }], error: null });
     await enforceRateLimits([
       { key: "voice:user:user-1", limit: 60 },
-      { key: "voice:ip:203.0.113.44", limit: 60 },
+      { key: "voice-live-token:user:user-1", limit: 12 },
     ]);
     expect(rpcMock).toHaveBeenCalledTimes(1);
     expect(rpcMock).toHaveBeenCalledWith("check_rate_limits", {
       p_rules: [
         { key: "voice:user:user-1", limit: 60, window_seconds: 600 },
-        { key: expect.stringMatching(/^voice:ip:[a-f0-9]{64}$/), limit: 60, window_seconds: 600 },
+        { key: "voice-live-token:user:user-1", limit: 12, window_seconds: 600 },
       ],
     });
   });

@@ -49,7 +49,7 @@ Set these in Vercel for the environments you deploy to:
 - `SUPABASE_URL` required server-only Supabase project URL
 - `SUPABASE_ANON_KEY` required server-only key used to validate user sessions
 - `SUPABASE_SERVICE_ROLE_KEY` required server-only key for persistence, rate limits, entitlements, and account deletion
-- `RATE_LIMIT_IP_SALT` required server-only random value used to hash IP-based rate-limit keys
+- Authenticated API rate limits are scoped to the verified user account; no IP salt is required
 - `GROQ_API_KEY`
 - `GROQ_MODEL` required for production; use a currently supported provider model and do not rely on a deprecated fallback
 - `GROQ_FALLBACK_MODEL` optional secondary Groq chat model

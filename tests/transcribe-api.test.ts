@@ -78,7 +78,6 @@ describe("transcription API", () => {
     expect(language).toBe("en");
     expect(enforceRateLimits).toHaveBeenCalledWith([
       { key: "transcribe:user:user-1", limit: 60 },
-      { key: "transcribe:ip:127.0.0.1", limit: 60 },
     ], 600_000);
     expect(response.setHeader).toHaveBeenCalledWith(
       "Server-Timing",

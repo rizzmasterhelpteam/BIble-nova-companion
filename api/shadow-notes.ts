@@ -48,11 +48,10 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     const isRead = req.method === "GET";
     await enforceRateLimits([
       { key: `shadow-notes:${req.method.toLowerCase()}:user:${userId}`, limit: isRead ? 60 : 20 },
-      { key: `shadow-notes:${req.method.toLowerCase()}:ip:${ip}`, limit: isRead ? 120 : 40 },
     ]);
 
     if (req.method === "GET") {

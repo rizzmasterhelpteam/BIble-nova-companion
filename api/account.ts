@@ -35,10 +35,9 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
       { key: `account:user:${userId}`, limit: 3 },
-      { key: `account:ip:${ip}`, limit: 6 },
     ]);
     await deleteSupabaseAccount(userId);
     res.status(200).json({ deleted: true });

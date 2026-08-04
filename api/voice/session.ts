@@ -77,11 +77,10 @@ export default async function handler(req: any, res: any) {
   let userHash = "unverified";
 
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     userHash = hashUserId(userId);
     await enforceRateLimits([
       { key: `voice-session:user:${userId}`, limit: 20 },
-      { key: `voice-session:ip:${ip}`, limit: 40 },
     ]);
 
     const parsed = getBody(req);
@@ -148,7 +147,6 @@ export default async function handler(req: any, res: any) {
     if (action === "live-token") {
       await enforceRateLimits([
         { key: `voice-live-token:user:${userId}`, limit: 12 },
-        { key: `voice-live-token:ip:${ip}`, limit: 24 },
       ]);
       if (!hasGeminiLiveConfig()) {
         return res.status(503).json({ error: "Voice streaming is not configured." });

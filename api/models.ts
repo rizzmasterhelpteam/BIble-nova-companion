@@ -17,10 +17,9 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { userId, ip } = await requireAuthenticatedRequest(req);
+    const { userId } = await requireAuthenticatedRequest(req);
     await enforceRateLimits([
       { key: `models:user:${userId}`, limit: 10 },
-      { key: `models:ip:${ip}`, limit: 20 },
     ]);
     const data = await fetchAvailableModels();
     res.status(200).json(data);

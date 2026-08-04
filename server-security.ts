@@ -5,9 +5,6 @@ import type { VoiceUsageSummary } from "./src/types/live.js";
 
 type RequestLike = {
   headers?: Record<string, string | string[] | undefined>;
-  ip?: string;
-  socket?: { remoteAddress?: string };
-  connection?: { remoteAddress?: string };
 };
 
 export type RateLimitRule = {
@@ -38,11 +35,6 @@ const getHeader = (req: RequestLike, name: string) => {
   const headers = req.headers || {};
   const value = headers[name] ?? headers[name.toLowerCase()];
   return Array.isArray(value) ? value[0] : value;
-};
-
-export const getClientIp = (req: RequestLike) => {
-  const forwarded = getHeader(req, "x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || "unknown";
 };
 
 const getSupabaseServerConfig = () => {
@@ -134,7 +126,6 @@ export const requireAuthenticatedRequest = async (req: RequestLike) => {
       return {
         accessToken,
         userId: claimsResult.data.claims.sub,
-        ip: getClientIp(req),
       };
     }
   } catch (error) {
@@ -152,7 +143,6 @@ export const requireAuthenticatedRequest = async (req: RequestLike) => {
   return {
     accessToken,
     userId: data.user.id,
-    ip: getClientIp(req),
   };
 };
 
@@ -388,16 +378,10 @@ export const getServerShadowNotes = async (userId: string) => {
 };
 
 export const getRateLimitStorageKey = (key: string) => {
-  if (!key.includes(":ip:")) return key;
-  // Keep the IP-hash salt independent from credentials. Reusing a service
-  // role key couples rate-limit identity to a secret that may be rotated.
-  const salt = process.env.RATE_LIMIT_IP_SALT;
-  if (!salt) {
-    throw new HttpError("Rate limiting requires server persistence configuration.", 503);
+  if (!key.includes(":user:")) {
+    throw new HttpError("Account-based rate limiting requires a user-scoped key.", 503);
   }
-  return `${key.slice(0, key.indexOf(":ip:") + 4)}${createHash("sha256")
-    .update(`${salt}:${key.slice(key.indexOf(":ip:") + 4)}`)
-    .digest("hex")}`;
+  return key;
 };
 
 export const enforceRateLimits = async (rules: RateLimitRule[], windowMs = RATE_WINDOW_MS) => {
