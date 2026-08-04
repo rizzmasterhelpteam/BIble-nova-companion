@@ -8,6 +8,13 @@ const migrationSource = readFileSync(
   ),
   "utf8",
 );
+const dailyCapRemovalSource = readFileSync(
+  new URL(
+    "../supabase/migrations/20260804180000_remove_daily_voice_cap.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 describe("monthly Voice usage migration", () => {
   it("enforces monthly reservations in both acquisition and availability RPCs", () => {
@@ -26,5 +33,12 @@ describe("monthly Voice usage migration", () => {
     expect(migrationSource).toContain("from public, anon, authenticated;");
     expect(migrationSource).toContain(") to service_role;");
     expect(migrationSource).not.toContain(") to authenticated;");
+  });
+
+  it("removes the separate daily cap from the live six-argument RPCs", () => {
+    expect(dailyCapRemovalSource).toContain("Monthly voice allowance reached");
+    expect(dailyCapRemovalSource).not.toContain("v_daily_used_minutes >= p_daily_minutes");
+    expect(dailyCapRemovalSource).not.toContain("'daily_limit'::text");
+    expect(dailyCapRemovalSource).toContain("p_daily_minutes not between p_max_minutes and 1440");
   });
 });

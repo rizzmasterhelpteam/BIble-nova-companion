@@ -296,17 +296,19 @@ export const hashVoiceReservationHandle = (handle: string | null | undefined) =>
 };
 
 export const getVoiceUsageLimits = (maxMinutes: number) => {
-  const configuredDailyMinutes = Number(process.env.VOICE_DAILY_MAX_MINUTES || 20);
   const configuredMonthlyMinutes = Number(process.env.VOICE_MONTHLY_MAX_MINUTES || 180);
   const configuredOffset = Number(process.env.VOICE_DAILY_RESET_OFFSET_MINUTES || 330);
-  const dailyMinutes = Number.isFinite(configuredDailyMinutes)
-    ? Math.max(maxMinutes, Math.min(240, Math.floor(configuredDailyMinutes)))
-    : 20;
+  const monthlyMinutes = Number.isFinite(configuredMonthlyMinutes)
+    ? Math.max(maxMinutes, Math.min(1_440, Math.floor(configuredMonthlyMinutes)))
+    : Math.max(maxMinutes, 180);
+
+  // Keep the legacy RPC parameter populated, but mirror the monthly budget so
+  // it cannot create a separate daily cap. The database migration ignores the
+  // legacy daily bucket and enforces only the monthly allowance.
+  const dailyMinutes = monthlyMinutes;
   return {
     dailyMinutes,
-    monthlyMinutes: Number.isFinite(configuredMonthlyMinutes)
-      ? Math.max(dailyMinutes, Math.min(1_440, Math.floor(configuredMonthlyMinutes)))
-      : Math.max(dailyMinutes, 180),
+    monthlyMinutes,
     resetOffsetMinutes: Number.isFinite(configuredOffset)
       ? Math.max(-720, Math.min(840, Math.trunc(configuredOffset)))
       : 330,

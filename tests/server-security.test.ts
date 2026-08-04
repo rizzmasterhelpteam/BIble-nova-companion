@@ -188,25 +188,21 @@ describe("server security", () => {
     });
   });
 
-  it("keeps monthly Voice limits server-configurable and never below daily minutes", () => {
-    const previousDaily = process.env.VOICE_DAILY_MAX_MINUTES;
+  it("removes the separate daily Voice cap while keeping monthly limits configurable", () => {
     const previousMonthly = process.env.VOICE_MONTHLY_MAX_MINUTES;
     try {
-      process.env.VOICE_DAILY_MAX_MINUTES = "20";
       process.env.VOICE_MONTHLY_MAX_MINUTES = "180";
       expect(getVoiceUsageLimits(10)).toMatchObject({
-        dailyMinutes: 20,
+        dailyMinutes: 180,
         monthlyMinutes: 180,
       });
 
       process.env.VOICE_MONTHLY_MAX_MINUTES = "5";
       expect(getVoiceUsageLimits(10)).toMatchObject({
-        dailyMinutes: 20,
-        monthlyMinutes: 20,
+        dailyMinutes: 10,
+        monthlyMinutes: 10,
       });
     } finally {
-      if (previousDaily === undefined) delete process.env.VOICE_DAILY_MAX_MINUTES;
-      else process.env.VOICE_DAILY_MAX_MINUTES = previousDaily;
       if (previousMonthly === undefined) delete process.env.VOICE_MONTHLY_MAX_MINUTES;
       else process.env.VOICE_MONTHLY_MAX_MINUTES = previousMonthly;
     }

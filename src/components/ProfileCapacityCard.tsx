@@ -15,7 +15,6 @@ type UsageResponse = {
   usage?: VoiceUsageSummary | null;
   limits?: {
     maxSessionMinutes?: number;
-    dailyMinutes?: number;
     monthlyMinutes?: number;
   };
 };
@@ -24,7 +23,6 @@ type UsageState = {
   eligible: boolean;
   usage: VoiceUsageSummary | null;
   maxSessionMinutes: number | null;
-  dailyMinutes: number | null;
   monthlyMinutes: number | null;
 };
 
@@ -125,7 +123,6 @@ export default function ProfileCapacityCard({
           eligible: data.eligible === true,
           usage: data.usage || null,
           maxSessionMinutes: asDisplayInteger(limits.maxSessionMinutes),
-          dailyMinutes: asDisplayInteger(limits.dailyMinutes),
           monthlyMinutes: asDisplayInteger(limits.monthlyMinutes),
         });
       })
@@ -175,9 +172,7 @@ export default function ProfileCapacityCard({
         ? "Usage unavailable"
         : "Voice is included with Premium.";
   const voiceMeta = usageState?.maxSessionMinutes
-    ? `Max time per session: ${usageState.maxSessionMinutes} min${
-      usageState.dailyMinutes ? ` · Daily: ${usageState.dailyMinutes} min` : ""
-    }`
+    ? `Max time per session: ${usageState.maxSessionMinutes} min`
     : "Session limit unavailable";
 
   const membershipBadgeClass = useMemo(
