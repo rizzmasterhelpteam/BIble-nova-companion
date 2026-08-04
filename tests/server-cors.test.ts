@@ -46,6 +46,7 @@ describe("API CORS policy", () => {
 
   it("allows the bundled Capacitor localhost origin", () => {
     expect(isAllowedApiOrigin("capacitor://localhost")).toBe(true);
+    expect(isAllowedApiOrigin("https://localhost")).toBe(true);
   });
 
   it("does not include localhost defaults in production", () => {
