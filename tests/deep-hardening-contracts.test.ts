@@ -35,12 +35,13 @@ describe("deep production hardening contracts", () => {
     });
   });
 
-  it("does not auto-schedule reminders from the app shell", () => {
+  it("auto-schedules account-scoped reminders without exposing a settings switch", () => {
     const layout = read("src/components/Layout.tsx");
-    expect(layout).toContain("handleDailyReminderToggle");
-    expect(layout).toContain("storageGetJson<boolean>");
-    expect(layout).toContain("Notifications are blocked");
-    expect(layout).not.toContain("ensureAutomaticDailyReminder");
+    expect(layout).toContain("ensureAutomaticDailyReminder");
+    expect(layout).toContain("AUTOMATIC_REMINDER_DAYS");
+    expect(layout).toContain("notificationSeed: userId");
+    expect(layout).not.toContain("handleDailyReminderToggle");
+    expect(layout).not.toContain("Daily reflection reminders");
   });
 
   it("keeps deletion and canonical Voice schema changes forward-only", () => {

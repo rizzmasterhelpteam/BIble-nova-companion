@@ -19,8 +19,6 @@ import {
   Loader2,
   X,
   ChevronRight,
-  Bell,
-  BellOff,
   Vibrate,
   VibrateOff,
 } from "lucide-react";
@@ -36,10 +34,6 @@ import { shouldHideBottomNavigation } from "../lib/mobileLayout";
 import RouteContentFallback from "./RouteContentFallback";
 import ProfileCapacityCard from "./ProfileCapacityCard";
 import { AUTOMATIC_REMINDER_DAYS, getAutomaticReminderTime } from "../lib/dailyReminderPreferences";
-import { storageGetJson, storageRemove, storageSet } from "../lib/webStorage";
-
-const DAILY_REMINDER_PREF_PREFIX = "bible-nova-daily-reminders-enabled-";
-const getDailyReminderPreferenceKey = (userId: string) => `${DAILY_REMINDER_PREF_PREFIX}${userId}`;
 
 const makeAvatarDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -112,11 +106,10 @@ export default function Layout() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [memoryPreferenceError, setMemoryPreferenceError] = useState<string | null>(null);
-  const [dailyRemindersEnabled, setDailyRemindersEnabled] = useState(false);
-  const [dailyReminderLoading, setDailyReminderLoading] = useState(true);
-  const [dailyReminderError, setDailyReminderError] = useState<string | null>(null);
   const settingsDialogRef = React.useRef<HTMLDivElement>(null);
   const settingsTriggerRef = React.useRef<HTMLButtonElement>(null);
+  const automaticReminderUserRef = React.useRef<string | null>(null);
+  const automaticReminderInFlightRef = React.useRef(false);
   const prefersReducedMotion = useReducedMotion();
   const displayName = profileName || user?.email?.split("@")[0] || "Unknown";
   const accountInitial = displayName.trim().charAt(0).toUpperCase() || "?";
@@ -149,90 +142,44 @@ export default function Layout() {
     }
   }, [platform.isNative, resetKeyboardState]);
 
-  useEffect(() => {
-    let disposed = false;
+  const ensureAutomaticDailyReminder = React.useCallback(async () => {
     const userId = user?.id;
-    setDailyReminderError(null);
+    if (
+      !nativeControlsAvailable ||
+      !userId ||
+      automaticReminderUserRef.current === userId ||
+      automaticReminderInFlightRef.current
+    ) return;
 
-    if (!nativeControlsAvailable || !userId) {
-      setDailyRemindersEnabled(false);
-      setDailyReminderLoading(false);
-      return () => undefined;
-    }
-
-    const enabled = storageGetJson<boolean>(getDailyReminderPreferenceKey(userId), false) === true;
-    setDailyRemindersEnabled(enabled);
-    setDailyReminderLoading(true);
-
-    void (async () => {
-      try {
-        // Restoring an existing opt-in may reschedule silently only when the
-        // OS permission is already granted. A new permission prompt is always
-        // initiated by the user's switch gesture below.
-        const status = await platform.reminders.getStatus();
-        if (!disposed && enabled && status.permissionGranted && status.schedules.length === 0) {
-          const { hour, minute } = getAutomaticReminderTime(userId);
-          await platform.reminders.schedule({
-            hour,
-            minute,
-            days: AUTOMATIC_REMINDER_DAYS,
-            notificationSeed: userId,
-          });
-        }
-      } catch (error) {
-        if (!disposed) setDailyReminderError("Notifications are unavailable on this device.");
-      } finally {
-        if (!disposed) setDailyReminderLoading(false);
-      }
-    })();
-
-    return () => {
-      disposed = true;
-    };
-  }, [nativeControlsAvailable, platform, user?.id]);
-
-  useEffect(() => {
-    const handleAccountShutdown = () => {
-      void platform.reminders.cancel().catch(() => undefined);
-      setDailyRemindersEnabled(false);
-    };
-    window.addEventListener("bible-nova-account-shutdown", handleAccountShutdown);
-    return () => window.removeEventListener("bible-nova-account-shutdown", handleAccountShutdown);
-  }, [platform]);
-
-  const handleDailyReminderToggle = async () => {
-    const userId = user?.id;
-    if (!userId || dailyReminderLoading || !nativeControlsAvailable) return;
-    setDailyReminderError(null);
-    setDailyReminderLoading(true);
-
+    automaticReminderInFlightRef.current = true;
+    const { hour, minute } = getAutomaticReminderTime(userId);
     try {
-      if (dailyRemindersEnabled) {
-        await platform.reminders.cancel();
-        storageRemove(getDailyReminderPreferenceKey(userId));
-        setDailyRemindersEnabled(false);
-        return;
-      }
-
-      const { hour, minute } = getAutomaticReminderTime(userId);
       const scheduled = await platform.reminders.schedule({
         hour,
         minute,
         days: AUTOMATIC_REMINDER_DAYS,
         notificationSeed: userId,
       });
-      if (!scheduled) {
-        setDailyReminderError("Notifications are blocked. Allow them in Android settings, then try again.");
-        return;
-      }
-      storageSet(getDailyReminderPreferenceKey(userId), "true");
-      setDailyRemindersEnabled(true);
+      if (scheduled) automaticReminderUserRef.current = userId;
     } catch (error) {
-      setDailyReminderError(error instanceof Error ? error.message : "Could not enable reminders.");
+      console.warn("Automatic daily reminder could not be scheduled:", error);
     } finally {
-      setDailyReminderLoading(false);
+      automaticReminderInFlightRef.current = false;
     }
-  };
+  }, [nativeControlsAvailable, platform, user?.id]);
+
+  useEffect(() => {
+    void ensureAutomaticDailyReminder();
+  }, [ensureAutomaticDailyReminder]);
+
+  useEffect(() => {
+    const handleAccountShutdown = () => {
+      automaticReminderUserRef.current = null;
+      void platform.reminders.cancel().catch(() => undefined);
+    };
+    window.addEventListener("bible-nova-account-shutdown", handleAccountShutdown);
+    return () => window.removeEventListener("bible-nova-account-shutdown", handleAccountShutdown);
+  }, [platform]);
 
   const handleMemoryPreferenceToggle = async () => {
     if (memoryPreferenceLoading) return;
@@ -592,63 +539,6 @@ export default function Layout() {
                     </button>
 
                   </section>
-
-                  {nativeControlsAvailable && (
-                    <section>
-                      <div className="mb-3 flex items-center gap-2">
-                        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "var(--app-accent-gradient)" }} />
-                        <p className="app-kicker">Gentle reminders</p>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={dailyRemindersEnabled}
-                        aria-busy={dailyReminderLoading}
-                        onClick={() => void handleDailyReminderToggle()}
-                        disabled={dailyReminderLoading}
-                        className="flex w-full items-center justify-between rounded-[1.4rem] border px-4 py-3.5 text-left transition-colors hover:bg-[color:var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-wait disabled:opacity-60"
-                        style={{
-                          background: "var(--app-card-soft)",
-                          borderColor: "var(--app-card-border)",
-                        }}
-                      >
-                        <span className="flex min-w-0 items-center gap-3 pr-3">
-                          <span
-                            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full"
-                            style={{ background: "var(--app-accent-soft)", color: "var(--app-accent)" }}
-                          >
-                            {dailyRemindersEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
-                          </span>
-                          <span>
-                            <span className="app-heading block text-[14px] font-medium">Daily reflection reminders</span>
-                            <span className="app-muted block text-[11px] leading-relaxed">
-                              Optional evening notifications, usually between 6–9 PM local time.
-                            </span>
-                          </span>
-                        </span>
-                        <span
-                          className="relative h-6 w-11 flex-shrink-0 rounded-full border transition-colors"
-                          style={{
-                            background: dailyRemindersEnabled ? "var(--app-accent)" : "var(--app-secondary-bg)",
-                            borderColor: dailyRemindersEnabled ? "var(--app-accent)" : "var(--app-secondary-border)",
-                          }}
-                        >
-                          <span
-                            className="absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white transition-all"
-                            style={{ left: dailyRemindersEnabled ? "1.45rem" : "0.2rem" }}
-                          />
-                        </span>
-                      </button>
-                      <p className="app-muted mt-2 px-2 text-[11px] leading-relaxed">
-                        Notifications stay on this account and are canceled when you sign out. You can change this anytime.
-                      </p>
-                      {dailyReminderError && (
-                        <p role="alert" className="mt-2 rounded-xl px-3 py-2 text-[12px] leading-relaxed text-[color:var(--app-danger)]" style={{ background: "var(--app-danger-soft)" }}>
-                          {dailyReminderError}
-                        </p>
-                      )}
-                    </section>
-                  )}
 
                   <section>
                     <div className="mb-3 flex items-center gap-2">
