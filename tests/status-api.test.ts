@@ -71,6 +71,22 @@ describe("status endpoint cache policy", () => {
     ]);
   });
 
+  it("returns readiness for authenticated legacy status clients", async () => {
+    const response = createResponse();
+
+    await statusHandler({
+      method: "GET",
+      headers: { authorization: "Bearer test-session" },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({ chatReady: true, voiceReady: true });
+    expect(requireAuthenticatedRequest).toHaveBeenCalledOnce();
+    expect(enforceRateLimits).toHaveBeenCalledWith([
+      { key: "api-readiness:user:user-1", limit: 30 },
+    ]);
+  });
+
   it("sets no-store headers on OPTIONS responses", async () => {
     const response = createResponse();
 
