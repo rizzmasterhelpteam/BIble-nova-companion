@@ -16,13 +16,15 @@ describe("Paywall account escape hatch", () => {
   });
 
   it("explains the premium and Voice allowance clearly", () => {
-    expect(paywallSource).toContain("What is included");
-    expect(paywallSource).toContain("Unlimited text reflections");
+    expect(paywallSource).toContain("Premium includes");
+    expect(paywallSource).toContain("Unlimited text conversations");
+    expect(paywallSource).toContain("More room for what matters");
+    expect(paywallSource).toContain("Talk it out. Feel heard. Move forward.");
     expect(paywallSource).toContain("Premium Voice Mode");
-    expect(paywallSource).toContain("Be heard. Think clearly. Go deeper.");
     expect(paywallSource).toContain("5 hours");
-    expect(paywallSource).toContain("per billing cycle");
+    expect(paywallSource).toContain("included each billing cycle");
     expect(paywallSource).toContain("30 minutes");
-    expect(paywallSource).toContain("There is no daily cap");
+    expect(paywallSource).toContain("No daily limit");
+    expect(paywallSource).toContain("Start Premium");
   });
 });

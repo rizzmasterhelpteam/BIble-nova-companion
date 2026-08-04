@@ -92,7 +92,7 @@ export default function Paywall() {
           setIapReady(false);
           setIapPackages({});
           setIapLoadError(
-            "Native subscription products are not configured. Set the IAP product IDs and Android base plan IDs before shipping.",
+            "Premium plans are not available right now. Please try again later.",
           );
           return;
         }
@@ -105,7 +105,7 @@ export default function Paywall() {
         setIapReady(hasPackages);
         if (!hasPackages) {
           setIapLoadError(
-            "No native subscription products were returned. Check the IAP product IDs, Android base plan IDs, and store product status.",
+            "Premium plans could not be loaded from Google Play. Please try again shortly.",
           );
         }
       })
@@ -113,7 +113,7 @@ export default function Paywall() {
         console.warn("Could not load native offerings:", err);
         if (isMounted) {
           setIapReady(false);
-          setIapLoadError(err instanceof Error ? err.message : "Could not load native subscription products.");
+           setIapLoadError("Premium plans could not be loaded. Please try again shortly.");
         }
       })
       .finally(() => {
@@ -136,7 +136,7 @@ export default function Paywall() {
         setSubscriptionSyncReady(status.nativeSubscriptionSyncReady);
         if (!status.nativeSubscriptionSyncReady) {
           setSubscriptionSyncError(
-            "Premium purchases are temporarily unavailable while secure Google Play verification is being configured. Please try again later.",
+             "Premium verification is temporarily unavailable. Please try again later.",
           );
         } else {
           setSubscriptionSyncError(null);
@@ -145,7 +145,7 @@ export default function Paywall() {
       .catch(() => {
         if (isMounted) {
           setSubscriptionSyncReady(false);
-          setSubscriptionSyncError("Premium purchases are temporarily unavailable while verification is checked. Please try again shortly.");
+           setSubscriptionSyncError("Premium verification is temporarily unavailable. Please try again shortly.");
         }
       });
     return () => { isMounted = false; };
@@ -213,8 +213,6 @@ export default function Paywall() {
     nativeStoreAvailable &&
     subscriptionSyncReady === true &&
     Boolean(selectedNativePackage);
-  const selectedPlanLabel = selectedPlan === "yearly" ? "Yearly" : "Monthly";
-
   const handleSubscribe = async () => {
     setError(null);
     if (!canSubscribe) return;
@@ -233,13 +231,13 @@ export default function Paywall() {
         await syncNativeSubscriptionForAccount(purchase, selectedNativePackage.androidBasePlanId, selectedNativePackage.productId);
         storageRemove(PENDING_NATIVE_ENTITLEMENT_SYNC_KEY);
       } catch (syncError) {
-        setError("Purchase completed. We're still activating Premium. Keep this app open and use Restore Purchases if it does not activate shortly.");
+         setError("Your purchase went through. We are activating Premium now—keep the app open for a moment. If it does not appear shortly, choose Restore purchases.");
         console.warn("Native purchase completed but entitlement linking is pending:", syncError);
         return;
       }
       navigate("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Purchase could not be completed.");
+       setError(err instanceof Error ? err.message : "We could not complete your purchase. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -305,7 +303,7 @@ export default function Paywall() {
       );
       navigate("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not restore purchases.");
+       setError(err instanceof Error ? err.message : "We could not restore your purchase. Please try again.");
       setIsLoading(false);
     }
   };
@@ -316,7 +314,7 @@ export default function Paywall() {
     try {
       await openSubscriptionManagement();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not open subscription management.");
+       setError(err instanceof Error ? err.message : "We could not open subscription management. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -352,18 +350,18 @@ export default function Paywall() {
 
   const features = [
     {
-      text: "Unlimited text reflections",
-      detail: "Talk through emotions, decisions, faith, and everyday life.",
+       text: "Unlimited text conversations",
+       detail: "Talk through feelings, decisions, faith, and everyday life without a daily text limit.",
       icon: <MessageCircle className="app-accent h-5 w-5" />,
     },
     {
-      text: "Personalized prayers and practical steps",
-      detail: "Get thoughtful support shaped around what you share.",
+       text: "Personalized support for your moment",
+       detail: "Receive thoughtful reflections, prayers, and practical next steps shaped by what you share.",
       icon: <HeartHandshake className="app-accent h-5 w-5" />,
     },
     {
-      text: "A private space to return to",
-      detail: "Optional memory controls let you decide what is remembered.",
+       text: "Your private space, your choice",
+       detail: "Choose whether helpful preferences are remembered across conversations.",
       icon: <Lock className="app-accent h-5 w-5" />,
     },
   ];
@@ -431,16 +429,16 @@ export default function Paywall() {
             </span>
             
             <h1 className="app-heading text-3xl sm:text-4xl font-serif font-medium mb-3 tracking-tight">
-              Deepen Your Journey
+              More room for what matters
             </h1>
             <p className="app-muted text-[15px] leading-relaxed max-w-[300px]">
-              Unlock unlimited personalized reflections, prayers, and a distraction-free spiritual sanctuary.
+              Go deeper with unlimited conversations, thoughtful support, and a calm space for reflection, prayer, and everyday life.
             </p>
           </motion.div>
 
           {/* Premium Features */}
           <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="mb-6 space-y-3">
-            <p className="app-kicker px-1 text-[10px] font-semibold uppercase tracking-[0.18em]">What is included</p>
+            <p className="app-kicker px-1 text-[10px] font-semibold uppercase tracking-[0.18em]">Premium includes</p>
             {features.map((feature) => (
               <div key={feature.text}
                 className="app-paywall-panel flex items-start gap-4 rounded-2xl p-4">
@@ -465,27 +463,27 @@ export default function Paywall() {
               </div>
               <div className="min-w-0">
                 <p className="app-kicker text-[10px] font-semibold uppercase tracking-[0.16em]">Premium Voice Mode</p>
-                <h2 className="app-heading mt-1 text-lg font-serif">Be heard. Think clearly. Go deeper.</h2>
+                <h2 className="app-heading mt-1 text-lg font-serif">Talk it out. Feel heard. Move forward.</h2>
                 <p className="app-muted mt-2 text-sm leading-relaxed">
-                  Have calm, hands-free conversations for the moments when typing is not enough—talk things through, reflect, or pray naturally.
+                  Speak naturally in a calm, hands-free conversation when typing is not enough—reflect, pray, or work through everyday life out loud.
                 </p>
               </div>
             </div>
             <div className="mt-5 grid grid-cols-2 gap-3">
               <div className="rounded-2xl border p-3" style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}>
-                <p className="app-muted text-[10px] font-semibold uppercase tracking-wider">Voice allowance</p>
+                <p className="app-muted text-[10px] font-semibold uppercase tracking-wider">Monthly allowance</p>
                 <p className="app-heading mt-1 text-xl font-semibold">5 hours</p>
-                <p className="app-muted text-[11px]">per billing cycle</p>
+                <p className="app-muted text-[11px]">included each billing cycle</p>
               </div>
               <div className="rounded-2xl border p-3" style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}>
-                <p className="app-muted text-[10px] font-semibold uppercase tracking-wider">Session length</p>
+                <p className="app-muted text-[10px] font-semibold uppercase tracking-wider">Maximum session</p>
                 <p className="app-heading mt-1 text-xl font-semibold">30 minutes</p>
-                <p className="app-muted text-[11px]">maximum length</p>
+                <p className="app-muted text-[11px]">per conversation</p>
               </div>
             </div>
             <div className="app-muted mt-4 flex items-start gap-2 text-xs leading-relaxed">
               <Clock3 className="app-accent mt-0.5 h-4 w-4 shrink-0" />
-              <span>Use your allowance when it matters. There is no daily cap, and your time renews with each subscription billing cycle.</span>
+              <span>No daily limit. Use your 5 hours whenever you need them; your allowance renews with each subscription billing cycle.</span>
             </div>
           </motion.div>
 
@@ -495,17 +493,17 @@ export default function Paywall() {
               className="app-paywall-panel mb-6 flex items-start gap-3 rounded-2xl p-4">
               <ShieldCheck className="app-accent mt-0.5 h-5 w-5 shrink-0" />
               <p className="app-accent text-sm leading-relaxed">
-                Subscriptions are managed via the Android app. Download it on Google Play to subscribe.
+                Premium subscriptions are purchased and restored securely through Google Play on Android.
               </p>
             </motion.div>
           )}
 
           {!nativeStoreAvailable && (
             <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="app-paywall-panel mb-8 rounded-[1.5rem] p-5 text-left">
-              <p className="app-kicker mb-2">Web preview</p>
-              <h2 className="app-heading text-xl font-serif">Your reflection space is ready for Android.</h2>
+              <p className="app-kicker mb-2">Web experience</p>
+              <h2 className="app-heading text-xl font-serif">Explore Bible Nova wherever you are.</h2>
               <p className="app-muted mt-2 text-sm leading-relaxed">
-                Premium plans are purchased and restored through Google Play in the Android app. This web view is available for exploring the experience; it will not start a checkout.
+                You are viewing the web experience. To start or restore Premium, open Bible Nova Companion on Android and continue through Google Play.
               </p>
             </motion.div>
           )}
@@ -532,13 +530,13 @@ export default function Paywall() {
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="app-heading font-semibold text-lg">Yearly</span>
-                    <span className="app-accent-badge inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
-                      <Star className="w-2.5 h-2.5 fill-current" /> Best Value
+                    <span className="app-heading font-semibold text-lg">Yearly plan</span>
+                      <span className="app-accent-badge inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
+                       <Star className="w-2.5 h-2.5 fill-current" /> Best value
                     </span>
                   </div>
                   {yearlyMonthly && (
-                    <p className="app-accent text-sm font-medium">{yearlyMonthly} billed annually</p>
+                    <p className="app-accent text-sm font-medium">{yearlyMonthly} when billed annually</p>
                   )}
                 </div>
                 <div className="text-right pl-3 shrink-0">
@@ -564,7 +562,7 @@ export default function Paywall() {
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="app-heading font-semibold text-lg">Monthly</span>
+                    <span className="app-heading font-semibold text-lg">Monthly plan</span>
                     {monthlyTrialSelected && (
                       <span className="app-accent-badge rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
                         7-day free trial
@@ -572,7 +570,7 @@ export default function Paywall() {
                     )}
                   </div>
                   <p className={cn("mt-1 text-sm", monthlyTrialSelected ? "app-accent" : "app-muted")}>
-                    {monthlyTrialSelected ? monthlyTrialLabel : "Flexible, cancel anytime"}
+                     {monthlyTrialSelected ? monthlyTrialLabel : "Simple monthly billing · cancel anytime"}
                   </p>
                 </div>
                 <div className="text-right pl-3 shrink-0">
@@ -609,24 +607,24 @@ export default function Paywall() {
                 ) : nativeSelectedPlanUnavailable ? (
                   "Plan unavailable"
                 ) : (
-                  <>{monthlyTrialSelected && selectedPlan === "monthly" ? "Start free trial" : `Continue with ${selectedPlanLabel}`}</>
+                   <>{monthlyTrialSelected && selectedPlan === "monthly" ? "Start your free trial" : "Start Premium"}</>
                 )}
               </button>
 
               <div className="app-muted flex items-center justify-center gap-1.5 text-xs">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Secure payment via Google Play. Cancel anytime.</span>
+                 <span>Secure checkout through Google Play. Cancel anytime.</span>
               </div>
 
               <div className="flex items-center justify-center gap-4 pt-1">
                 <button type="button" onClick={handleRestorePurchases} disabled={isLoading}
                   className="touch-target app-ghost-button rounded-pill px-3 py-2 text-xs transition-colors disabled:opacity-50">
-                  Restore Purchase
+                   Restore purchases
                 </button>
                 <div className="h-1 w-1 rounded-full" style={{ background: "var(--app-divider)" }} />
                 <button type="button" onClick={handleManageSubscriptions} disabled={isLoading}
                   className="touch-target app-ghost-button rounded-pill px-3 py-2 text-xs transition-colors disabled:opacity-50">
-                  Manage Billing
+                   Manage subscription
                 </button>
               </div>
             </motion.div>
@@ -652,7 +650,7 @@ export default function Paywall() {
             variants={isPerformanceMode ? undefined : itemVariants}
             className="app-soft text-center text-[10px] mt-8 mb-6 max-w-xs mx-auto leading-relaxed"
           >
-            By continuing, you agree to our Terms of Service and Privacy Policy. Subscriptions automatically renew unless canceled at least 24 hours before the end of the current period.
+             By continuing, you agree to our Terms of Service and Privacy Policy. Subscriptions renew automatically until canceled in Google Play. Cancel at least 24 hours before the next renewal to avoid the next charge.
           </motion.p>
         </motion.div>
       </div>
