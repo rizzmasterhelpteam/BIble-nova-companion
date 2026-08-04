@@ -3,10 +3,13 @@
   "private": true,
   "version": "1.1.8",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
-    "verify:production": "npm run lint && npm run test && npm run build",
+    "verify:production": "npm run lint && npm run test && npm run build && npm run verify:client-bundle",
     "start": "tsx server.ts",
     "test": "vitest run",
     "voice:test-google": "tsx scripts/test-google-tts-voices.ts",
@@ -17,6 +20,7 @@
     "assets:native": "powershell -ExecutionPolicy Bypass -File scripts/generate-native-assets.ps1",
     "fix:ios-spm": "node scripts/fix-capacitor-ios-spm.mjs",
     "verify:native-env": "node scripts/verify-native-env.mjs",
+    "verify:client-bundle": "node scripts/verify-client-bundle.mjs",
     "verify:native-shell": "node scripts/verify-native-shell.mjs",
     "sync:native-google-auth": "node scripts/sync-native-google-auth.mjs",
     "cap:sync": "npm run verify:native-env && npm run verify:native-shell && npm run build && cap sync && npm run verify:native-shell && npm run fix:ios-spm && npm run sync:native-google-auth",
@@ -50,7 +54,7 @@
     "motion": "^12.23.24",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.18.2",
+    "react-router-dom": "7.18.2",
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {

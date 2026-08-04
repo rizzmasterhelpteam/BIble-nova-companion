@@ -38,7 +38,22 @@ app.use((_req, res, next) => {
 });
 
 app.get("/api/status", (_req, res) => {
-  res.json(getApiStatus());
+  res.json({ ok: true });
+});
+
+app.get("/api/status/ready", async (req, res) => {
+  try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    await enforceRateLimits([
+      { key: `api-readiness:user:${userId}`, limit: 30 },
+      { key: `api-readiness:ip:${ip}`, limit: 60 },
+    ]);
+    res.setHeader("Cache-Control", "no-store, no-cache, max-age=0");
+    res.json(getApiStatus());
+  } catch (error) {
+    const details = getHttpErrorDetails(error);
+    res.status(details.statusCode).json({ error: details.message });
+  }
 });
 
 app.post("/api/voice/session", voiceSessionHandler);

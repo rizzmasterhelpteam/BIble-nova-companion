@@ -46,8 +46,10 @@ export const getClientIp = (req: RequestLike) => {
 };
 
 const getSupabaseServerConfig = () => {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  // Never fall back to VITE_* here. Vite variables are intentionally exposed
+  // to the browser and must not be accepted as server configuration.
+  const url = process.env.SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_ANON_KEY;
   if (!url || !anonKey || url.includes("placeholder.supabase.co")) {
     throw new HttpError("Authentication is not configured on the server.", 503);
   }
@@ -55,7 +57,7 @@ const getSupabaseServerConfig = () => {
 };
 
 export const getSupabaseAdminClient = (): SupabaseClient => {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const url = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceRoleKey || url.includes("placeholder.supabase.co")) {
     throw new HttpError("Server persistence is not configured.", 503);
@@ -208,9 +210,6 @@ export const getSubscriptionAccessStatus = async (
   };
 };
 
-const isMissingVoiceRpcSignature = (error: { message?: string } | null) =>
-  Boolean(error?.message && /could not find the function .*voice_session_/i.test(error.message));
-
 export const acquireVoiceSessionLease = async (
   userId: string,
   maxMinutes: number,
@@ -228,18 +227,7 @@ export const acquireVoiceSessionLease = async (
     p_reset_offset_minutes: resetOffsetMinutes,
     p_handle_hash: handleHash,
   };
-  let { data, error } = await client.rpc("acquire_voice_session_lease", params);
-  let usedLegacyRpc = false;
-  if (isMissingVoiceRpcSignature(error)) {
-    usedLegacyRpc = true;
-    ({ data, error } = await client.rpc("acquire_voice_session_lease", {
-      p_user_id: userId,
-      p_max_minutes: maxMinutes,
-      p_daily_minutes: dailyMinutes,
-      p_reset_offset_minutes: resetOffsetMinutes,
-      p_handle_hash: handleHash,
-    }));
-  }
+  const { data, error } = await client.rpc("acquire_voice_session_lease", params);
   if (error) {
     const message = error.message.toLowerCase();
     if (message.includes("premium subscription")) {
@@ -262,14 +250,14 @@ export const acquireVoiceSessionLease = async (
   if (
     !result?.lease_id ||
     !result?.lease_expires_at ||
-    (!usedLegacyRpc && (!Number.isInteger(reservedMinutes) || reservedMinutes < 1 || reservedMinutes > maxMinutes))
+    !Number.isInteger(reservedMinutes) || reservedMinutes < 1 || reservedMinutes > maxMinutes
   ) {
     throw new HttpError("Voice session protection is temporarily unavailable.", 503);
   }
   return {
     leaseId: String(result.lease_id),
     expiresAt: String(result.lease_expires_at),
-    reservedMinutes: usedLegacyRpc ? maxMinutes : reservedMinutes,
+    reservedMinutes,
   };
 };
 
@@ -333,16 +321,7 @@ export const getVoiceSessionAvailability = async (
     p_reset_offset_minutes: resetOffsetMinutes,
     p_handle_hash: handleHash,
   };
-  let { data, error } = await client.rpc("get_voice_session_availability", params);
-  if (isMissingVoiceRpcSignature(error)) {
-    ({ data, error } = await client.rpc("get_voice_session_availability", {
-      p_user_id: userId,
-      p_max_minutes: maxMinutes,
-      p_daily_minutes: dailyMinutes,
-      p_reset_offset_minutes: resetOffsetMinutes,
-      p_handle_hash: handleHash,
-    }));
-  }
+  const { data, error } = await client.rpc("get_voice_session_availability", params);
   if (error) {
     console.error("Voice availability check failed:", error.message);
     throw new HttpError("Voice eligibility is temporarily unavailable.", 503);
@@ -410,11 +389,9 @@ export const getServerShadowNotes = async (userId: string) => {
 
 export const getRateLimitStorageKey = (key: string) => {
   if (!key.includes(":ip:")) return key;
-  // A dedicated salt is preferred, but the persistent limiter already
-  // requires the server-only service role. Falling back to it keeps IP keys
-  // non-reversible and prevents a missing optional env var from blocking
-  // critical authenticated flows such as subscription linking.
-  const salt = process.env.RATE_LIMIT_IP_SALT || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Keep the IP-hash salt independent from credentials. Reusing a service
+  // role key couples rate-limit identity to a secret that may be rotated.
+  const salt = process.env.RATE_LIMIT_IP_SALT;
   if (!salt) {
     throw new HttpError("Rate limiting requires server persistence configuration.", 503);
   }
@@ -435,29 +412,33 @@ export const enforceRateLimits = async (rules: RateLimitRule[], windowMs = RATE_
     return rule;
   });
 
-  const checks = await Promise.all(validatedRules.map(async (rule) => {
-    const { data, error } = await client.rpc("check_rate_limit", {
-      p_key: getRateLimitStorageKey(rule.key),
-      p_limit: rule.limit,
-      p_window_seconds: windowSeconds,
-    });
-    return { data, error };
-  }));
+  const { data, error } = await client.rpc("check_rate_limits", {
+    p_rules: validatedRules.map((rule) => ({
+      key: getRateLimitStorageKey(rule.key),
+      limit: rule.limit,
+      window_seconds: windowSeconds,
+    })),
+  });
 
-  const failedCheck = checks.find((check) => check.error);
-  if (failedCheck?.error) {
-    console.error("Persistent rate-limit check failed:", failedCheck.error.message);
+  if (error) {
+    if (error.message.toLowerCase().includes("jwt issued at future")) {
+      console.error("Persistent rate-limit check rejected the server Supabase credential timestamp.");
+    }
+    console.error("Persistent rate-limit check failed:", error.message);
     throw new HttpError("Rate limiting is temporarily unavailable. Please try again shortly.", 503);
   }
 
-  const deniedResult = checks
-    .map((check) => Array.isArray(check.data) ? check.data[0] : check.data)
-    .find((result) => !result?.allowed);
-  if (deniedResult) {
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result || typeof result.allowed !== "boolean") {
+    console.error("Persistent rate-limit check returned an invalid result.");
+    throw new HttpError("Rate limiting is temporarily unavailable. Please try again shortly.", 503);
+  }
+
+  if (!result.allowed) {
     throw new HttpError(
       "Too many requests. Please try again shortly.",
       429,
-      Math.max(1, Number(deniedResult.retry_after_seconds || 1)),
+      Math.max(1, Number(result.retry_after_seconds || 1)),
     );
   }
 };

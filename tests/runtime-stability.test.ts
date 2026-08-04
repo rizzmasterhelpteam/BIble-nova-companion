@@ -35,10 +35,11 @@ describe("remote runtime stability contracts", () => {
     expect(voice).toContain("useEntitlement");
   });
 
-  it("describes Voice renewal by Premium billing cycle rather than a fixed reset date", () => {
+  it("uses the server-provided Voice usage reset timestamp", () => {
     const profile = read("src/components/ProfileCapacityCard.tsx");
-    expect(profile).toContain("Renews with your next Premium billing cycle.");
-    expect(profile).not.toContain("Resets ${resetLabel}");
+    expect(profile).toContain("usage?.monthlyResetAt");
+    expect(profile).toContain("Usage resets ${voiceResetLabel}.");
+    expect(profile).not.toContain("Renews with your next Premium billing cycle.");
   });
 
   it("labels the Voice limit as time per session", () => {

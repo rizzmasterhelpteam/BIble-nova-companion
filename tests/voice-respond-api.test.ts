@@ -124,5 +124,6 @@ describe("Voice response API", () => {
       source: "/api/voice/respond",
       destination: "/api/chat?mode=voice",
     });
+    expect(vercelConfig.regions).toEqual(["sfo1"]);
   });
 });

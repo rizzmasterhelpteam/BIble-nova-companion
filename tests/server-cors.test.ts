@@ -25,6 +25,9 @@ describe("API CORS policy", () => {
     delete process.env.APP_ORIGIN;
     delete process.env.VERCEL_PREVIEW_ORIGINS;
     delete process.env.VERCEL_PREVIEW_ORIGIN_PATTERN;
+    delete process.env.VERCEL_URL;
+    delete process.env.VERCEL_ENV;
+    process.env.NODE_ENV = "test";
   });
 
   it("allows the production web origin and reflects it without a wildcard", () => {
@@ -42,8 +45,13 @@ describe("API CORS policy", () => {
   });
 
   it("allows the bundled Capacitor localhost origin", () => {
-    expect(isAllowedApiOrigin("https://localhost")).toBe(true);
     expect(isAllowedApiOrigin("capacitor://localhost")).toBe(true);
+  });
+
+  it("does not include localhost defaults in production", () => {
+    process.env.NODE_ENV = "production";
+    expect(isAllowedApiOrigin("http://localhost:5173")).toBe(false);
+    expect(isAllowedApiOrigin("https://biblecompanion.vercel.app")).toBe(true);
   });
 
   it("rejects an unconfigured cross-site origin", () => {
@@ -64,5 +72,13 @@ describe("API CORS policy", () => {
     process.env.VERCEL_PREVIEW_ORIGINS = "https://preview.example";
     expect(isAllowedApiOrigin("https://preview.example")).toBe(true);
     expect(isAllowedApiOrigin("https://another-preview.example")).toBe(false);
+  });
+
+  it("allows the current Vercel Preview URL when Vercel identifies the deployment as preview", () => {
+    process.env.VERCEL_ENV = "preview";
+    process.env.NODE_ENV = "production";
+    process.env.VERCEL_URL = "biblecompanion-git-fix-preview.vercel.app";
+
+    expect(isAllowedApiOrigin("https://biblecompanion-git-fix-preview.vercel.app")).toBe(true);
   });
 });

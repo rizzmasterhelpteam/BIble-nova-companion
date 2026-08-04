@@ -57,6 +57,45 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 const AVATAR_NONE = "__none__";
+type RemoteProfile = {
+  display_name: string | null;
+  avatar_url: string | null;
+};
+
+const loadRemoteProfile = async (userId: string) => {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("display_name, avatar_url")
+    .eq("user_id", userId)
+    .maybeSingle<RemoteProfile>();
+
+  if (error) throw new Error(error.message);
+  return data;
+};
+
+const saveRemoteProfile = async (
+  userId: string,
+  patch: Partial<RemoteProfile>,
+) => {
+  const existing = await loadRemoteProfile(userId);
+  const { data, error } = await supabase
+    .from("profiles")
+    .upsert(
+      {
+        user_id: userId,
+        display_name: patch.display_name ?? existing?.display_name ?? null,
+        avatar_url: patch.avatar_url ?? existing?.avatar_url ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" },
+    )
+    .select("display_name, avatar_url")
+    .single<RemoteProfile>();
+
+  if (error) throw new Error(error.message);
+  return data;
+};
+
 const LEGACY_GUEST_STORAGE_KEYS = [
   "is_guest",
   "onboardingComplete_guest",
@@ -81,6 +120,7 @@ const clearLocalIdentityData = (id: string) => {
   storageRemove(`onboardingComplete_${id}`);
   storageRemove(`bible-nova-companion-onboarding-answers-${id}`);
   storageRemove(`bible-nova-companion-shadow-notes-${id}`);
+  storageRemove(`bible-nova-daily-reminders-enabled-${id}`);
 };
 
 const getUserDisplayName = (currentUser: User | null) => {
@@ -93,6 +133,12 @@ const getUserDisplayName = (currentUser: User | null) => {
     currentUser.email?.split("@")[0] ||
     null
   );
+};
+
+const getUserMetadataDisplayName = (currentUser: User | null) => {
+  if (!currentUser) return null;
+  const metadata = currentUser.user_metadata || {};
+  return metadata.display_name || metadata.full_name || metadata.name || null;
 };
 
 const getStoredProfileName = (id: string, currentUser: User | null) =>
@@ -192,6 +238,60 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
+    const hydrateRemoteProfile = async (currentUser: User, expectedToken: string) => {
+      if (!isSupabaseConfigured) return;
+
+      try {
+        const remoteProfile = await loadRemoteProfile(currentUser.id);
+        if (
+          isDisposed ||
+          activeSessionToken !== expectedToken ||
+          activeUserId !== currentUser.id
+        ) {
+          return;
+        }
+
+        const storedName = storageGet(`bible-nova-companion-profile-name-${currentUser.id}`);
+        const storedAvatarRaw = storageGet(`bible-nova-companion-profile-avatar-${currentUser.id}`);
+        const avatarWasExplicitlyCleared = storedAvatarRaw === AVATAR_NONE;
+        const storedAvatar = storedAvatarRaw === AVATAR_NONE ? null : storedAvatarRaw;
+        const displayName =
+          remoteProfile?.display_name || storedName || getUserMetadataDisplayName(currentUser);
+        const avatarUrl =
+          remoteProfile?.avatar_url ||
+          storedAvatar ||
+          (avatarWasExplicitlyCleared ? null : getUserAvatarUrl(currentUser));
+
+        if (
+          !remoteProfile ||
+          remoteProfile.display_name !== (displayName || null) ||
+          remoteProfile.avatar_url !== (avatarUrl || null)
+        ) {
+          await saveRemoteProfile(currentUser.id, {
+            display_name: displayName || null,
+            avatar_url: avatarUrl || null,
+          });
+        }
+
+        if (
+          isDisposed ||
+          activeSessionToken !== expectedToken ||
+          activeUserId !== currentUser.id
+        ) {
+          return;
+        }
+
+        if (displayName) storageSet(`bible-nova-companion-profile-name-${currentUser.id}`, displayName);
+        if (avatarUrl) storageSet(`bible-nova-companion-profile-avatar-${currentUser.id}`, avatarUrl);
+        setProfileName(displayName || null);
+        setProfileAvatarUrl(avatarUrl || null);
+      } catch (error) {
+        if (!isDisposed && activeSessionToken === expectedToken && activeUserId === currentUser.id) {
+          console.warn("Could not load the signed-in profile from Supabase:", error);
+        }
+      }
+    };
+
     const resolveCurrentUser = async (currentSession: Session | null) => {
       const fallbackUser = currentSession?.user || null;
       const accessToken = currentSession?.access_token;
@@ -265,6 +365,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       storageRemove(`subscriptionSource_${currentUser.id}`);
       syncOnboardingState(currentUser.id);
       syncProfileState(currentUser);
+      if (activeSessionToken) void hydrateRemoteProfile(currentUser, activeSessionToken);
     };
 
     const refreshAuthenticatedUser = async (currentSession: Session, initialUser: User) => {
@@ -492,6 +593,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     }
 
+    // The deletion request used an explicit captured token. Once the server
+    // confirms cleanup, do not let any later auth callback reuse it.
+    setApiAccessToken(null);
+
     if (id) clearLocalIdentityData(id);
 
     setUser(null);
@@ -524,6 +629,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       });
 
       if (error) throw new Error(error.message);
+      await saveRemoteProfile(id, { display_name: trimmed });
       setUser(data.user);
     }
 
@@ -536,6 +642,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (!id) throw new Error("No active profile to update.");
     if (avatarUrl && avatarUrl.length > 900_000) {
       throw new Error("Profile picture is too large. Choose a smaller image.");
+    }
+
+    if (isSupabaseConfigured) {
+      await saveRemoteProfile(id, { avatar_url: avatarUrl });
     }
 
     storageSet(`bible-nova-companion-profile-avatar-${id}`, avatarUrl || AVATAR_NONE);

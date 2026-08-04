@@ -34,7 +34,7 @@ describe("shadow memory database boundary", () => {
     vi.clearAllMocks();
     database.query.maybeSingle.mockReset();
     database.query.single.mockReset();
-    process.env.VITE_SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_URL = "https://example.supabase.co";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test-key";
     process.env.GROQ_API_KEY = "test-groq-key";
     vi.stubGlobal("fetch", vi.fn());
@@ -46,7 +46,7 @@ describe("shadow memory database boundary", () => {
   });
 
   afterEach(() => {
-    delete process.env.VITE_SUPABASE_URL;
+    delete process.env.SUPABASE_URL;
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     delete process.env.GROQ_API_KEY;
     vi.unstubAllGlobals();

@@ -101,21 +101,19 @@ describe("server security", () => {
     expect(key).not.toContain("203.0.113.44");
   });
 
-  it("uses the server-only service key as a safe fallback salt", () => {
+  it("requires a dedicated IP salt instead of reusing the service key", () => {
     delete process.env.RATE_LIMIT_IP_SALT;
-    const key = getRateLimitStorageKey("subscription-sync:ip:203.0.113.44");
-    expect(key).toMatch(/^subscription-sync:ip:[a-f0-9]{64}$/);
-    expect(key).not.toContain("203.0.113.44");
+    expect(() => getRateLimitStorageKey("subscription-sync:ip:203.0.113.44"))
+      .toThrowError("Rate limiting requires server persistence configuration.");
   });
 
   it("uses the persistent RPC and rejects denied windows", async () => {
     rpcMock.mockResolvedValueOnce({ data: [{ allowed: true, retry_after_seconds: 0 }], error: null });
     await enforceRateLimits([{ key: "chat:user:user-1", limit: 30 }]);
-    expect(rpcMock).toHaveBeenCalledWith("check_rate_limit", expect.objectContaining({
-      p_key: "chat:user:user-1",
-      p_limit: 30,
-      p_window_seconds: 600,
-    }));
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    expect(rpcMock).toHaveBeenCalledWith("check_rate_limits", {
+      p_rules: [{ key: "chat:user:user-1", limit: 30, window_seconds: 600 }],
+    });
 
     rpcMock.mockResolvedValueOnce({ data: [{ allowed: false, retry_after_seconds: 17 }], error: null });
     await expect(enforceRateLimits([{ key: "chat:user:user-1", limit: 30 }])).rejects.toMatchObject({
@@ -131,23 +129,19 @@ describe("server security", () => {
     });
   });
 
-  it("starts user and IP persistent checks concurrently while remaining fail-closed", async () => {
-    let resolveFirst: ((value: { data: unknown; error: null }) => void) | null = null;
-    const firstCheck = new Promise<{ data: unknown; error: null }>((resolve) => {
-      resolveFirst = resolve;
-    });
-    rpcMock
-      .mockImplementationOnce(() => firstCheck)
-      .mockResolvedValueOnce({ data: [{ allowed: true, retry_after_seconds: 0 }], error: null });
-
-    const pending = enforceRateLimits([
+  it("checks user and IP buckets in one atomic RPC call", async () => {
+    rpcMock.mockResolvedValueOnce({ data: [{ allowed: true, retry_after_seconds: 0 }], error: null });
+    await enforceRateLimits([
       { key: "voice:user:user-1", limit: 60 },
       { key: "voice:ip:203.0.113.44", limit: 60 },
     ]);
-    await Promise.resolve();
-    expect(rpcMock).toHaveBeenCalledTimes(2);
-    resolveFirst?.({ data: [{ allowed: true, retry_after_seconds: 0 }], error: null });
-    await expect(pending).resolves.toBeUndefined();
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    expect(rpcMock).toHaveBeenCalledWith("check_rate_limits", {
+      p_rules: [
+        { key: "voice:user:user-1", limit: 60, window_seconds: 600 },
+        { key: expect.stringMatching(/^voice:ip:[a-f0-9]{64}$/), limit: 60, window_seconds: 600 },
+      ],
+    });
   });
 
   it.each([
@@ -182,33 +176,21 @@ describe("server security", () => {
     });
   });
 
-  it("retries Voice availability with the legacy five-argument RPC", async () => {
-    rpcMock
-      .mockResolvedValueOnce({
-        data: null,
-        error: { message: "Could not find the function public.get_voice_session_availability in the schema cache" },
-      })
-      .mockResolvedValueOnce({
-        data: [{
-          eligible: true,
-          available: true,
-          reason: "available",
-          retry_after_seconds: null,
-          can_renew: false,
-        }],
-        error: null,
-      });
-
-    await expect(getVoiceSessionAvailability("user-1", 10, 20, 180, 330, null)).resolves.toMatchObject({
-      eligible: true,
-      available: true,
-      reason: "available",
-      usage: null,
+  it("fails closed instead of falling back to a legacy Voice RPC", async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { message: "Could not find the function public.get_voice_session_availability in the schema cache" },
     });
-    expect(rpcMock).toHaveBeenLastCalledWith("get_voice_session_availability", {
+
+    await expect(getVoiceSessionAvailability("user-1", 10, 20, 180, 330, null)).rejects.toMatchObject({
+      statusCode: 503,
+    });
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    expect(rpcMock).toHaveBeenCalledWith("get_voice_session_availability", {
       p_user_id: "user-1",
       p_max_minutes: 10,
       p_daily_minutes: 20,
+      p_monthly_minutes: 180,
       p_reset_offset_minutes: 330,
       p_handle_hash: null,
     });

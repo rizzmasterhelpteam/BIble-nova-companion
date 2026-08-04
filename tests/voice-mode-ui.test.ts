@@ -49,6 +49,7 @@ describe("Voice mode interface", () => {
     expect(voiceModeSource).toContain('"grid w-full grid-cols-3 gap-2"');
     expect(voiceModeSource).toContain('<span aria-hidden="true" />');
     expect(appStylesSource).toContain("voice-orb--performance .voice-assistant-ripple");
+    expect(appStylesSource).toContain("voice-performance-breathe 10s ease-in-out infinite");
   });
 
   it("limits audio feedback work on performance-mode devices", () => {

@@ -1118,9 +1118,25 @@
      make the performance-mode orb a stable visual so the surrounding controls
      never hitch during a spoken response. */
   .voice-page .voice-orb--performance .voice-listening-ring,
-  .voice-page .voice-orb--performance .voice-assistant-ripple,
-  .voice-page .voice-orb--performance .voice-orb-core {
+  .voice-page .voice-orb--performance .voice-assistant-ripple {
     animation: none !important;
+  }
+
+  /* Keep Android's performance mode alive without bringing back the layered
+     ripple/shadow work that caused response-time hitches. */
+  .voice-page .voice-orb--performance:not(.voice-orb--paused):not(.voice-orb--unavailable) .voice-orb-core {
+    animation: voice-performance-breathe 10s ease-in-out infinite !important;
+  }
+
+  @keyframes voice-performance-breathe {
+    0%, 100% {
+      opacity: 0.96;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.86;
+      transform: scale(1.025);
+    }
   }
 
   @keyframes voice-listening-ripple {

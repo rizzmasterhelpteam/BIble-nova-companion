@@ -1,4 +1,9 @@
 import { getApiStatus } from "../server-api.js";
+import {
+  enforceRateLimits,
+  getHttpErrorDetails,
+  requireAuthenticatedRequest,
+} from "../server-security.js";
 import { setApiCorsHeaders } from "../server-cors.js";
 
 const setStatusHeaders = (res: any) => {
@@ -7,7 +12,23 @@ const setStatusHeaders = (res: any) => {
   res.setHeader?.("Expires", "0");
 };
 
-export default function handler(req: any, res: any) {
+const getQueryValue = (req: any, key: string) => {
+  const queryValue = req?.query?.[key];
+  if (Array.isArray(queryValue)) return queryValue[0];
+  if (typeof queryValue === "string") return queryValue;
+
+  try {
+    return new URL(req?.url || "", "https://biblecompanion.vercel.app")
+      .searchParams
+      .get(key) || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const isReadinessRequest = (req: any) => getQueryValue(req, "mode") === "ready";
+
+export default async function handler(req: any, res: any) {
   if (!setApiCorsHeaders(req, res, "GET, OPTIONS", "Content-Type, Authorization, Cache-Control")) return;
   setStatusHeaders(res);
 
@@ -21,5 +42,23 @@ export default function handler(req: any, res: any) {
     return;
   }
 
-  res.status(200).json(getApiStatus());
+  if (!isReadinessRequest(req)) {
+    // Keep public liveness intentionally non-sensitive. Provider readiness and
+    // configuration details belong behind the authenticated readiness mode.
+    res.status(200).json({ ok: true });
+    return;
+  }
+
+  try {
+    const { userId, ip } = await requireAuthenticatedRequest(req);
+    await enforceRateLimits([
+      { key: `api-readiness:user:${userId}`, limit: 30 },
+      { key: `api-readiness:ip:${ip}`, limit: 60 },
+    ]);
+    res.status(200).json(getApiStatus());
+  } catch (error) {
+    const details = getHttpErrorDetails(error);
+    if (details.retryAfterSeconds) res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
+    res.status(details.statusCode).json({ error: details.message });
+  }
 }

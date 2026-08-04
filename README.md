@@ -46,6 +46,10 @@ Set these in Vercel for the environments you deploy to:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+- `SUPABASE_URL` required server-only Supabase project URL
+- `SUPABASE_ANON_KEY` required server-only key used to validate user sessions
+- `SUPABASE_SERVICE_ROLE_KEY` required server-only key for persistence, rate limits, entitlements, and account deletion
+- `RATE_LIMIT_IP_SALT` required server-only random value used to hash IP-based rate-limit keys
 - `GROQ_API_KEY`
 - `GROQ_MODEL` required for production; use a currently supported provider model and do not rely on a deprecated fallback
 - `GROQ_FALLBACK_MODEL` optional secondary Groq chat model
@@ -57,12 +61,10 @@ Set these in Vercel for the environments you deploy to:
 - `GOOGLE_TTS_LANGUAGE_CODE` optional language code; defaults to `en-AU`
 - `GOOGLE_TTS_VOICE_NAME` optional voice; defaults to `en-AU-Chirp3-HD-Algenib`
 - `VOICE_SESSION_MAX_MINUTES` optional voice-session limit from 1–15 minutes; defaults to `15`
-- `SUPABASE_SERVICE_ROLE_KEY` required server-only for account deletion, persistent rate limits, and subscription entitlements
-- `RATE_LIMIT_IP_SALT` optional server-only random value used to hash IP-based rate-limit keys; the server-only Supabase service-role key is used as a secure fallback
 - `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` required server-only JSON credentials for verified Android subscriptions
 - `VITE_API_BASE_URL` required in native mobile builds, set to your Vercel site URL
-- Capacitor Android release builds load the verified local `dist` bundle. Set `CAPACITOR_LIVE_RELOAD=true` with a local URL for development only; production builds must not use Capacitor `server.url` to load Vercel directly.
-- `APP_ORIGIN`, `CAPACITOR_ANDROID_ORIGIN`, and `CAPACITOR_IOS_ORIGIN` define the exact authenticated API origins; preview origins must be listed explicitly in `VERCEL_PREVIEW_ORIGINS` or `VERCEL_PREVIEW_ORIGIN_PATTERN`.
+- Capacitor Android release builds package only the verified native shell and load the authenticated UI from the production Vercel URL. Set `CAPACITOR_LIVE_RELOAD=true` with a local URL for development only; production builds must not use Capacitor `server.url` to load a Preview origin. If Vercel is unavailable, the shell shows its retry/update surface; the complete app is not available offline.
+- `APP_ORIGIN`, `CAPACITOR_ANDROID_ORIGIN`, and `CAPACITOR_IOS_ORIGIN` define the exact authenticated API origins; additional preview origins must be listed explicitly in `VERCEL_PREVIEW_ORIGINS`.
 - `VITE_GOOGLE_PLAY_PUBLIC_KEY` optional Google Play monetization RSA public key for Android billing or verification integrations
 - `VITE_IAP_MONTHLY_PRODUCT_ID` and `VITE_IAP_YEARLY_PRODUCT_ID` required for native subscription IAP
 - `VITE_IAP_MONTHLY_BASE_PLAN_ID` and `VITE_IAP_YEARLY_BASE_PLAN_ID` required for Android subscription IAP (Google Play base plans)
@@ -74,6 +76,29 @@ Keep `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` server-only as well; the native subscrip
 
 Apply `supabase/migrations/20260716123000_production_hardening.sql` and any later migrations to the production Supabase project before enabling the hardened API routes. It creates private persistent rate-limit buckets, the service-role-only `subscription_entitlements` table, and the restricted RPCs used by the server.
 
+The current hardening migrations that must be applied after the existing live
+schema, in order, are:
+
+- `20260804130000_add_atomic_rate_limits.sql` — adds the transactional
+  rate-limit RPC while retaining the legacy RPC during deployment.
+- `20260804131500_remove_legacy_voice_rpc_overloads.sql` — removes the
+  ambiguous Voice RPC overloads; the server uses only the six-argument
+  monthly-limit functions.
+- `20260804133000_remove_shadow_memory_rollback_backup.sql` — removes the
+  temporary private rollback snapshot after the explicit-consent cleanup.
+- `20260804150000_account_cleanup_and_private_retention.sql` — creates the
+  service-role account cleanup boundary, closes private tables, and applies
+  retention rules.
+- `20260804150100_repair_canonical_voice_rpcs.sql` — installs the canonical
+  six-argument Voice functions on projects with schema drift.
+
+Apply and verify these in a staging Supabase database first, then production.
+Deploy and verify the matching server before applying the separate
+`20260804160000_remove_legacy_rate_limit_rpc_after_rollout.sql` migration; it
+removes only the old rate-limit overload after `check_rate_limits(jsonb)` is
+confirmed live. Never commit or print service-role, Google Play, Gemini,
+Groq, or Google TTS credentials.
+
 In Supabase Auth, keep Anonymous Sign-Ins disabled. The app requires a permanent signed-in account.
 
 ## Mobile Builds
@@ -84,7 +109,7 @@ This app is configured with Capacitor for Android and iOS.
 - Open Android Studio: `npm run android:open`
 - Open Xcode: `npm run ios:open` (requires macOS)
 
-For mobile builds, set `VITE_API_BASE_URL` to the deployed Vercel URL so the bundled Android UI calls `/api/*` on Vercel. The release shell never points Capacitor `server.url` at Vercel: it ships the complete local `dist` bundle and remains usable when Vercel is unavailable. Frontend changes require a new APK until a signed, compatible OTA web-bundle provider is selected and configured. The repository contains compatibility types for a signed manifest, but OTA delivery is intentionally disabled until that provider is configured.
+For mobile builds, set `VITE_API_BASE_URL` to the deployed Vercel URL so the remote Android UI calls `/api/*` on Vercel. The release shell does not ship the complete local `dist` bundle and does not claim offline app availability. Frontend changes can be delivered through the hosted UI after deployment; native plugin/configuration changes still require a new APK until a signed, compatible OTA native-bundle provider is selected and configured.
 For native Google sign-in on mobile:
 
 - `VITE_GOOGLE_WEB_CLIENT_ID` is an optional Android override; a public Bible Nova client ID is included as the clean-build fallback.

@@ -125,7 +125,7 @@ export default function Paywall() {
   useEffect(() => {
     if (!nativeStoreAvailable) return;
     let isMounted = true;
-    apiFetch("/api/status")
+    apiFetch("/api/status/ready")
       .then(async (response) => {
         if (!response.ok) return null;
         return (await response.json()) as ApiStatusResponse;

@@ -1,58 +1,24 @@
-import { createClient } from "@supabase/supabase-js";
-import { enforceRateLimits, getHttpErrorDetails, requireAuthenticatedRequest } from "../server-security.js";
+import { enforceRateLimits, getHttpErrorDetails, getSupabaseAdminClient, requireAuthenticatedRequest } from "../server-security.js";
 import { setApiCorsHeaders } from "../server-cors.js";
-
-const getClientErrorMessage = (error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-
-  if (message.includes("fetch failed")) {
-    return "Network error: Could not reach the LLM API.";
-  }
-
-  if (message.includes("API key") || message.toLowerCase().includes("unauthorized")) {
-    return "Your API key is invalid or unauthorized. Please verify it in Settings/Secrets.";
-  }
-
-  return message || "Failed to generate response. Please try again.";
-};
-
-const deleteSupabaseAccount = async (authorizationHeader?: string) => {
-  const accessToken = authorizationHeader?.replace(/^Bearer\s+/i, "").trim();
-  if (!accessToken) {
-    throw new Error("Missing active session. Please sign in again before deleting the account.");
-  }
-
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes("placeholder.supabase.co")) {
-    throw new Error("Supabase is not configured on the server.");
-  }
-
-  if (!serviceRoleKey) {
-    throw new Error("Account deletion requires SUPABASE_SERVICE_ROLE_KEY on the server.");
-  }
-
-  const authClient = createClient(supabaseUrl, supabaseAnonKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
+const deleteSupabaseAccount = async (userId: string) => {
+  const adminClient = getSupabaseAdminClient();
+  const { error: dataError } = await adminClient.rpc("delete_account_data", {
+    p_user_id: userId,
   });
-  const { data, error } = await authClient.auth.getUser(accessToken);
 
-  if (error || !data.user) {
-    throw new Error("Could not verify the signed-in user. Please sign in again.");
+  if (dataError) {
+    console.error("Account data cleanup failed:", dataError.message);
+    throw new Error("Your account data could not be removed. Please try again.");
   }
 
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  const { error: deleteError } = await adminClient.auth.admin.deleteUser(data.user.id);
+  const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
 
   if (deleteError) {
-    throw new Error(deleteError.message);
+    console.error("Auth account deletion failed:", deleteError.message);
+    throw new Error("Your account could not be deleted. Please try again.");
   }
 
-  return data.user.id;
+  return userId;
 };
 
 export default async function handler(req: any, res: any) {
@@ -74,12 +40,15 @@ export default async function handler(req: any, res: any) {
       { key: `account:user:${userId}`, limit: 3 },
       { key: `account:ip:${ip}`, limit: 6 },
     ]);
-    await deleteSupabaseAccount(req.headers.authorization);
+    await deleteSupabaseAccount(userId);
     res.status(200).json({ deleted: true });
   } catch (error) {
-    console.error("Vercel API account deletion error:", error);
     const details = getHttpErrorDetails(error);
     if (details.retryAfterSeconds) res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
-    res.status(details.statusCode).json({ error: details.statusCode === 500 ? getClientErrorMessage(error) : details.message });
+    res.status(details.statusCode).json({
+      error: details.statusCode >= 500
+        ? "Account deletion is temporarily unavailable. Please try again."
+        : details.message,
+    });
   }
 }
