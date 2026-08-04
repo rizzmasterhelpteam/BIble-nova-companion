@@ -59,6 +59,14 @@
       "destination": "/api/status?mode=ready"
     },
     {
+      "source": "/api/subscription/status",
+      "destination": "/api/status?mode=subscription-status"
+    },
+    {
+      "source": "/api/subscription/native-sync",
+      "destination": "/api/status?mode=subscription-native-sync"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

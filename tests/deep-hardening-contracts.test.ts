@@ -16,12 +16,22 @@ describe("deep production hardening contracts", () => {
     expect(read("api/status.ts")).toContain("res.status(200).json({ ok: true })");
     expect(read("api/status.ts")).toContain('getQueryValue(req, "mode") === "ready"');
     expect(read("api/status.ts")).toContain("requireAuthenticatedRequest");
+    expect(read("api/status.ts")).toContain('getQueryValue(req, "mode") === "subscription-status"');
+    expect(read("api/status.ts")).toContain('getQueryValue(req, "mode") === "subscription-native-sync"');
     expect(read("api/subscription/[action].ts")).toContain('action === "native-sync"');
     expect(read("api/subscription/[action].ts")).toContain("getSubscriptionAccessStatus");
     const vercelConfig = JSON.parse(read("vercel.json"));
     expect(vercelConfig.rewrites).toContainEqual({
       source: "/api/status/ready",
       destination: "/api/status?mode=ready",
+    });
+    expect(vercelConfig.rewrites).toContainEqual({
+      source: "/api/subscription/status",
+      destination: "/api/status?mode=subscription-status",
+    });
+    expect(vercelConfig.rewrites).toContainEqual({
+      source: "/api/subscription/native-sync",
+      destination: "/api/status?mode=subscription-native-sync",
     });
   });
 
