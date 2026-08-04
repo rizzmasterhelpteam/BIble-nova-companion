@@ -6,6 +6,11 @@ import { cancelNativeSubscriptionEntitlementSync } from "../lib/native/subscript
 import { storageGet, storageRemove, storageSet } from "../lib/webStorage";
 import { startup } from "../lib/startup";
 import { normalizeShadowNotes } from "../lib/shadowMemory";
+import {
+  loadRemoteOnboardingAnswers,
+  persistOnboardingAnswers,
+  type OnboardingAnswers,
+} from "../lib/onboardingPersistence";
 import { useAppStorage } from "./AppStorageContext";
 
 const PENDING_NATIVE_ENTITLEMENT_SYNC_KEY = "bible-nova-pending-native-entitlement-sync";
@@ -22,7 +27,7 @@ type AuthContextType = {
   deleteAccount: () => Promise<void>;
   updateProfileName: (name: string) => Promise<void>;
   updateProfileAvatarUrl: (avatarUrl: string | null) => Promise<void>;
-  completeOnboarding: () => void;
+  completeOnboarding: (answers?: OnboardingAnswers) => Promise<void>;
   shadowNotes: string | null;
   memoryEnabled: boolean;
   memoryPreferenceState: "loading" | "enabled" | "disabled";
@@ -45,7 +50,7 @@ const AuthContext = createContext<AuthContextType>({
   deleteAccount: async () => {},
   updateProfileName: async () => {},
   updateProfileAvatarUrl: async () => {},
-  completeOnboarding: () => {},
+  completeOnboarding: async () => {},
   shadowNotes: null,
   memoryEnabled: false,
   memoryPreferenceState: "loading",
@@ -238,6 +243,46 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
+    const hydrateRemoteOnboarding = async (currentUser: User, expectedToken: string) => {
+      if (!isSupabaseConfigured) return;
+
+      try {
+        const remoteOnboarding = await loadRemoteOnboardingAnswers(supabase, currentUser.id);
+        if (
+          isDisposed ||
+          activeSessionToken !== expectedToken ||
+          activeUserId !== currentUser.id
+        ) {
+          return;
+        }
+
+        if (remoteOnboarding) {
+          storageSet(`onboardingComplete_${currentUser.id}`, "true");
+          setHasCompletedOnboarding(true);
+          return;
+        }
+
+        // Migrate a completion recorded by an older APK/WebView into the
+        // durable account record. The local flag is only trusted for this
+        // user's own scoped key and never creates a completion for a new user.
+        if (storageGet(`onboardingComplete_${currentUser.id}`) === "true") {
+          await persistOnboardingAnswers(supabase, currentUser.id);
+          if (
+            isDisposed ||
+            activeSessionToken !== expectedToken ||
+            activeUserId !== currentUser.id
+          ) {
+            return;
+          }
+          setHasCompletedOnboarding(true);
+        }
+      } catch (error) {
+        if (!isDisposed && activeSessionToken === expectedToken && activeUserId === currentUser.id) {
+          console.warn("Could not load onboarding completion from Supabase:", error);
+        }
+      }
+    };
+
     const hydrateRemoteProfile = async (currentUser: User, expectedToken: string) => {
       if (!isSupabaseConfigured) return;
 
@@ -414,6 +459,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // request; refresh the signed-in profile in the background.
         await applyAuthenticatedUser(currentUser);
         if (currentSession.access_token) {
+          void hydrateRemoteOnboarding(currentUser, currentSession.access_token);
           void refreshAuthenticatedUser(currentSession, currentUser);
         }
       } else {
@@ -652,10 +698,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setProfileAvatarUrl(avatarUrl);
   }, [user?.id]);
 
-  const completeOnboarding = useCallback(() => {
+  const completeOnboarding = useCallback(async (answers: OnboardingAnswers = {}) => {
     const id = user?.id || null;
     if (!id) return;
 
+    if (isSupabaseConfigured) {
+      await persistOnboardingAnswers(supabase, id, answers);
+    }
+
+    if (activeMemoryUserIdRef.current !== id) return;
     storageSet(`onboardingComplete_${id}`, "true");
     setHasCompletedOnboarding(true);
   }, [user?.id]);
