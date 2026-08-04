@@ -15,6 +15,9 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "https://biblecompanion.vercel.app",
   "capacitor://localhost",
   "ionic://localhost",
+  // Capacitor Android uses androidScheme: "https", so its WebView origin is
+  // https://localhost even when the UI is loaded from the production URL.
+  "https://localhost",
 ];
 
 const isProduction = () =>
