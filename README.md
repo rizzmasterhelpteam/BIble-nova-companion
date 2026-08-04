@@ -74,6 +74,23 @@ Keep `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` server-only as well; the native subscrip
 
 Apply `supabase/migrations/20260716123000_production_hardening.sql` and any later migrations to the production Supabase project before enabling the hardened API routes. It creates private persistent rate-limit buckets, the service-role-only `subscription_entitlements` table, and the restricted RPCs used by the server.
 
+The current hardening migrations that must be applied after the existing live
+schema are:
+
+- `20260804130000_add_atomic_rate_limits.sql` — replaces the separate
+  per-bucket rate-limit calls with one transactional RPC.
+- `20260804131500_remove_legacy_voice_rpc_overloads.sql` — removes the
+  ambiguous Voice RPC overloads; the server uses only the six-argument
+  monthly-limit functions.
+- `20260804133000_remove_shadow_memory_rollback_backup.sql` — removes the
+  temporary private rollback snapshot after the explicit-consent cleanup.
+
+Apply and verify these in a staging Supabase database first, then apply them
+to production. The production server must be deployed with the matching
+atomic rate-limit and canonical Voice RPC code before the old RPCs are
+removed. Never commit or print service-role, Google Play, Gemini, Groq, or
+Google TTS credentials.
+
 In Supabase Auth, keep Anonymous Sign-Ins disabled. The app requires a permanent signed-in account.
 
 ## Mobile Builds
