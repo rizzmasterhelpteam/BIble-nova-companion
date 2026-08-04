@@ -120,6 +120,7 @@ const clearLocalIdentityData = (id: string) => {
   storageRemove(`onboardingComplete_${id}`);
   storageRemove(`bible-nova-companion-onboarding-answers-${id}`);
   storageRemove(`bible-nova-companion-shadow-notes-${id}`);
+  storageRemove(`bible-nova-daily-reminders-enabled-${id}`);
 };
 
 const getUserDisplayName = (currentUser: User | null) => {
@@ -591,6 +592,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw error;
       }
     }
+
+    // The deletion request used an explicit captured token. Once the server
+    // confirms cleanup, do not let any later auth callback reuse it.
+    setApiAccessToken(null);
 
     if (id) clearLocalIdentityData(id);
 
