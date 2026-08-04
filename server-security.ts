@@ -161,6 +161,31 @@ export const getSubscriptionAccessStatus = async (
   userId: string,
 ): Promise<SubscriptionAccessStatus> => {
   const client = getSupabaseAdminClient();
+  const { data: testAccount, error: testAccountError } = await client
+    .from("premium_test_accounts")
+    .select("created_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (testAccountError) {
+    // The table is introduced by a forward migration. Keep normal billing
+    // checks working during the deploy window if the migration is not live yet.
+    console.warn("Premium test-account lookup unavailable:", testAccountError.message);
+  }
+
+  if (testAccount && !testAccountError) {
+    return {
+      active: true,
+      state: "active",
+      status: "active",
+      source: "server",
+      productId: null,
+      expiresAt: null,
+      verifiedAt: testAccount.created_at || null,
+      reconciliationRecommended: false,
+    };
+  }
+
   const { data, error } = await client
     .from("subscription_entitlements")
     .select("status, platform, product_id, expiry_time, verified_at")
