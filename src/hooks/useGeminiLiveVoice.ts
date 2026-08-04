@@ -63,6 +63,7 @@ type SessionResponse = {
   reservationHandle: string;
   reservationExpiresAt: string;
   remainingSeconds: number;
+  sessionMinutes?: number;
   idleTimeoutSeconds?: number;
   resumed: boolean;
   usage?: VoiceUsageSummary | null;
@@ -796,6 +797,14 @@ export function useGeminiLiveVoice(options: Options) {
         reservationRef.current = nextReservation;
         onReservationChange(nextReservation);
         setVoiceUsage(session.usage || null);
+        const sessionMinutes = Number.isInteger(session.sessionMinutes) && session.sessionMinutes > 0
+          ? session.sessionMinutes
+          : Math.max(1, Math.ceil(session.remainingSeconds / 60));
+        setSessionNotice(
+          sessionMinutes < 15
+            ? `You have up to ${sessionMinutes} minute${sessionMinutes === 1 ? "" : "s"} for this Voice session.`
+            : "You have up to 15 minutes for this Voice session.",
+        );
         activeRef.current = true;
         setIsSessionActive(true);
         idleTimeoutSecondsRef.current = session.idleTimeoutSeconds || 0;

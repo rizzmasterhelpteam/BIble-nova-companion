@@ -172,6 +172,7 @@ describe("turn-based Voice session API", () => {
     expect(response.body).toMatchObject({
       reservationHandle: "r".repeat(43),
       resumed: false,
+      sessionMinutes: 10,
       idleTimeoutSeconds: 45,
       usage: expect.objectContaining({ monthlyRemainingMinutes: 150 }),
     });
