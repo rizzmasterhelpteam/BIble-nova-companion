@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useEntitlement } from "../context/EntitlementContext";
-import { Check, Star, AlertCircle, ShieldCheck, Sparkles, HeartHandshake, Lock, BookOpen } from "lucide-react";
+import { Check, Star, AlertCircle, ShieldCheck, Sparkles, HeartHandshake, Lock, BookOpen, LogOut, MessageCircle, Mic, Clock3 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { cn, useDocumentTitle } from "../lib/utils";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
@@ -68,11 +68,12 @@ export default function Paywall() {
   const [subscriptionSyncError, setSubscriptionSyncError] = useState<string | null>(null);
   const [offeringReloadKey, setOfferingReloadKey] = useState(0);
   const [subscriptionSyncReady, setSubscriptionSyncReady] = useState<boolean | null>(null);
-  const { session, user } = useAuth();
+  const { session, user, logout } = useAuth();
   const { snapshot, refresh, restoreGooglePlayPurchase } = useEntitlement();
   const navigate = useNavigate();
   const yearlyRef = useRef<HTMLButtonElement | null>(null);
   const monthlyRef = useRef<HTMLButtonElement | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   useEffect(() => {
     if (!snapshot.active) return;
@@ -321,6 +322,20 @@ export default function Paywall() {
     }
   };
 
+  const handleSignOut = async () => {
+    if (isSigningOut) return;
+    setIsSigningOut(true);
+    setError(null);
+    try {
+      await logout();
+      navigate("/login", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sign out. Please try again.");
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
   const handlePlanKey = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "ArrowRight" || event.key === "ArrowDown") {
       event.preventDefault();
@@ -336,9 +351,21 @@ export default function Paywall() {
   };
 
   const features = [
-    { text: "Unlimited scripture-grounded reflections", icon: <BookOpen className="app-accent h-5 w-5" /> },
-    { text: "Personalized prayers & practical steps", icon: <HeartHandshake className="app-accent h-5 w-5" /> },
-    { text: "A private, distraction-free space", icon: <Lock className="app-accent h-5 w-5" /> },
+    {
+      text: "Unlimited text reflections",
+      detail: "Talk through emotions, decisions, faith, and everyday life.",
+      icon: <MessageCircle className="app-accent h-5 w-5" />,
+    },
+    {
+      text: "Personalized prayers and practical steps",
+      detail: "Get thoughtful support shaped around what you share.",
+      icon: <HeartHandshake className="app-accent h-5 w-5" />,
+    },
+    {
+      text: "A private space to return to",
+      detail: "Optional memory controls let you decide what is remembered.",
+      icon: <Lock className="app-accent h-5 w-5" />,
+    },
   ];
 
   const yearlyMonthly = useMemo(() => {
@@ -412,16 +439,51 @@ export default function Paywall() {
           </motion.div>
 
           {/* Premium Features */}
-          <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="space-y-3 mb-8">
+          <motion.div variants={isPerformanceMode ? undefined : itemVariants} className="mb-6 space-y-3">
+            <p className="app-kicker px-1 text-[10px] font-semibold uppercase tracking-[0.18em]">What is included</p>
             {features.map((feature) => (
               <div key={feature.text}
-                className="app-paywall-panel flex items-center gap-4 rounded-2xl p-4">
+                className="app-paywall-panel flex items-start gap-4 rounded-2xl p-4">
                 <div className="flex-shrink-0 rounded-xl p-2" style={{ background: "var(--app-accent-soft)" }}>
                   {feature.icon}
                 </div>
-                <p className="app-heading text-sm font-medium">{feature.text}</p>
+                <div className="min-w-0">
+                  <p className="app-heading text-sm font-semibold">{feature.text}</p>
+                  <p className="app-muted mt-1 text-xs leading-relaxed">{feature.detail}</p>
+                </div>
               </div>
             ))}
+          </motion.div>
+
+          <motion.div
+            variants={isPerformanceMode ? undefined : itemVariants}
+            className="app-paywall-panel mb-8 rounded-[1.5rem] p-5"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 rounded-xl p-2" style={{ background: "var(--app-accent-soft)" }}>
+                <Mic className="app-accent h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="app-kicker text-[10px] font-semibold uppercase tracking-[0.16em]">Voice Mode included</p>
+                <h2 className="app-heading mt-1 text-lg font-serif">Speak naturally when typing feels like too much.</h2>
+              </div>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border p-3" style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}>
+                <p className="app-muted text-[10px] font-semibold uppercase tracking-wider">Allowance</p>
+                <p className="app-heading mt-1 text-xl font-semibold">5 hours</p>
+                <p className="app-muted text-[11px]">per billing cycle</p>
+              </div>
+              <div className="rounded-2xl border p-3" style={{ borderColor: "var(--app-card-border)", background: "var(--app-card-soft)" }}>
+                <p className="app-muted text-[10px] font-semibold uppercase tracking-wider">Per session</p>
+                <p className="app-heading mt-1 text-xl font-semibold">30 minutes</p>
+                <p className="app-muted text-[11px]">maximum length</p>
+              </div>
+            </div>
+            <div className="app-muted mt-4 flex items-start gap-2 text-xs leading-relaxed">
+              <Clock3 className="app-accent mt-0.5 h-4 w-4 shrink-0" />
+              <span>No daily Voice cap. Use your allowance whenever you need it; it resets on your subscription billing date.</span>
+            </div>
           </motion.div>
 
           {/* Android unavailable notice (only shown on web when native store unavailable) */}
@@ -566,6 +628,23 @@ export default function Paywall() {
               </div>
             </motion.div>
           )}
+
+          <motion.div
+            variants={isPerformanceMode ? undefined : itemVariants}
+            className="mt-8 flex flex-col items-center gap-2"
+          >
+            <p className="app-muted text-center text-xs">Signed into the wrong account?</p>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={isSigningOut}
+              aria-busy={isSigningOut}
+              className="touch-target app-ghost-button inline-flex items-center gap-2 rounded-pill px-4 py-2.5 text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              <LogOut className="h-4 w-4" />
+              {isSigningOut ? "Signing out..." : "Sign out"}
+            </button>
+          </motion.div>
 
           <motion.p
             variants={isPerformanceMode ? undefined : itemVariants}
