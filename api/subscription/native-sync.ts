@@ -51,11 +51,20 @@ export default async function handler(req: any, res: any) {
     const subscription = await syncNativeSubscription(req.headers.authorization, req.body || {});
     res.status(200).json({ subscription });
   } catch (error) {
-    console.error("Vercel API native subscription sync error:", error);
     const details = getHttpErrorDetails(error);
+    const expectedClientOrBusinessOutcome = details.statusCode >= 400 && details.statusCode < 500;
+    (expectedClientOrBusinessOutcome ? console.warn : console.error)(
+      "Vercel API native subscription sync outcome:",
+      {
+        statusCode: details.statusCode,
+        message: details.message,
+      },
+    );
     if (details.retryAfterSeconds) res.setHeader?.("Retry-After", String(details.retryAfterSeconds));
-    res.status(details.statusCode === 500 ? 400 : details.statusCode).json({
-      error: details.statusCode === 500 ? getNativeSubscriptionClientErrorMessage(error) : details.message,
+    res.status(details.statusCode).json({
+      error: req.method === "POST" && details.statusCode >= 500
+        ? getNativeSubscriptionClientErrorMessage(error)
+        : details.message,
     });
   }
 }

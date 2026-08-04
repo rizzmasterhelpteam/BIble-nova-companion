@@ -36,6 +36,7 @@ import {
 } from "./src/lib/voiceSpeechFormatter.js";
 import { hasGeminiLiveConfig } from "./gemini-live-config.js";
 import { API_CONTRACT_VERSION, MINIMUM_NATIVE_BRIDGE_VERSION } from "./platform-contract.js";
+import { HttpError } from "./server-security.js";
 export {
   createReflection,
   getClientErrorMessage,
@@ -240,17 +241,17 @@ const createSupabaseAdminClient = () => {
 const getGooglePlayServiceAccount = () => {
   const raw = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?.trim();
   if (!raw) {
-    throw new Error("Google Play subscription verification is not configured on the server.");
+    throw new HttpError("Google Play subscription verification is not configured on the server.", 503);
   }
 
   try {
     const credentials = JSON.parse(raw) as { client_email?: string; private_key?: string };
     if (!credentials.client_email || !credentials.private_key) {
-      throw new Error("Missing client_email or private_key.");
+      throw new HttpError("Google Play subscription verification is misconfigured on the server.", 503);
     }
     return credentials;
   } catch {
-    throw new Error("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON is invalid.");
+    throw new HttpError("Google Play subscription verification is misconfigured on the server.", 503);
   }
 };
 
@@ -259,7 +260,7 @@ const verifyGooglePlaySubscription = async (
 ): Promise<VerifiedGooglePlaySubscription> => {
   const purchaseToken = normalizeOptionalString(payload.purchaseToken);
   if (!purchaseToken) {
-    throw new Error("A Google Play purchase token is required for verification.");
+    throw new HttpError("A Google Play purchase token is required for verification.", 400);
   }
 
   const credentials = getGooglePlayServiceAccount();
@@ -270,7 +271,7 @@ const verifyGooglePlaySubscription = async (
   });
   const { token: accessToken } = await auth.getAccessToken();
   if (!accessToken) {
-    throw new Error("Could not authenticate with Google Play for purchase verification.");
+    throw new HttpError("Google Play verification is temporarily unavailable.", 503);
   }
 
   const endpoint = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(GOOGLE_PLAY_PACKAGE_NAME)}/purchases/subscriptionsv2/tokens/${encodeURIComponent(purchaseToken)}`;
@@ -290,7 +291,10 @@ const verifyGooglePlaySubscription = async (
 
   if (!response.ok) {
     const reason = data.error?.errors?.[0]?.reason;
-    console.error("Google Play subscription verification rejected:", {
+    const log = response.status === 401 || response.status === 403 || response.status === 404
+      ? console.warn
+      : console.error;
+    log("Google Play subscription verification rejected:", {
       httpStatus: response.status,
       apiStatus: data.error?.status,
       reason,
@@ -300,18 +304,23 @@ const verifyGooglePlaySubscription = async (
     });
 
     if (response.status === 401 || response.status === 403) {
-      throw new Error("Google Play API access was denied for the subscription verifier.");
+      throw new HttpError("Google Play verification is temporarily unavailable.", 503);
     }
     if (response.status === 404) {
-      throw new Error("Google Play could not find this purchase for Bible Nova Companion.");
+      throw new HttpError("Google Play could not find this purchase for Bible Nova Companion.", 400);
     }
     if (response.status === 429 || response.status >= 500) {
-      throw new Error("Google Play purchase verification is temporarily unavailable.");
+      throw new HttpError("Google Play purchase verification is temporarily unavailable.", 503);
     }
-    throw new Error("Google Play rejected this purchase during verification.");
+    throw new HttpError("Google Play rejected this purchase during verification.", 400);
   }
 
-  const lineItem = selectAllowedGooglePlayLineItem(data.lineItems || []);
+  let lineItem: ReturnType<typeof selectAllowedGooglePlayLineItem>;
+  try {
+    lineItem = selectAllowedGooglePlayLineItem(data.lineItems || []);
+  } catch (error) {
+    throw new HttpError(error instanceof Error ? error.message : "This purchase is not an allowed Bible Nova subscription.", 400);
+  }
   const productId = lineItem.productId!;
   const expiryTime = lineItem?.expiryTime;
   const expiry = expiryTime ? Date.parse(expiryTime) : NaN;
@@ -319,7 +328,11 @@ const verifyGooglePlaySubscription = async (
 
   if ((status === "active" || status === "grace_period" || status === "canceled") &&
     (!expiryTime || !Number.isFinite(expiry) || expiry <= Date.now())) {
-    throw new Error("This Google Play subscription is not active.");
+    throw new HttpError("This Google Play subscription is not active.", 403);
+  }
+
+  if (status !== "active" && status !== "grace_period" && status !== "canceled") {
+    throw new HttpError("This Google Play subscription is inactive.", 403);
   }
 
   if (data.acknowledgementState !== "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED") {
@@ -335,29 +348,33 @@ const verifyGooglePlaySubscription = async (
 
     if (!acknowledgementResponse.ok) {
       const acknowledgementError = (await acknowledgementResponse.json().catch(() => ({}))) as GooglePlayErrorResponse;
-      console.error("Google Play subscription acknowledgement rejected:", {
+      const acknowledgementReason = acknowledgementError.error?.errors?.[0]?.reason;
+      const isConcurrentUpdate = acknowledgementResponse.status === 409
+        && (acknowledgementError.error?.status === "ABORTED" || acknowledgementReason === "concurrentUpdate");
+      (isConcurrentUpdate ? console.info : console.warn)("Google Play subscription acknowledgement deferred:", {
         httpStatus: acknowledgementResponse.status,
         apiStatus: acknowledgementError.error?.status,
-        reason: acknowledgementError.error?.errors?.[0]?.reason,
-        message: acknowledgementError.error?.message?.slice(0, 240),
+        reason: acknowledgementReason,
         packageName: GOOGLE_PLAY_PACKAGE_NAME,
         productId,
       });
 
-      // The native billing client may finish its own asynchronous acknowledgement
-      // while the backend request is in flight. Re-read once before treating that
-      // harmless race as a failure.
-      const refreshedResponse = await fetch(endpoint, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const refreshedData = (await refreshedResponse.json().catch(() => ({}))) as {
-        acknowledgementState?: string;
-      };
-      if (
-        !refreshedResponse.ok ||
-        refreshedData.acknowledgementState !== "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED"
-      ) {
-        throw new Error("This Google Play subscription could not be acknowledged.");
+      let acknowledged = false;
+      for (const delayMs of isConcurrentUpdate ? [250, 750] : [250]) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        const refreshedResponse = await fetch(endpoint, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const refreshedData = (await refreshedResponse.json().catch(() => ({}))) as {
+          acknowledgementState?: string;
+        };
+        if (refreshedResponse.ok && refreshedData.acknowledgementState === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED") {
+          acknowledged = true;
+          break;
+        }
+      }
+      if (!acknowledged) {
+        throw new HttpError("This Google Play subscription could not be acknowledged.", 503);
       }
     }
   }
@@ -907,7 +924,7 @@ export async function syncNativeSubscription(
 ) {
   const accessToken = authorizationHeader?.replace(/^Bearer\s+/i, "").trim();
   if (!accessToken) {
-    throw new Error("Missing active session. Please sign in again before restoring premium.");
+    throw new HttpError("Missing active session. Please sign in again before restoring premium.", 401);
   }
 
   const productId = normalizeOptionalString(payload.productId);
@@ -917,11 +934,11 @@ export async function syncNativeSubscription(
   const platform = payload.platform === "ios" ? "ios" : "android";
 
   if (!purchaseToken) {
-    throw new Error("Native subscription sync requires a purchase token.");
+    throw new HttpError("Native subscription sync requires a purchase token.", 400);
   }
 
-  if (platform !== "android") {
-    throw new Error("iOS subscription verification is not configured yet. Premium access was not granted.");
+  if (payload.platform !== "android") {
+    throw new HttpError("Only Android subscription verification is configured.", 400);
   }
 
   const verifiedPurchase = await verifyGooglePlaySubscription({
@@ -938,11 +955,11 @@ export async function syncNativeSubscription(
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes("placeholder.supabase.co")) {
-    throw new Error("Supabase is not configured on the server.");
+    throw new HttpError("Supabase is not configured on the server.", 503);
   }
 
   if (!serviceRoleKey) {
-    throw new Error("Native subscription linking requires SUPABASE_SERVICE_ROLE_KEY on the server.");
+    throw new HttpError("Native subscription linking requires SUPABASE_SERVICE_ROLE_KEY on the server.", 503);
   }
 
   const authClient = createClient(supabaseUrl, supabaseAnonKey, {
@@ -951,7 +968,7 @@ export async function syncNativeSubscription(
   const { data, error } = await authClient.auth.getUser(accessToken);
 
   if (error || !data.user) {
-    throw new Error("Could not verify the signed-in user. Please sign in again.");
+    throw new HttpError("Could not verify the signed-in user. Please sign in again.", 401);
   }
 
   const linkedAt = new Date().toISOString();
@@ -988,7 +1005,11 @@ export async function syncNativeSubscription(
 
   const entitlement = Array.isArray(entitlementResult) ? entitlementResult[0] : entitlementResult;
   if (entitlementError || !entitlement?.status) {
-    throw new Error(entitlementError?.message || "Could not persist the verified subscription entitlement.");
+    const message = entitlementError?.message || "Could not persist the verified subscription entitlement.";
+    if (/already linked|already belongs|another account|purchase token/i.test(message)) {
+      throw new HttpError("This Google Play purchase is already linked to another account.", 409);
+    }
+    throw new HttpError("Could not persist the verified subscription entitlement.", 503);
   }
 
   const authoritativeSubscription: UserSubscriptionMetadata = {
@@ -1029,6 +1050,9 @@ export function getNativeSubscriptionClientErrorMessage(error: unknown) {
   if (message.includes("not active")) {
     return message;
   }
+  if (message.includes("inactive")) {
+    return message;
+  }
   if (message.includes("could not be acknowledged")) {
     return "Google Play verified the purchase but could not acknowledge it. Please use Restore Purchases shortly.";
   }
@@ -1040,6 +1064,9 @@ export function getNativeSubscriptionClientErrorMessage(error: unknown) {
   }
   if (message.includes("link_subscription_entitlement") || message.includes("persist the verified")) {
     return "The verified subscription could not be linked to your account. Please try Restore Purchases shortly.";
+  }
+  if (message.includes("already linked") || message.includes("another account")) {
+    return "This Google Play purchase is already linked to another account.";
   }
   return "Google Play could not verify and link this subscription. Please try Restore Purchases or contact support.";
 }
