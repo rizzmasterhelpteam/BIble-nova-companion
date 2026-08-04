@@ -1,6 +1,29 @@
 -- Process all request rate-limit buckets atomically.
 -- The application uses this one-call API so user and IP buckets cannot
 -- diverge. The old single-bucket RPC is removed at the end of this migration.
+create or replace function private.cleanup_expired_rate_limit_buckets(p_max_rows integer default 500)
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_deleted integer;
+begin
+  delete from private.rate_limit_buckets
+  where key in (
+    select key
+    from private.rate_limit_buckets
+    where expires_at <= pg_catalog.clock_timestamp()
+    order by expires_at
+    limit greatest(1, least(coalesce(p_max_rows, 500), 5000))
+    for update skip locked
+  );
+  get diagnostics v_deleted = row_count;
+  return v_deleted;
+end;
+$$;
+
 create or replace function public.check_rate_limits(
   p_rules jsonb
 )
@@ -90,6 +113,10 @@ begin
       pg_catalog.hashtextextended(v_key, 0)
     );
   end loop;
+
+  -- Opportunistically remove disposable buckets without adding a second
+  -- network round trip to the request path.
+  perform private.cleanup_expired_rate_limit_buckets(100);
 
   for v_rule in
     select value, ordinality
