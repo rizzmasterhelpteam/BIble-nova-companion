@@ -8,6 +8,7 @@ import { cn, useDocumentTitle } from "../lib/utils";
 import { useMobileViewport } from "../context/MobileViewportContext";
 import { getNativePlatform, isNativePlatform } from "../lib/native/platform";
 import { clearOnboardingDraft, loadOnboardingDraft, saveOnboardingDraft } from "../lib/onboardingDraft";
+import type { OnboardingAnswers } from "../lib/onboardingPersistence";
 
 const questions = [
   {
@@ -124,6 +125,7 @@ export default function Onboarding() {
   const [answers, setAnswers] = useState<Record<string, string>>(() => user?.id ? loadOnboardingDraft(user.id) : {});
   const [rememberPreferences, setRememberPreferences] = useState(false);
   const [completionError, setCompletionError] = useState<string | null>(null);
+  const [isCompleting, setIsCompleting] = useState(false);
   const [hasStarted, setHasStarted] = useState(() => Object.keys(answers).length > 0);
   const [showAnalysis, setShowAnalysis] = useState(false);
   const navigate = useNavigate();
@@ -173,21 +175,39 @@ export default function Onboarding() {
   };
 
   const handleGetStarted = async () => {
+    if (isCompleting) return;
     setCompletionError(null);
+    setIsCompleting(true);
     try {
       if (rememberPreferences) await enableMemoryWithInitialNotes(getAnalysisSummary(answers).overview);
+      const onboardingAnswers: OnboardingAnswers = {
+        reason: answers.reason,
+        goal: answers.goal,
+        support: answers.support,
+      };
+      await completeOnboarding(onboardingAnswers);
       if (user?.id) clearOnboardingDraft(user.id);
-      completeOnboarding();
       window.requestAnimationFrame(() => navigate("/", { replace: true }));
     } catch (error) {
-      setCompletionError(error instanceof Error ? error.message : "Could not save your memory choice.");
+      setCompletionError(error instanceof Error ? error.message : "Could not save your onboarding answers. Please try again.");
+    } finally {
+      setIsCompleting(false);
     }
   };
 
-  const handleSkip = () => {
-    if (user?.id) clearOnboardingDraft(user.id);
-    completeOnboarding();
-    navigate("/", { replace: true });
+  const handleSkip = async () => {
+    if (isCompleting) return;
+    setCompletionError(null);
+    setIsCompleting(true);
+    try {
+      await completeOnboarding();
+      if (user?.id) clearOnboardingDraft(user.id);
+      navigate("/", { replace: true });
+    } catch (error) {
+      setCompletionError(error instanceof Error ? error.message : "Could not save your onboarding choice. Please try again.");
+    } finally {
+      setIsCompleting(false);
+    }
   };
 
   // Staggered welcome screen
@@ -236,6 +256,7 @@ export default function Onboarding() {
           {/* CTA */}
           <motion.div className="w-full" {...makeStagger(0.5)}>
             <button
+              disabled={isCompleting}
               onClick={() => setHasStarted(true)}
               className="app-primary-button touch-target relative w-full overflow-hidden group rounded-[1.25rem] py-4 flex items-center justify-center gap-2 font-bold text-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
             >
@@ -247,11 +268,13 @@ export default function Onboarding() {
 
           <button
             type="button"
+            disabled={isCompleting}
             onClick={handleSkip}
             className="touch-target app-ghost-button mt-3 rounded-pill px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
           >
             Use defaults for now
           </button>
+          {completionError && <p className="mt-3 text-center text-sm text-red-600" role="alert">{completionError}</p>}
           
           <motion.div className="onboarding-trust mt-5 flex items-center justify-center gap-2 border-t pt-3" {...makeStagger(0.6)}>
             <ShieldCheck className="w-3.5 h-3.5" />
@@ -322,6 +345,7 @@ export default function Onboarding() {
           </div>
 
           <motion.button
+            disabled={isCompleting}
             onClick={handleGetStarted}
             className="app-primary-button touch-target w-full font-bold text-lg rounded-[1.25rem] py-4 flex items-center justify-center transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
             initial={isPerformanceMode ? false : { opacity: 0, y: 16 }}
@@ -504,13 +528,15 @@ export default function Onboarding() {
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={handleSkip}
+          <button
+            type="button"
+            disabled={isCompleting}
+            onClick={handleSkip}
           className="touch-target app-ghost-button mx-auto mt-5 rounded-pill px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)]"
         >
           Skip for now
-        </button>
+          </button>
+          {completionError && <p className="mt-3 text-center text-sm text-red-600" role="alert">{completionError}</p>}
       </div>
     </div>
   );
