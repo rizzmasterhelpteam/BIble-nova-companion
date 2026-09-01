@@ -43,13 +43,13 @@ describe("deep production hardening contracts", () => {
     });
   });
 
-  it("auto-schedules account-scoped reminders without exposing a settings switch", () => {
+  it("auto-schedules account-scoped reminders with a working settings switch", () => {
     const layout = read("src/components/Layout.tsx");
     expect(layout).toContain("ensureAutomaticDailyReminder");
     expect(layout).toContain("AUTOMATIC_REMINDER_DAYS");
     expect(layout).toContain("notificationSeed: userId");
-    expect(layout).not.toContain("handleDailyReminderToggle");
-    expect(layout).not.toContain("Daily reflection reminders");
+    expect(layout).toContain("handleDailyReminderToggle");
+    expect(layout).toContain("Daily reflection reminders");
   });
 
   it("keeps deletion and canonical Voice schema changes forward-only", () => {

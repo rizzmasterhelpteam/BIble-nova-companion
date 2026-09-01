@@ -1,30 +1,32 @@
 import { useEffect, useState } from "react";
 import { Flame, Wind, Eraser, LockKeyhole } from "lucide-react";
 import { cn, useDocumentTitle } from "../lib/utils";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence, useReducedMotion } from "motion/react";
 import PageHeader from "../components/PageHeader";
 import { useMobileViewport } from "../context/MobileViewportContext";
-import { usePerformanceMode } from "../hooks/usePerformanceMode";
 
 const BURN_EMBERS = [
-  { left: "16%", bottom: "14%", size: "5px", color: "rgba(255, 211, 112, 0.95)", drift: -14, rise: -112, delay: 0.05 },
-  { left: "29%", bottom: "10%", size: "4px", color: "rgba(255, 153, 66, 0.9)", drift: 11, rise: -86, delay: 0.22 },
-  { left: "47%", bottom: "12%", size: "6px", color: "rgba(255, 226, 145, 0.98)", drift: -7, rise: -132, delay: 0.1 },
-  { left: "64%", bottom: "9%", size: "4px", color: "rgba(255, 137, 51, 0.88)", drift: 16, rise: -96, delay: 0.34 },
-  { left: "79%", bottom: "15%", size: "5px", color: "rgba(255, 202, 99, 0.92)", drift: -10, rise: -118, delay: 0.18 },
+  { left: "10%", bottom: "10%", size: "5px", color: "rgba(255, 211, 112, 0.98)", drift: -18, rise: -130, delay: 0.05 },
+  { left: "20%", bottom: "14%", size: "6px", color: "rgba(255, 153, 66, 0.95)", drift: 12, rise: -105, delay: 0.18 },
+  { left: "32%", bottom: "8%", size: "4px", color: "rgba(255, 235, 160, 0.98)", drift: -8, rise: -150, delay: 0.12 },
+  { left: "44%", bottom: "12%", size: "7px", color: "rgba(255, 180, 70, 0.98)", drift: 14, rise: -160, delay: 0.08 },
+  { left: "55%", bottom: "10%", size: "5px", color: "rgba(255, 120, 45, 0.95)", drift: -12, rise: -125, delay: 0.25 },
+  { left: "67%", bottom: "15%", size: "6px", color: "rgba(255, 215, 115, 0.98)", drift: 16, rise: -140, delay: 0.15 },
+  { left: "78%", bottom: "9%", size: "4px", color: "rgba(255, 140, 50, 0.92)", drift: -10, rise: -110, delay: 0.28 },
+  { left: "88%", bottom: "12%", size: "5px", color: "rgba(255, 202, 99, 0.95)", drift: 10, rise: -135, delay: 0.2 },
 ] as const;
 
 export default function Confession() {
   useDocumentTitle("Confess | Bible Nova Companion");
   const { isCompactPhone, isShortPhone, visibleHeight } = useMobileViewport();
   const isCrampedPhone = visibleHeight > 0 && visibleHeight <= 620;
+  const prefersReducedMotion = useReducedMotion();
   const [confession, setConfession] = useState("");
   const [isReleasing, setIsReleasing] = useState(false);
   const [timeLeft, setTimeLeft] = useState(5);
   const [isDone, setIsDone] = useState(false);
-  const isPerformanceMode = usePerformanceMode();
-  const burnAnimationEnabled = !isPerformanceMode;
-  const burnDuration = isPerformanceMode ? 1 : 5;
+  const burnAnimationEnabled = !prefersReducedMotion;
+  const burnDuration = 5;
 
   useEffect(() => {
     let timer: number | null = null;
@@ -32,7 +34,7 @@ export default function Confession() {
     if (isReleasing && timeLeft > 0) {
       timer = window.setTimeout(
         () => setTimeLeft((prev) => prev - 1),
-        isPerformanceMode ? 100 : 1000,
+        1000,
       );
     } else if (isReleasing && timeLeft === 0) {
       setIsDone(true);
@@ -43,11 +45,11 @@ export default function Confession() {
     return () => {
       if (timer) window.clearTimeout(timer);
     };
-  }, [isPerformanceMode, isReleasing, timeLeft]);
+  }, [isReleasing, timeLeft]);
 
   const handleRelease = () => {
     if (!confession.trim()) return;
-    setTimeLeft(isPerformanceMode ? 1 : 5);
+    setTimeLeft(5);
     setIsReleasing(true);
   };
 
@@ -88,10 +90,10 @@ export default function Confession() {
         {!isDone ? (
           <motion.div
             key="confession-box"
-            initial={isPerformanceMode ? false : { opacity: 0, scale: 0.95 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={isPerformanceMode ? { opacity: 0 } : { opacity: 0, scale: 0.9, filter: "blur(10px)" }}
-            transition={{ duration: isPerformanceMode ? 0.15 : 0.5 }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.9, filter: "blur(10px)" }}
+            transition={{ duration: prefersReducedMotion ? 0.15 : 0.5 }}
             className={cn("relative flex flex-1 flex-col", isCrampedPhone ? "gap-4" : "gap-6")}
           >
             <motion.div
@@ -105,15 +107,15 @@ export default function Confession() {
                       opacity: [1, 1, 0.98, 0.8, 0],
                       boxShadow: [
                         "0 14px 34px rgba(12, 12, 18, 0.06)",
-                        "0 14px 38px rgba(244, 132, 45, 0.12)",
-                        "0 12px 40px rgba(244, 132, 45, 0.18)",
-                        "0 8px 34px rgba(244, 132, 45, 0.12)",
+                        "0 14px 38px rgba(244, 132, 45, 0.18)",
+                        "0 12px 40px rgba(244, 132, 45, 0.25)",
+                        "0 8px 34px rgba(244, 132, 45, 0.18)",
                         "0 4px 22px rgba(244, 132, 45, 0)",
                       ],
                     }
                   : isReleasing
                     ? { opacity: [1, 0] }
-                    : hasContent && !isPerformanceMode
+                    : hasContent && !prefersReducedMotion
                       ? {
                           boxShadow: [
                             "0 0 0px 0px rgba(245,158,11,0)",
@@ -126,8 +128,8 @@ export default function Confession() {
               }
               transition={
                 isReleasing
-                  ? { duration: burnAnimationEnabled ? burnDuration : 0.45, ease: "easeIn" }
-                  : { duration: isPerformanceMode ? 0 : 2.5, repeat: isPerformanceMode ? 0 : Infinity, ease: "easeInOut" }
+                  ? { duration: burnDuration, ease: "easeIn" }
+                  : { duration: prefersReducedMotion ? 0 : 2.5, repeat: prefersReducedMotion ? 0 : Infinity, ease: "easeInOut" }
               }
             >
               <motion.textarea
@@ -290,20 +292,20 @@ export default function Confession() {
         ) : (
           <motion.div
             key="success-message"
-                initial={isPerformanceMode ? false : { opacity: 0, scale: 0.8, filter: "blur(5px)" }}
-                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-            transition={{ duration: isPerformanceMode ? 0.15 : 1, delay: isPerformanceMode ? 0 : 0.2 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.8, filter: "blur(5px)" }}
+            animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+            transition={{ duration: prefersReducedMotion ? 0.15 : 1, delay: prefersReducedMotion ? 0 : 0.2 }}
             className={cn("flex flex-1 flex-col items-center justify-center", isShortPhone ? "" : "-mt-16")}
           >
             <div className="relative mb-8">
               <motion.div
-                animate={isPerformanceMode ? undefined : { scale: [1, 1.18, 1], opacity: [0.3, 0.1, 0.3] }}
+                animate={prefersReducedMotion ? undefined : { scale: [1, 1.18, 1], opacity: [0.3, 0.1, 0.3] }}
                 transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
                 className="absolute inset-0 rounded-full blur-md"
                 style={{ background: "var(--app-accent-soft)" }}
               />
               <motion.div
-                animate={isPerformanceMode ? undefined : { y: [0, -10, 0] }}
+                animate={prefersReducedMotion ? undefined : { y: [0, -10, 0] }}
                 transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
                 className="glass relative flex h-24 w-24 items-center justify-center rounded-full border"
                 style={{

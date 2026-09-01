@@ -21,6 +21,8 @@ import {
   ChevronRight,
   Vibrate,
   VibrateOff,
+  Bell,
+  BellOff,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useTheme } from "../context/ThemeContext";
@@ -33,7 +35,12 @@ import { cn } from "../lib/utils";
 import { shouldHideBottomNavigation } from "../lib/mobileLayout";
 import RouteContentFallback from "./RouteContentFallback";
 import ProfileCapacityCard from "./ProfileCapacityCard";
-import { AUTOMATIC_REMINDER_DAYS, getAutomaticReminderTime } from "../lib/dailyReminderPreferences";
+import {
+  AUTOMATIC_REMINDER_DAYS,
+  getAutomaticReminderTime,
+  getDailyReminderPreferenceKey,
+} from "../lib/dailyReminderPreferences";
+import { storageGet, storageSet } from "../lib/webStorage";
 
 const makeAvatarDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -106,6 +113,13 @@ export default function Layout() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [memoryPreferenceError, setMemoryPreferenceError] = useState<string | null>(null);
+  const [dailyRemindersEnabled, setDailyRemindersEnabled] = useState<boolean>(() => {
+    if (!user?.id) return true;
+    const saved = storageGet(getDailyReminderPreferenceKey(user.id));
+    return saved !== "false";
+  });
+  const [dailyReminderLoading, setDailyReminderLoading] = useState(false);
+  const [dailyReminderError, setDailyReminderError] = useState<string | null>(null);
   const settingsDialogRef = React.useRef<HTMLDivElement>(null);
   const settingsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const automaticReminderUserRef = React.useRef<string | null>(null);
@@ -144,12 +158,13 @@ export default function Layout() {
 
   const ensureAutomaticDailyReminder = React.useCallback(async () => {
     const userId = user?.id;
-    if (
-      !nativeControlsAvailable ||
-      !userId ||
-      automaticReminderUserRef.current === userId ||
-      automaticReminderInFlightRef.current
-    ) return;
+    if (!userId) return;
+    const saved = storageGet(getDailyReminderPreferenceKey(userId));
+    if (saved === "false") {
+      setDailyRemindersEnabled(false);
+      return;
+    }
+    if (!nativeControlsAvailable || automaticReminderUserRef.current === userId || automaticReminderInFlightRef.current) return;
 
     automaticReminderInFlightRef.current = true;
     const { hour, minute } = getAutomaticReminderTime(userId);
@@ -160,7 +175,10 @@ export default function Layout() {
         days: AUTOMATIC_REMINDER_DAYS,
         notificationSeed: userId,
       });
-      if (scheduled) automaticReminderUserRef.current = userId;
+      if (scheduled) {
+        automaticReminderUserRef.current = userId;
+        setDailyRemindersEnabled(true);
+      }
     } catch (error) {
       console.warn("Automatic daily reminder could not be scheduled:", error);
     } finally {
@@ -176,10 +194,82 @@ export default function Layout() {
     const handleAccountShutdown = () => {
       automaticReminderUserRef.current = null;
       void platform.reminders.cancel().catch(() => undefined);
+      setDailyRemindersEnabled(false);
     };
     window.addEventListener("bible-nova-account-shutdown", handleAccountShutdown);
     return () => window.removeEventListener("bible-nova-account-shutdown", handleAccountShutdown);
   }, [platform]);
+
+  const handleDailyReminderToggle = async () => {
+    const userId = user?.id;
+    if (!userId || dailyReminderLoading) return;
+    setDailyReminderError(null);
+    setDailyReminderLoading(true);
+
+    try {
+      if (dailyRemindersEnabled) {
+        if (platform.isNative) {
+          await platform.reminders.cancel();
+        }
+        storageSet(getDailyReminderPreferenceKey(userId), "false");
+        automaticReminderUserRef.current = null;
+        setDailyRemindersEnabled(false);
+        return;
+      }
+
+      const { hour, minute } = getAutomaticReminderTime(userId);
+      if (platform.isNative) {
+        const scheduled = await platform.reminders.schedule({
+          hour,
+          minute,
+          days: AUTOMATIC_REMINDER_DAYS,
+          notificationSeed: userId,
+        });
+        if (!scheduled) {
+          setDailyReminderError("Notifications are blocked. Please allow them in your device settings, then try again.");
+          return;
+        }
+      } else if (typeof window !== "undefined" && "Notification" in window) {
+        if (Notification.permission === "default") {
+          const permission = await Notification.requestPermission();
+          if (permission !== "granted") {
+            setDailyReminderError("Notifications were not allowed in this browser.");
+          }
+        } else if (Notification.permission === "denied") {
+          setDailyReminderError("Notifications are blocked in this browser. Please allow them in browser permissions.");
+        }
+      }
+
+      storageSet(getDailyReminderPreferenceKey(userId), "true");
+      automaticReminderUserRef.current = userId;
+      setDailyRemindersEnabled(true);
+    } catch (error) {
+      setDailyReminderError(error instanceof Error ? error.message : "Could not update reminders.");
+    } finally {
+      setDailyReminderLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Warm up tab routes on idle so switching bottom tabs is instantaneous with zero loading skeleton flash
+    const preloadTabRoutes = () => {
+      void import("../pages/Breathe");
+      void import("../pages/Intentions");
+      void import("../pages/Confession");
+    };
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      const idleId = (window as unknown as { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback(preloadTabRoutes);
+      return () => {
+        if ("cancelIdleCallback" in window) {
+          (window as unknown as { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(idleId);
+        }
+      };
+    } else {
+      const timer = setTimeout(preloadTabRoutes, 400);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   const handleMemoryPreferenceToggle = async () => {
     if (memoryPreferenceLoading) return;
@@ -364,11 +454,24 @@ export default function Layout() {
           <AnimatePresence mode={isAndroidApp ? "sync" : "wait"} initial={false}>
             <motion.div
               key={location.pathname}
-              initial={prefersReducedMotion || isAndroidApp ? false : { opacity: 0, y: 8 }}
-              animate={prefersReducedMotion || isAndroidApp ? { opacity: 1 } : { opacity: 1, y: 0 }}
-              exit={prefersReducedMotion || isAndroidApp ? { opacity: 0 } : { opacity: 0, y: -8 }}
-              transition={{ duration: prefersReducedMotion || isAndroidApp ? 0 : 0.2, ease: "easeOut" }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 10, scale: 0.992 }}
+              animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+              exit={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : {
+                      opacity: 0,
+                      y: -6,
+                      scale: 0.996,
+                      transition: { duration: 0.14, ease: [0.32, 0, 0.67, 0] },
+                    }
+              }
+              transition={{
+                duration: prefersReducedMotion ? 0 : 0.28,
+                ease: [0.16, 1, 0.3, 1],
+              }}
               className="relative flex min-h-0 flex-1 flex-col"
+              style={{ willChange: "transform, opacity" }}
             >
               <Suspense fallback={<RouteContentFallback />}>
                 <Outlet />
@@ -537,7 +640,67 @@ export default function Layout() {
                         />
                       </span>
                     </button>
+                  </section>
 
+                  <section>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "var(--app-accent-gradient)" }} />
+                      <p className="app-kicker">Gentle reminders</p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={dailyRemindersEnabled}
+                      aria-busy={dailyReminderLoading}
+                      onClick={() => void handleDailyReminderToggle()}
+                      disabled={dailyReminderLoading}
+                      className="flex w-full items-center justify-between rounded-[1.4rem] border px-4 py-3.5 text-left transition-colors hover:bg-[color:var(--app-secondary-bg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--app-input-focus)] disabled:cursor-wait disabled:opacity-60"
+                      style={{
+                        background: "var(--app-card-soft)",
+                        borderColor: "var(--app-card-border)",
+                      }}
+                    >
+                      <span className="flex min-w-0 items-center gap-3 pr-3">
+                        <span
+                          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full"
+                          style={{ background: "var(--app-accent-soft)", color: "var(--app-accent)" }}
+                        >
+                          {dailyReminderLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : dailyRemindersEnabled ? (
+                            <Bell className="h-4 w-4" />
+                          ) : (
+                            <BellOff className="h-4 w-4" />
+                          )}
+                        </span>
+                        <span>
+                          <span className="app-heading block text-[14px] font-medium">Daily reflection reminders</span>
+                          <span className="app-muted block text-[11px] leading-relaxed">
+                            Gentle evening reminder for quiet reflection (6–9 PM).
+                          </span>
+                        </span>
+                      </span>
+                      <span
+                        className="relative h-6 w-11 flex-shrink-0 rounded-full border transition-colors"
+                        style={{
+                          background: dailyRemindersEnabled ? "var(--app-accent)" : "var(--app-secondary-bg)",
+                          borderColor: dailyRemindersEnabled ? "var(--app-accent)" : "var(--app-secondary-border)",
+                        }}
+                      >
+                        <span
+                          className="absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white transition-all"
+                          style={{ left: dailyRemindersEnabled ? "1.45rem" : "0.2rem" }}
+                        />
+                      </span>
+                    </button>
+                    <p className="app-muted mt-2 px-2 text-[11px] leading-relaxed">
+                      Gentle daily notifications to help you pause, breathe, and reflect. You can turn this off anytime.
+                    </p>
+                    {dailyReminderError && (
+                      <p role="alert" className="mt-2 rounded-xl px-3 py-2 text-[12px] leading-relaxed text-[color:var(--app-danger)]" style={{ background: "var(--app-danger-soft)" }}>
+                        {dailyReminderError}
+                      </p>
+                    )}
                   </section>
 
                   <section>
@@ -851,7 +1014,7 @@ function NavItem({
               layoutId="nav-pill"
               className="absolute inset-0 rounded-pill"
               style={{ background: "var(--app-nav-active)" }}
-              transition={{ type: "spring", stiffness: 320, damping: 28 }}
+              transition={{ type: "spring", stiffness: 360, damping: 30 }}
             />
           )}
           <div

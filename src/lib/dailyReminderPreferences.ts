@@ -27,3 +27,7 @@ export const normalizeReminderDays = (value: unknown): number[] => {
     )
     .sort((left, right) => left - right);
 };
+
+export const getDailyReminderPreferenceKey = (userId: string) =>
+  `bible-nova-daily-reminders-${userId}`;
+
