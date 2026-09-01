@@ -27,7 +27,7 @@ describe("Settings preferences", () => {
 
   it("shows transparent opt-in memory controls", () => {
     expect(layoutSource).toContain("Remember my preferences");
-    expect(layoutSource).toContain("Turning it off stops memory and clears remembered context.");
+    expect(layoutSource).toContain("Save helpful context for more personal reflections.");
     expect(layoutSource).toContain('role="switch"');
     expect(authSource).toContain('method: "PUT"');
     expect(authSource).toContain("if (!confirmedMemoryEnabled)");

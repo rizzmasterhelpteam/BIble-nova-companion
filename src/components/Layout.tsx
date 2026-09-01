@@ -750,9 +750,6 @@ export default function Layout() {
                         />
                       </span>
                     </button>
-                    <p className="app-muted mt-2 px-2 text-[11px] leading-relaxed">
-                      When on, Bible Nova securely saves a private summary of recurring preferences and context to your account. Turning it off stops memory and clears remembered context.
-                    </p>
                     {memoryPreferenceError && (
                       <p role="alert" className="mt-2 rounded-xl px-3 py-2 text-[12px] leading-relaxed text-[color:var(--app-danger)]" style={{ background: "var(--app-danger-soft)" }}>
                         {memoryPreferenceError}
